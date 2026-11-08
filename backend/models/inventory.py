@@ -27,6 +27,7 @@ class InventoryUnit(Base):
     name = Column(String(120), nullable=False)
     symbol = Column(String(20), nullable=False)
     unit_type = Column(String(30), nullable=False, default="unit")
+    has_weight = Column(Boolean, nullable=False, default=False, server_default="false")
     # Null retains an explicitly unclassified legacy unit; never infer from symbol.
     code = Column(String(30), nullable=True)
     dimension = Column(String(10), nullable=True)
@@ -94,6 +95,8 @@ class InventoryItem(Base):
     portionable = Column(Boolean, nullable=False, default=False, server_default="false")
     category_id = Column(String, ForeignKey("inventory_categories.id", ondelete="SET NULL"), nullable=True, index=True)
     unit_id = Column(String, ForeignKey("inventory_units.id", ondelete="SET NULL"), nullable=True, index=True)
+    weight_quantity = Column(Numeric(20, 6), nullable=True)
+    weight_unit_id = Column(String, ForeignKey("inventory_units.id", ondelete="SET NULL"), nullable=True, index=True)
     default_location_id = Column(String, ForeignKey("inventory_locations.id", ondelete="SET NULL"), nullable=True, index=True)
     min_stock = Column(Numeric(20, 6), nullable=False, default=0)
     notes = Column(Text, nullable=True)
@@ -102,7 +105,8 @@ class InventoryItem(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     category = relationship("InventoryCategory")
-    unit = relationship("InventoryUnit")
+    unit = relationship("InventoryUnit", foreign_keys=[unit_id])
+    weight_unit = relationship("InventoryUnit", foreign_keys=[weight_unit_id])
     default_location = relationship("InventoryLocation")
 
 

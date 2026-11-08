@@ -36,6 +36,7 @@ class UnitIn(Command):
     code: str = Field(min_length=1, max_length=30)
     dimension: Literal["mass", "volume", "count"]
     conversion_factor: Factor
+    has_weight: bool = False
 
 
 class ConversionPreviewIn(StrictIn):
@@ -145,6 +146,7 @@ class UnitOut(BaseModel):
     code: str | None
     dimension: str | None
     conversion_factor: str | None
+    has_weight: bool
     active: bool
     version: int
 

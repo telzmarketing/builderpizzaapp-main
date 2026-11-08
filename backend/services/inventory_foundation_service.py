@@ -212,7 +212,8 @@ class InventoryFoundationService:
     @staticmethod
     def _unit_output(row):
         return output({"id": row.id, "name": row.name, "symbol": row.symbol, "code": row.code,
-                       "dimension": row.dimension, "conversion_factor": row.conversion_factor, "active": row.active, "version": row.version})
+                       "dimension": row.dimension, "conversion_factor": row.conversion_factor, "has_weight": row.has_weight,
+                       "active": row.active, "version": row.version})
 
     def create_unit(self, body, key):
         def execute(op):
@@ -221,7 +222,8 @@ class InventoryFoundationService:
                 raise FoundationConflict("Codigo de unidade ja utilizado.")
             row = InventoryUnit(id=str(uuid.uuid4()), tenant_id=self.tenant_id, name=body.name, symbol=body.symbol,
                                 code=body.code, dimension=body.dimension, conversion_factor=body.conversion_factor,
-                                unit_type={"mass": "weight", "volume": "volume", "count": "unit"}[body.dimension], active=True, version=1)
+                                unit_type={"mass": "mass", "volume": "volume", "count": "unit"}[body.dimension],
+                                has_weight=body.has_weight, active=True, version=1)
             self.db.add(row)
             self.db.flush()
             return self._unit_output(row)
@@ -243,7 +245,7 @@ class InventoryFoundationService:
             other = self._query(InventoryUnit).filter(InventoryUnit.code == body.code, InventoryUnit.id != row.id).first()
             if other:
                 raise FoundationConflict("Codigo de unidade ja utilizado.")
-            row.name, row.code, row.dimension, row.conversion_factor = body.name, body.code, body.dimension, body.conversion_factor
+            row.name, row.code, row.dimension, row.conversion_factor, row.has_weight = body.name, body.code, body.dimension, body.conversion_factor, body.has_weight
             row.version += 1
             self.db.flush()
             return self._unit_output(row)

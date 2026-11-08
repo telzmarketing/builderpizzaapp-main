@@ -309,6 +309,8 @@ function ItemsSection({
     item_type: "ingredient" as InventoryItem["item_type"],
     category_id: "",
     unit_id: "",
+    weight_quantity: null as number | null,
+    weight_unit_id: "",
     default_location_id: "",
     min_stock: 0,
     notes: "",
@@ -320,11 +322,13 @@ function ItemsSection({
       ...form,
       category_id: form.category_id || null,
       unit_id: form.unit_id || null,
+      weight_quantity: form.weight_quantity,
+      weight_unit_id: form.weight_unit_id || null,
       default_location_id: form.default_location_id || null,
       notes: form.notes || null,
     }),
     "Item de estoque cadastrado.",
-  ).then(() => setForm({ ...form, name: "", notes: "" }));
+  ).then(() => setForm({ ...form, name: "", notes: "", weight_quantity: null, weight_unit_id: "" }));
 
   return (
     <div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]">
@@ -343,10 +347,17 @@ function ItemsSection({
             <option value="">Categoria</option>
             {data.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
-          <select className={inputClass} value={form.unit_id} onChange={(e) => setForm({ ...form, unit_id: e.target.value })}>
+          <select className={inputClass} value={form.unit_id} onChange={(e) => setForm({ ...form, unit_id: e.target.value, weight_quantity: null, weight_unit_id: "" })}>
             <option value="">Unidade base</option>
             {data.units.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.symbol})</option>)}
           </select>
+          {data.units.find((item) => item.id === form.unit_id)?.has_weight && <div className="grid gap-2 sm:grid-cols-2">
+            <input className={inputClass} required type="number" min="0.000001" step="0.000001" placeholder="Peso por unidade" value={form.weight_quantity ?? ""} onChange={(e) => setForm({ ...form, weight_quantity: e.target.value ? Number(e.target.value) : null })} />
+            <select className={inputClass} required value={form.weight_unit_id} onChange={(e) => setForm({ ...form, weight_unit_id: e.target.value })}>
+              <option value="">Unidade do peso</option>
+              {data.units.filter((item) => item.active && item.unit_type === "mass").map((item) => <option key={item.id} value={item.id}>{item.name} ({item.symbol})</option>)}
+            </select>
+          </div>}
           <select className={inputClass} value={form.default_location_id} onChange={(e) => setForm({ ...form, default_location_id: e.target.value })}>
             <option value="">Local padrao</option>
             {data.locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -422,11 +433,11 @@ function UnitsPanel({
   saving: boolean;
   run: (action: () => Promise<unknown>, success: string) => Promise<void>;
 }) {
-  const [form, setForm] = useState({ name: "", symbol: "", unit_type: "unit" as InventoryUnit["unit_type"] });
+  const [form, setForm] = useState({ name: "", symbol: "", unit_type: "unit" as InventoryUnit["unit_type"], has_weight: false });
   const save = () => run(
     () => inventoryApi.createUnit({ ...form, active: true }),
     "Unidade cadastrada.",
-  ).then(() => setForm({ name: "", symbol: "", unit_type: "unit" }));
+  ).then(() => setForm({ name: "", symbol: "", unit_type: "unit", has_weight: false }));
 
   return (
     <div className="rounded-lg border border-surface-03 bg-surface-01 p-4">
@@ -440,6 +451,7 @@ function UnitsPanel({
           <option value="volume">Volume</option>
           <option value="package">Pacote</option>
         </select>
+        <label className="flex items-center gap-2 text-sm text-stone"><input type="checkbox" checked={form.has_weight} onChange={(e) => setForm({ ...form, has_weight: e.target.checked })} /> Esta unidade terá peso por unidade</label>
         <button type="button" disabled={saving || !form.name || !form.symbol} onClick={save} className={buttonClass}><Plus size={15} /> Adicionar</button>
       </div>
       <ListRows rows={units.map((item) => ({ id: item.id, name: `${item.name} (${item.symbol})` }))} saving={saving} remove={(id) => run(() => inventoryApi.removeUnit(id), "Unidade removida.")} />

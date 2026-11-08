@@ -695,8 +695,18 @@ class InventoryService:
     def _validate_item_refs(self, data: dict) -> None:
         if data.get("category_id"):
             self._ensure(InventoryCategory, data["category_id"], "Categoria")
-        if data.get("unit_id"):
-            self._ensure(InventoryUnit, data["unit_id"], "Unidade")
+        unit = self._ensure(InventoryUnit, data["unit_id"], "Unidade") if data.get("unit_id") else None
+        weight_quantity = data.get("weight_quantity")
+        weight_unit_id = data.get("weight_unit_id")
+        if unit and unit.has_weight:
+            if weight_quantity is None or not weight_unit_id:
+                raise InventoryInvalidReference("Esta unidade exige peso por unidade e unidade de peso.")
+        elif weight_quantity is not None or weight_unit_id:
+            raise InventoryInvalidReference("Peso so pode ser informado para uma unidade configurada com peso.")
+        if weight_unit_id:
+            weight_unit = self._ensure(InventoryUnit, weight_unit_id, "Unidade de peso")
+            if not weight_unit.active or (weight_unit.unit_type != "mass" and weight_unit.dimension != "mass"):
+                raise InventoryInvalidReference("A unidade de peso deve ser uma unidade de massa ativa.")
         if data.get("default_location_id"):
             self._ensure(InventoryLocation, data["default_location_id"], "Local")
 
@@ -1000,6 +1010,10 @@ class InventoryService:
             "unit_id": item.unit_id,
             "unit_name": item.unit.name if item.unit else None,
             "unit_symbol": item.unit.symbol if item.unit else None,
+            "weight_quantity": item.weight_quantity,
+            "weight_unit_id": item.weight_unit_id,
+            "weight_unit_name": item.weight_unit.name if item.weight_unit else None,
+            "weight_unit_symbol": item.weight_unit.symbol if item.weight_unit else None,
             "default_location_id": item.default_location_id,
             "default_location_name": item.default_location.name if item.default_location else None,
             "min_stock": item.min_stock,

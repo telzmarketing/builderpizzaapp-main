@@ -14,6 +14,7 @@ class InventoryUnitIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     symbol: str = Field(min_length=1, max_length=20)
     unit_type: InventoryUnitType = "unit"
+    has_weight: bool = False
     active: bool = True
 
 
@@ -81,6 +82,8 @@ class InventoryItemIn(BaseModel):
     portionable: bool = False
     category_id: str | None = None
     unit_id: str | None = None
+    weight_quantity: Decimal | None = Field(default=None, gt=0, max_digits=20, decimal_places=6)
+    weight_unit_id: str | None = None
     default_location_id: str | None = None
     min_stock: Decimal = Field(default=Decimal("0"), ge=0, max_digits=20, decimal_places=6)
     notes: str | None = None
@@ -94,6 +97,8 @@ class InventoryItemOut(InventoryItemIn):
     category_name: str | None = None
     unit_name: str | None = None
     unit_symbol: str | None = None
+    weight_unit_name: str | None = None
+    weight_unit_symbol: str | None = None
     default_location_name: str | None = None
     current_stock: float = 0.0
     available_stock: float = 0.0

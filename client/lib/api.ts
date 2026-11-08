@@ -2117,6 +2117,7 @@ export interface InventoryUnit {
   name: string;
   symbol: string;
   unit_type: "unit" | "mass" | "volume" | "package";
+  has_weight: boolean;
   active: boolean;
   created_at?: string | null;
   updated_at?: string | null;
@@ -2166,6 +2167,10 @@ export interface InventoryItem {
   unit_id?: string | null;
   unit_name?: string | null;
   unit_symbol?: string | null;
+  weight_quantity?: number | null;
+  weight_unit_id?: string | null;
+  weight_unit_name?: string | null;
+  weight_unit_symbol?: string | null;
   default_location_id?: string | null;
   default_location_name?: string | null;
   min_stock: number;
@@ -8960,7 +8965,7 @@ export const upsellsApi = {
 export interface FoundationUnit {
   id: string; name: string; symbol: string; code: string | null;
   dimension: "mass" | "volume" | "count" | null;
-  conversion_factor: string | null; active: boolean; version: number;
+  conversion_factor: string | null; has_weight: boolean; active: boolean; version: number;
 }
 export interface FoundationBalance {
   item_id: string; location_id: string | null; lot_id: string | null;
