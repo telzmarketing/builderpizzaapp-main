@@ -213,6 +213,10 @@ class PreparationService:
                 raise PreparationNotFound("Receita operacional nao encontrada.")
             self._reserve_order_inputs(o, recipe)
         if command == "cancel":
+            if o.status not in {"draft", "approved", "scheduled", "waiting"}:
+                raise PreparationConflict("Somente solicitacoes ainda nao iniciadas podem ser excluidas.")
+            if self._q(PreparationExecution).filter_by(order_id=o.id).first():
+                raise PreparationConflict("A solicitacao possui execucao registrada e nao pode ser excluida.")
             self._release_order_reservations(o)
         o.status=target;o.version+=1;o.notes=((o.notes or "")+"\n"+b.reason) if b.reason else o.notes
         self.db.commit();return self._out(o)

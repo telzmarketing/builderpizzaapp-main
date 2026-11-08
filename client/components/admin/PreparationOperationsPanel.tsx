@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, ChefHat, ClipboardList, Loader2, Play, RefreshCw, Square, TriangleAlert } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChefHat, ClipboardList, Loader2, Play, RefreshCw, Square, Trash2, TriangleAlert } from "lucide-react";
 import { inventoryApi, inventoryFoundationApi, preparationApi, type FoundationLot, type InventoryOverview, type PreparationInputAllocation, type PreparationOrder, type PreparationRecipe, type PreparationRecipeDefinition } from "@/lib/api";
 import { PreparationLabelPrintDialog } from "@/components/kds/LabelPrintDialog";
 import PcpWeeklyPanel from "@/components/admin/PcpWeeklyPanel";
@@ -184,6 +184,7 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
         <div className="flex flex-wrap gap-2">
           <button type="button" className={ghost} disabled={busy} onClick={() => run(openSheet, "Ficha carregada.")}><ClipboardList size={15} /> Ficha</button>
           {!['completed', 'cancelled'].includes(order.status) && <button type="button" className={button} disabled={busy} onClick={() => void run(async () => { await openSheet(); setPortionConfirmation("yes"); }, "Ficha carregada.")}>Efetuado</button>}
+          {['draft', 'approved', 'scheduled', 'waiting'].includes(order.status) && <button type="button" className={ghost} disabled={busy} onClick={() => { if (window.confirm("Excluir esta solicitação de porcionamento? Ela será cancelada e retirada da fila.")) void run(() => preparationApi.manage(order.id, "cancel", { expected_version: order.version, reason: "Solicitação de porcionamento excluída pelo operador." }, key("cancel", order.id)), "Solicitação de porcionamento excluída."); }}><Trash2 size={15} /> Excluir solicitação</button>}
           {order.status === "approved" && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.manage(order.id, "schedule", { expected_version: order.version }, key("schedule", order.id)), "Ordem enviada ao KDS.")}>Enviar ao KDS</button>}
           {canStart && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.start(order.id, order.version, key("start", order.id)), "Preparo iniciado.")}><Play size={15} /> Iniciar</button>}
           {order.status === "paused" && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.command(order.id, "resume", { expected_version: order.version }, key("resume", order.id)), "Preparo retomado.")}><Play size={15} /> Retomar</button>}
