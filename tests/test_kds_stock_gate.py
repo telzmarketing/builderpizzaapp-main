@@ -137,6 +137,26 @@ def test_enabled_production_control_still_blocks_missing_snapshot(gate):
     assert gate.db.query(ProductionAttemptConsumption).count() == 0
 
 
+def test_one_pizza_consumes_direct_and_portioned_recipe_items(gate):
+    """A mixed recipe debits each physical stock item once per produced pizza."""
+    gate.db.add(InventoryItem(id="portion", tenant_id="tenant", name="Portioned cheese"))
+    gate.db.add(InventoryStockMovement(id="opening-portion", tenant_id="tenant", item_id="portion",
+        location_id="kitchen", quantity_delta=1, source_type="manual_entry"))
+    gate.db.add(OrderItemCmvIngredientSnapshot(id="ingredient1-portion", tenant_id="tenant",
+        item_snapshot_id="snapshot1", inventory_item_id="portion",
+        inventory_item_name="Portioned cheese", quantity=1, unit_cost=4))
+    gate.db.commit()
+
+    task = gate.service.command("task1", "cook", command(1), "start")
+    gate.clock[0] += timedelta(seconds=5)
+    result = gate.service.command(task["id"], "cook", command(task["version"]), "confirm-stock")
+
+    assert result["consumption_mode"] == "attempts"
+    assert gate.db.query(ProductionAttemptConsumption).filter_by(attempt_id="task1").count() == 2
+    assert gate.db.query(InventoryStockMovement).filter_by(item_id="cheese").with_entities(func.sum(InventoryStockMovement.quantity_delta)).scalar() == 0
+    assert gate.db.query(InventoryStockMovement).filter_by(item_id="portion").with_entities(func.sum(InventoryStockMovement.quantity_delta)).scalar() == 0
+
+
 def test_production_setting_defaults_false_and_can_toggle_per_tenant(gate):
     service = GestaoService(gate.db, "tenant")
     foreign = GestaoService(gate.db, "other-tenant")

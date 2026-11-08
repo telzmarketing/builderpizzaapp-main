@@ -231,7 +231,7 @@ export default function ProductRecipeEditor({ product, catalog, onClose }: { pro
                   : row.inventory_item_id ? `direct:${row.inventory_item_id}` : "";
                 return <div key={index} className="space-y-2 rounded-lg border border-surface-03 bg-surface-01 p-3">
                   <div className="flex items-center justify-between"><span className="text-xs">Ingrediente {index + 1}</span><div className="flex gap-1"><button type="button" className={button} disabled={index === 0} onClick={() => move(index, -1)} aria-label={`Subir ingrediente ${index + 1}`}><ArrowUp size={14} /></button><button type="button" className={button} disabled={index === form.items.length - 1} onClick={() => move(index, 1)} aria-label={`Descer ingrediente ${index + 1}`}><ArrowDown size={14} /></button><button type="button" className={button} onClick={() => patch({ items: form.items.filter((_, position) => position !== index) })} aria-label={`Remover ingrediente ${index + 1}`}><Trash2 size={14} /></button></div></div>
-                  <div className="grid gap-2 sm:grid-cols-2"><label className="text-xs">Origem do ingrediente<select className={input} value={selectionValue} onChange={(e) => {
+                  <div className="grid gap-2 sm:grid-cols-2"><label className="text-xs">Fonte do consumo<select className={input} value={selectionValue} onChange={(e) => {
                     const [mode, id] = e.target.value.split(":");
                     if (mode === "portion") {
                       const config = portionConfigs.find((item) => item.id === id);
