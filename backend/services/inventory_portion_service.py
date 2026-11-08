@@ -13,7 +13,7 @@ from backend.core.exceptions import DomainError
 from backend.models.inventory import InventoryItem, InventoryUnit
 from backend.models.inventory import InventoryStockMovement
 from backend.models.inventory_foundation import InventoryReservation, InventoryLot
-from backend.models.preparation import InventoryOperationRecipe, PreparationOrder
+from backend.models.preparation import InventoryOperationRecipe, InventoryOperationRecipeItem, PreparationOrder
 from backend.models.inventory_portion import InventoryPortionConfig
 from backend.schemas.inventory_portion import InventoryPortionConfigIn
 from backend.services.idempotency_service import IdempotencyService
@@ -24,7 +24,8 @@ def display_portion_name(row: InventoryPortionConfig) -> str:
     weight = format(row.portion_weight, "f").rstrip("0").rstrip(".") or "0"
     symbol = row.unit.symbol if row.unit else ""
     source_name = row.source_item.name if row.source_item else (row.output_item.name if row.output_item else "Porcao")
-    return f"{source_name} - porcao {weight} {symbol}" + (f" - {row.size}" if row.size else "")
+    size = getattr(row, "size", None)
+    return f"{source_name} - porcao {weight} {symbol}" + (f" - {size}" if size else "")
 
 
 class PortionConfigNotFound(DomainError):
@@ -130,7 +131,7 @@ class InventoryPortionConfigService:
             "output_item_name": display_portion_name(row),
             "source_item_name": row.source_item.name if row.source_item else None,
             "unit_symbol": row.unit.symbol if row.unit else None,
-            "usage": row.usage,
+            "usage": getattr(row, "usage", "mandatory"),
             "physical_stock": physical.get(row.output_item_id, 0),
             "reserved_stock": reserved.get(row.output_item_id, 0),
             "available_stock": max(0, physical.get(row.output_item_id, 0) - reserved.get(row.output_item_id, 0)),
@@ -161,7 +162,7 @@ class InventoryPortionConfigService:
                 "output_item_name": display_portion_name(row),
                 "source_item_name": row.source_item.name if row.source_item else None,
                 "unit_symbol": row.unit.symbol if row.unit else None,
-                "usage": row.usage,
+                "usage": getattr(row, "usage", "mandatory"),
                 "available_stock": available,
                 "in_preparation": in_preparation,
                 "min_stock": minimum,
@@ -184,7 +185,29 @@ class InventoryPortionConfigService:
             InventoryOperationRecipe.active.is_(True),
         ).order_by(InventoryOperationRecipe.version_number.desc(), InventoryOperationRecipe.id.desc()).first()
         if recipe is None:
-            raise PortionConfigConflict("Cadastre uma ficha operacional ativa para este produto porcionado antes de solicitar o preparo.")
+            recipe = InventoryOperationRecipe(
+                id=uuid.uuid4().hex,
+                tenant_id=self.tenant_id,
+                name=f"Porcionamento - {display_portion_name(row)}"[:180],
+                output_item_id=row.output_item_id,
+                output_unit_id=row.unit_id,
+                yield_quantity=Decimal("1"),
+                version_number=1,
+                instructions=f"Produzir a porção configurada de {row.source_item.name if row.source_item else 'materia-prima'}.",
+                created_by=self.actor_id,
+            )
+            self.db.add(recipe)
+            self.db.flush()
+            self.db.add(InventoryOperationRecipeItem(
+                id=uuid.uuid4().hex,
+                tenant_id=self.tenant_id,
+                recipe_id=recipe.id,
+                item_id=row.source_item_id,
+                unit_id=row.unit_id,
+                quantity=row.portion_weight,
+                position=0,
+            ))
+            self.db.flush()
         from backend.schemas.preparation import PreparationOrderIn
         from backend.services.preparation_service import PreparationService
         order_body = PreparationOrderIn(

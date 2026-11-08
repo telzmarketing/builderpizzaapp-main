@@ -19,6 +19,7 @@ export default function InventoryPortionStockPanel() {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [requestQuantities, setRequestQuantities] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   const load = () => {
@@ -33,13 +34,15 @@ export default function InventoryPortionStockPanel() {
   useEffect(() => { load(); }, []);
 
   const requestPreparation = async (row: InventoryPortionBalance) => {
-    const quantity = requestQuantities[row.config_id] || String(Math.max(0, numericQuantity(row.target_stock) - numericQuantity(row.available_stock)));
+    const quantity = requestQuantities[row.config_id] || String(Math.max(0, numericQuantity(row.target_stock) - numericQuantity(row.available_stock) - numericQuantity(row.in_preparation)));
     if (numericQuantity(quantity) <= 0) return;
     setSavingId(row.config_id);
     setError("");
+    setMessage("");
     try {
       await inventoryApi.requestPortionPreparation(row.config_id, { target_quantity: quantity, notes: "Solicitação criada no Estoque de Porcionamento." }, crypto.randomUUID());
       setRequestQuantities((current) => ({ ...current, [row.config_id]: "" }));
+      setMessage("Solicitação de porcionamento enviada para Preparo.");
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao solicitar porcionamento.");
@@ -61,12 +64,13 @@ export default function InventoryPortionStockPanel() {
           {rows.map((row) => <div key={row.config_id} className={`grid min-w-[1180px] grid-cols-[1.45fr_1.05fr_.55fr_.7fr_.7fr_.75fr_.7fr_1.1fr_1.25fr] items-center gap-2 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm ${numericQuantity(row.available_stock) <= numericQuantity(row.min_stock) ? "bg-amber-500/5" : ""}`}>
             <span className="font-bold text-cream">{row.output_item_name}<small className="block text-stone">mínimo {formatExactQuantity(row.min_stock)} · alvo {formatExactQuantity(row.target_stock)}</small></span>
             <span className="text-stone">{row.source_item_name || "-"}</span><span className="text-stone">{row.unit_symbol || "-"}</span><span className="text-stone">{formatExactQuantity(row.physical_stock)}</span><span className="text-stone">{formatExactQuantity(row.reserved_stock)}</span><span className={numericQuantity(row.available_stock) <= numericQuantity(row.min_stock) ? "font-bold text-amber-200" : "text-emerald-200"}>{formatExactQuantity(row.available_stock)}</span><span className="text-stone">{formatExactQuantity(row.in_preparation)}</span><span className="text-stone">{numericQuantity(row.unit_cost).toFixed(2)}{row.next_expiry ? ` · ${new Date(row.next_expiry).toLocaleDateString("pt-BR")}` : ""}</span>
-            <div className="flex min-w-0 items-center gap-1"><input aria-label={`Quantidade de ${row.output_item_name}`} className="w-16 rounded-md border border-surface-03 bg-surface-02 px-2 py-1 text-xs text-cream" type="number" min="0.000001" step="0.000001" value={requestQuantities[row.config_id] ?? ""} placeholder={formatExactQuantity(Math.max(0, numericQuantity(row.target_stock) - numericQuantity(row.available_stock)))} onChange={(event) => setRequestQuantities((current) => ({ ...current, [row.config_id]: event.target.value }))} disabled={row.usage === "direct"} /><button type="button" title="Solicitar Porcionamento" aria-label="Solicitar Porcionamento" className="inline-flex items-center gap-1 rounded-md bg-gold px-2 py-1 text-xs font-black text-black disabled:opacity-60" disabled={savingId === row.config_id || row.usage === "direct"} onClick={() => void requestPreparation(row)}>{savingId === row.config_id ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}<span className="hidden xl:inline">Solicitar</span></button></div>
+            <div className="flex min-w-0 items-center gap-1"><input aria-label={`Quantidade de ${row.output_item_name}`} className="w-16 rounded-md border border-surface-03 bg-surface-02 px-2 py-1 text-xs text-cream" type="number" min="0.000001" step="0.000001" value={requestQuantities[row.config_id] ?? ""} placeholder={formatExactQuantity(Math.max(0, numericQuantity(row.target_stock) - numericQuantity(row.available_stock) - numericQuantity(row.in_preparation)))} onChange={(event) => setRequestQuantities((current) => ({ ...current, [row.config_id]: event.target.value }))} disabled={row.usage === "direct"} /><button type="button" title="Solicitar Porcionamento" aria-label="Solicitar Porcionamento" className="inline-flex items-center gap-1 rounded-md bg-gold px-2 py-1 text-xs font-black text-black disabled:opacity-60" disabled={savingId === row.config_id || row.usage === "direct"} onClick={() => void requestPreparation(row)}>{savingId === row.config_id ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}<span className="hidden xl:inline">Solicitar</span></button></div>
           </div>)}
           {!rows.length && <p className="px-4 py-10 text-center text-sm text-stone">Nenhum produto porcionado ativo.</p>}
         </div>
       )}
       {error && <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>}
+      {message && <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{message}</p>}
     </section>
   );
 }

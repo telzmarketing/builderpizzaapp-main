@@ -104,7 +104,14 @@ export default function ProductRecipeEditor({ product, catalog, onClose }: { pro
         inventoryApi.portionConfigs().catch(() => [] as InventoryPortionConfig[]),
       ]);
       if (!mounted.current) return;
-      setRecipes(history.items); setLatestVersion(history.latest_version); setIngredients(overview.items ?? []); setUnits(unitList.items ?? []); setPortionConfigs(configuredPortions);
+      const foundationUnits = unitList.items ?? [];
+      const foundationIds = new Set(foundationUnits.map((unit) => unit.id));
+      const legacyUnits = (overview.units ?? []).filter((unit) => !foundationIds.has(unit.id)).map((unit) => ({
+        id: unit.id, name: unit.name, symbol: unit.symbol, code: null,
+        dimension: (unit.unit_type === "mass" || unit.unit_type === "volume" ? unit.unit_type : "count") as FoundationUnit["dimension"],
+        conversion_factor: null, has_weight: unit.has_weight, active: unit.active, version: 1,
+      }));
+      setRecipes(history.items); setLatestVersion(history.latest_version); setIngredients(overview.items ?? []); setUnits([...foundationUnits, ...legacyUnits]); setPortionConfigs(configuredPortions);
     } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : "Falha ao carregar fichas."); }
     finally { if (mounted.current) setLoading(false); }
   }
@@ -126,7 +133,7 @@ export default function ProductRecipeEditor({ product, catalog, onClose }: { pro
       items: [...(recipe.items ?? [])].sort((a, b) => a.position - b.position).map((row) => {
         const source = resolveRecipeIngredientSource(row, portionConfigs);
         return { inventory_item_id: row.inventory_item_id, supply_mode: source.supply_mode, portion_config_id: source.portion_config_id,
-        entered_quantity: row.entered_quantity != null ? String(row.entered_quantity) : "", entered_unit_id: row.entered_unit_id ?? "",
+        entered_quantity: row.entered_quantity != null ? String(row.entered_quantity) : "", entered_unit_id: row.entered_unit_id ?? (source.supply_mode === "portion" ? (portionConfigs.find((config) => config.id === source.portion_config_id)?.unit_id ?? "") : (ingredients.find((item) => item.id === row.inventory_item_id)?.unit_id ?? "")),
         waste_percent: String(row.waste_percent ?? "0"), notes: row.notes ?? "", public_name: row.public_name ?? "", show_public: row.show_public ?? false, allow_removal: row.allow_removal ?? false };
       }) });
   }
@@ -251,9 +258,10 @@ export default function ProductRecipeEditor({ product, catalog, onClose }: { pro
                     const [mode, id] = e.target.value.split(":");
                     if (mode === "portion") {
                       const config = portionConfigs.find((item) => item.id === id);
-                      if (config) updateIngredient(index, { supply_mode: "portion", portion_config_id: config.id, inventory_item_id: config.output_item_id, entered_unit_id: "", entered_quantity: "" });
+                      if (config) updateIngredient(index, { supply_mode: "portion", portion_config_id: config.id, inventory_item_id: config.output_item_id, entered_unit_id: config.unit_id, entered_quantity: "" });
                     } else {
-                      updateIngredient(index, { supply_mode: "direct", portion_config_id: "", inventory_item_id: id ?? "", entered_unit_id: "", entered_quantity: "" });
+                      const directItem = ingredients.find((item) => item.id === id);
+                      updateIngredient(index, { supply_mode: "direct", portion_config_id: "", inventory_item_id: id ?? "", entered_unit_id: directItem?.unit_id ?? "", entered_quantity: "" });
                     }
                   }}><option value="">Selecione</option><optgroup label="Item direto">{directOptions.map((item) => <option key={`direct:${item.id}`} value={`direct:${item.id}`}>{item.name}{!item.active ? " (inativo)" : ""}</option>)}</optgroup><optgroup label="Porção configurada">{selectablePortions.map((config) => { const compatible = config.id === row.portion_config_id || portionMatchesRecipeSize(config, selectedSizeLabel); return <option key={`portion:${config.id}`} value={`portion:${config.id}`} disabled={!compatible}>{config.output_item_name || config.source_item_name || "Porção"} — {formatRecipeQuantity(config.portion_weight)} {config.unit_symbol || ""}{config.size ? ` · ${config.size}` : ""}{!compatible ? " (selecione o tamanho correspondente)" : !config.active ? " (inativa)" : ""}</option>; })}</optgroup>{row.supply_mode === "portion" && row.portion_config_id && !selectedPortion && <option value={selectionValue}>Porção histórica indisponível</option>}</select></label>
                   <label className="text-xs">Quantidade de uso<input className={input} value={row.entered_quantity} onChange={(e) => updateIngredient(index, { entered_quantity: e.target.value })} inputMode="decimal" placeholder="Ex.: 150" /></label>

@@ -61,8 +61,8 @@ def test_portion_balance_uses_ledger_valid_reservations_and_open_preparation_wit
         result = service.balances()
 
         assert result == [{
-            "config_id": "config-a", "output_item_id": "portion-a", "output_item_name": "Mussarela 150 g",
-            "source_item_name": "Mussarela", "unit_symbol": "g", "physical_stock": Decimal("10.000000"),
+            "config_id": "config-a", "output_item_id": "portion-a", "output_item_name": "Mussarela - porcao 1 g",
+            "source_item_name": "Mussarela", "unit_symbol": "g", "usage": "mandatory", "physical_stock": Decimal("10.000000"),
             "reserved_stock": Decimal("2.000000"), "available_stock": Decimal("8.000000"),
             "in_preparation": Decimal("3.000000"), "min_stock": Decimal("3"),
             "target_stock": Decimal("10"), "active": True, "unit_cost": Decimal("2.00000000"), "next_expiry": None,
