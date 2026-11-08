@@ -112,7 +112,7 @@ def _body(**overrides):
 def test_create_generates_finished_good_without_replacing_source(monkeypatch):
     source = SimpleNamespace(
         id="raw-1", name="Mussarela", item_type="ingredient", active=True,
-        category_id="cat-1", default_location_id="loc-1",
+        category_id="cat-1", default_location_id="loc-1", portionable=True,
     )
     unit = SimpleNamespace(id="unit-g", symbol="g", active=True)
     db = _Db(source, unit)
@@ -129,6 +129,19 @@ def test_create_generates_finished_good_without_replacing_source(monkeypatch):
     assert row.source_item_id == source.id
     assert row.output_item_id == output.id
     assert source.item_type == "ingredient"
+
+
+def test_non_portionable_source_cannot_create_portion_config(monkeypatch):
+    source = SimpleNamespace(
+        id="raw-2", name="Tomate", item_type="ingredient", active=True, portionable=False,
+        category_id="cat-1", default_location_id="loc-1",
+    )
+    unit = SimpleNamespace(id="unit-g", symbol="g", active=True)
+    db = _Db(source, unit)
+    monkeypatch.setattr(portion_module, "IdempotencyService", _Idempotency)
+
+    with pytest.raises(PortionConfigInvalid, match="nao esta configurado para ser porcionado"):
+        InventoryPortionConfigService(db, "tenant-a", "admin-a").create(_body(source_item_id="raw-2"), "portion-create-no")
 
 
 def test_schema_rejects_target_below_minimum():

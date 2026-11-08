@@ -2162,6 +2162,7 @@ export interface InventoryItem {
   name: string;
   sku?: string | null;
   item_type: "ingredient" | "finished_good" | "packaging" | "supply";
+  portionable: boolean;
   category_id?: string | null;
   category_name?: string | null;
   unit_id?: string | null;

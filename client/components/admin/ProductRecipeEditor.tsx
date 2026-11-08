@@ -223,9 +223,11 @@ export default function ProductRecipeEditor({ product, catalog, onClose }: { pro
                 const selected = ingredients.find((item) => item.id === row.inventory_item_id);
                 const selectedPortion = portionConfigs.find((config) => config.id === row.portion_config_id);
                 const portionOutputIds = new Set(portionConfigs.map((config) => config.output_item_id));
+                const portionSourceIds = new Set(portionConfigs.map((config) => config.source_item_id));
                 const directOptions = ingredients.filter((item) => {
                   if (!(item.active || item.id === row.inventory_item_id)) return false;
-                  return !portionOutputIds.has(item.id) || (row.supply_mode === "direct" && item.id === row.inventory_item_id);
+                  const currentHistoricalSelection = row.supply_mode === "direct" && item.id === row.inventory_item_id;
+                  return (!item.portionable && !portionSourceIds.has(item.id) && !portionOutputIds.has(item.id)) || currentHistoricalSelection;
                 });
                 const selectedSizeLabel = product.sizes?.find((size) => size.id === form.product_size_id)?.label?.trim().toLowerCase() ?? "";
                 const selectablePortions = portionConfigs.filter((config) => {

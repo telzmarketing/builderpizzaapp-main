@@ -81,6 +81,8 @@ class RecipeSupplyResolver:
             )
             if item is None or not item.active:
                 raise FoundationInvalid("Insumo nao encontrado ou inativo neste tenant.")
+            if getattr(item, "portionable", False) is True:
+                raise FoundationInvalid("Este insumo esta configurado para porcionamento; selecione uma porcao configurada.")
             generated_portion = (
                 self.db.query(InventoryPortionConfig.id)
                 .filter(

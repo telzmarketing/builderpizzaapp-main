@@ -317,6 +317,8 @@ class InventoryPortionConfigService:
             raise PortionConfigInvalid("A materia-prima nao pode ser um produto porcionado.")
         if not source.active:
             raise PortionConfigInvalid("A materia-prima selecionada esta inativa.")
+        if getattr(source, "portionable", False) is not True:
+            raise PortionConfigInvalid("Este insumo nao esta configurado para ser porcionado. Altere o cadastro do insumo para 'Sim'.")
 
     def _ensure_not_duplicate(self, body: InventoryPortionConfigIn, exclude_id: str | None = None) -> None:
         query = self.db.query(InventoryPortionConfig).filter(

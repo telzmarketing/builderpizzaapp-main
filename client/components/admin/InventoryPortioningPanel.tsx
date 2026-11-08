@@ -77,7 +77,8 @@ export default function InventoryPortioningPanel() {
   }
 
   if (loading) return <div className="flex min-h-40 items-center justify-center text-stone"><Loader2 size={18} className="mr-2 animate-spin" />Carregando porcionamentos...</div>;
-  const rawItems = (overview?.items ?? []).filter((item: InventoryItem) => item.active && item.item_type !== "finished_good");
+  const configuredSourceIds = new Set(configs.map((config) => config.source_item_id));
+  const rawItems = (overview?.items ?? []).filter((item: InventoryItem) => item.active && item.item_type !== "finished_good" && (item.portionable || configuredSourceIds.has(item.id)));
 
   return <section className="space-y-5 rounded-lg border border-surface-03 bg-surface-02 p-5">
     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-lg font-black text-cream">Cadastro de Porcionamento</h2><p className="mt-1 text-sm text-stone">Configure a transformação de um insumo existente em produto porcionado. O cadastro não movimenta estoque.</p></div><button type="button" className={ghost} onClick={() => void load()}><RefreshCw size={15} /> Atualizar</button></div>

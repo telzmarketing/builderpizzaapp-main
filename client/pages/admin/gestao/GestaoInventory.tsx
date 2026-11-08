@@ -307,6 +307,7 @@ function ItemsSection({
   const [form, setForm] = useState({
     name: "",
     item_type: "ingredient" as InventoryItem["item_type"],
+    portionable: false,
     category_id: "",
     unit_id: "",
     weight_quantity: null as number | null,
@@ -343,6 +344,12 @@ function ItemsSection({
             <option value="packaging">Embalagem</option>
             <option value="supply">Material</option>
           </select>
+          <label className="block text-sm text-stone">Produto será porcionado para uso?
+            <select className={inputClass} value={form.portionable ? "yes" : "no"} onChange={(e) => setForm({ ...form, portionable: e.target.value === "yes" })}>
+              <option value="no">Não será porcionado para uso</option>
+              <option value="yes">Será porcionado para uso</option>
+            </select>
+          </label>
           <select className={inputClass} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
             <option value="">Categoria</option>
             {data.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
