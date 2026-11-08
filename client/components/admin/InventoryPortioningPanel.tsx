@@ -1,99 +1,25 @@
 import { useEffect, useState } from "react";
-import { Loader2, Plus, RefreshCw, X } from "lucide-react";
+import { Loader2, Pencil, Plus, RefreshCw, X } from "lucide-react";
 import { inventoryApi, type InventoryItem, type InventoryOverview, type InventoryPortionConfig } from "@/lib/api";
 
-const input = "w-full rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream outline-none placeholder:text-stone/70 focus:border-gold";
-const button = "inline-flex items-center justify-center gap-2 rounded-lg bg-gold px-3 py-2 text-sm font-black text-black disabled:cursor-not-allowed disabled:opacity-60";
-const ghost = "inline-flex items-center justify-center gap-2 rounded-lg border border-surface-03 px-3 py-2 text-sm font-bold text-stone hover:bg-surface-03 hover:text-cream";
-
-function key(prefix: string) {
-  return `${prefix}:${crypto.randomUUID()}`;
-}
-
-export function formatExactQuantity(value: number | string | null | undefined) {
-  if (value === null || value === undefined) return "-";
-  const normalized = String(value).trim().replace(",", ".");
-  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) return "-";
-
-  const sign = normalized.startsWith("-") ? "-" : "";
-  const unsigned = normalized.replace(/^[+-]/, "");
-  const [integerPart, fractionPart = ""] = unsigned.split(".");
-  const integer = integerPart.replace(/^0+(?=\d)/, "") || "0";
-  const fraction = fractionPart.replace(/0+$/, "");
-  return `${sign}${integer}${fraction ? `,${fraction}` : ""}`;
-}
+const input = "w-full rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream";
+const button = "inline-flex items-center justify-center gap-2 rounded-lg bg-gold px-3 py-2 text-sm font-black text-black disabled:opacity-60";
+const ghost = "inline-flex items-center justify-center gap-2 rounded-lg border border-surface-03 px-3 py-2 text-sm font-bold text-stone hover:text-cream";
+const opKey = (prefix: string) => `${prefix}:${crypto.randomUUID()}`;
+export function formatExactQuantity(value: number | string | null | undefined) { const n = String(value ?? "").trim().replace(",", "."); if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(n)) return "-"; const [i, f = ""] = n.replace(/^[+-]/, "").split("."); return `${n.startsWith("-") ? "-" : ""}${i.replace(/^0+(?=\d)/, "") || "0"}${f.replace(/0+$/, "") ? `,${f.replace(/0+$/, "")}` : ""}`; }
+type Form = { source_item_id: string; usage: InventoryPortionConfig["usage"]; portion_weight: string; unit_id: string; reference_fraction: string; size: string; min_stock: string; target_stock: string; shelf_life_days: string; yield_percent: string; loss_percent: string };
+const initial = (): Form => ({ source_item_id: "", usage: "mandatory", portion_weight: "", unit_id: "", reference_fraction: "0.5", size: "", min_stock: "0", target_stock: "0", shelf_life_days: "", yield_percent: "100", loss_percent: "0" });
 
 export default function InventoryPortioningPanel() {
-  const [overview, setOverview] = useState<InventoryOverview | null>(null);
-  const [configs, setConfigs] = useState<InventoryPortionConfig[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const [prepareQuantities, setPrepareQuantities] = useState<Record<string, string>>({});
-  const [form, setForm] = useState({ source_item_id: "", usage: "mandatory" as InventoryPortionConfig["usage"], portion_weight: "", unit_id: "", reference_fraction: "0.5", size: "", min_stock: "0", target_stock: "0", shelf_life_days: "", yield_percent: "100", loss_percent: "0" });
-
-  async function load() {
-    setLoading(true); setError("");
-    try {
-      const [nextOverview, nextConfigs] = await Promise.all([inventoryApi.overview(), inventoryApi.portionConfigs(true)]);
-      setOverview(nextOverview); setConfigs(nextConfigs);
-      if (!form.unit_id && nextOverview.units[0]) setForm((current) => ({ ...current, unit_id: nextOverview.units[0].id }));
-    } catch (err) { setError(err instanceof Error ? err.message : "Falha ao carregar porcionamentos."); }
-    finally { setLoading(false); }
-  }
-
+  const [overview, setOverview] = useState<InventoryOverview | null>(null), [configs, setConfigs] = useState<InventoryPortionConfig[]>([]), [form, setForm] = useState<Form>(initial), [editing, setEditing] = useState<InventoryPortionConfig | null>(null), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [message, setMessage] = useState(""), [error, setError] = useState(""), [quantities, setQuantities] = useState<Record<string, string>>({});
+  const update = (v: Partial<Form>) => setForm((x) => ({ ...x, ...v }));
+  async function load() { setLoading(true); try { const [o, c] = await Promise.all([inventoryApi.overview(), inventoryApi.portionConfigs(true)]); setOverview(o); setConfigs(c); if (!form.unit_id && o.units[0]) update({ unit_id: o.units[0].id }); } catch (e) { setError(e instanceof Error ? e.message : "Falha ao carregar porcionamentos."); } finally { setLoading(false); } }
   useEffect(() => { void load(); }, []);
-
-  async function save() {
-    setSaving(true); setMessage(""); setError("");
-    try {
-      if (!form.source_item_id || !form.portion_weight || !form.unit_id) throw new Error("Informe insumo, peso e unidade.");
-      const min = Number(form.min_stock); const target = Number(form.target_stock);
-      if (target < min) throw new Error("O estoque-alvo deve ser maior ou igual ao mínimo.");
-      await inventoryApi.createPortionConfig({ source_item_id: form.source_item_id, usage: form.usage, portion_weight: Number(form.portion_weight), unit_id: form.unit_id, reference_fraction: Number(form.reference_fraction), size: form.size || null, min_stock: min, target_stock: target, shelf_life_days: form.shelf_life_days ? Number(form.shelf_life_days) : null, yield_percent: Number(form.yield_percent), loss_percent: Number(form.loss_percent), active: true }, key("create-portion"));
-      setMessage("Configuração de porcionamento cadastrada.");
-      setForm((current) => ({ ...current, source_item_id: "", portion_weight: "", size: "", min_stock: "0", target_stock: "0", shelf_life_days: "" }));
-      await load();
-    } catch (err) { setError(err instanceof Error ? err.message : "Não foi possível cadastrar a configuração."); }
-    finally { setSaving(false); }
-  }
-
-  async function deactivate(config: InventoryPortionConfig) {
-    if (!window.confirm(`Desativar ${config.output_item_name || "esta configuração"}? O histórico será preservado.`)) return;
-    setSaving(true); setMessage(""); setError("");
-    try { await inventoryApi.deactivatePortionConfig(config.id, key(`deactivate-portion:${config.id}`)); setMessage("Configuração desativada."); await load(); }
-    catch (err) { setError(err instanceof Error ? err.message : "Não foi possível desativar."); }
-    finally { setSaving(false); }
-  }
-
-  async function requestPreparation(config: InventoryPortionConfig) {
-    const quantity = prepareQuantities[config.id]?.trim();
-    if (!quantity || Number(quantity.replace(",", ".")) <= 0) { setError("Informe uma quantidade de porções maior que zero."); return; }
-    setSaving(true); setMessage(""); setError("");
-    try { await inventoryApi.requestPortionPreparation(config.id, { target_quantity: quantity, scheduled_for: null, notes: "Solicitação criada no Cadastro de Porcionamento", expected_version: 0 }, key(`prepare-portion:${config.id}`)); setMessage("Ordem de preparo criada. A aprovação e o envio ao KDS continuam autorizados no módulo Preparo."); setPrepareQuantities((current) => ({ ...current, [config.id]: "" })); }
-    catch (err) { setError(err instanceof Error ? err.message : "Não foi possível criar a ordem de preparo."); }
-    finally { setSaving(false); }
-  }
-
+  function edit(c: InventoryPortionConfig) { setEditing(c); setForm({ source_item_id: c.source_item_id, usage: c.usage, portion_weight: String(c.portion_weight), unit_id: c.unit_id, reference_fraction: String(c.reference_fraction), size: c.size || "", min_stock: String(c.min_stock), target_stock: String(c.target_stock), shelf_life_days: c.shelf_life_days == null ? "" : String(c.shelf_life_days), yield_percent: String(c.yield_percent), loss_percent: String(c.loss_percent) }); }
+  function cancel() { setEditing(null); setForm((x) => ({ ...x, source_item_id: "", portion_weight: "", size: "" })); }
+  async function save() { setSaving(true); setError(""); try { if (!form.source_item_id || !form.portion_weight || !form.unit_id) throw new Error("Informe insumo, peso e unidade."); const min = Number(form.min_stock), target = Number(form.target_stock); if (target < min) throw new Error("O estoque-alvo deve ser maior ou igual ao minimo."); const p = { source_item_id: form.source_item_id, usage: form.usage, portion_weight: Number(form.portion_weight), unit_id: form.unit_id, reference_fraction: Number(form.reference_fraction), size: form.size || null, min_stock: min, target_stock: target, shelf_life_days: form.shelf_life_days ? Number(form.shelf_life_days) : null, yield_percent: Number(form.yield_percent), loss_percent: Number(form.loss_percent), active: true }; if (editing) await inventoryApi.updatePortionConfig(editing.id, p, opKey(`update:${editing.id}`)); else await inventoryApi.createPortionConfig(p, opKey("create")); setMessage(editing ? "Configuracao atualizada." : "Configuracao cadastrada."); cancel(); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Nao foi possivel salvar."); } finally { setSaving(false); } }
+  async function remove(c: InventoryPortionConfig) { if (!confirm(`Desativar ${c.output_item_name || "esta configuracao"}?`)) return; setSaving(true); try { await inventoryApi.deactivatePortionConfig(c.id, opKey(`delete:${c.id}`)); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Nao foi possivel desativar."); } finally { setSaving(false); } }
   if (loading) return <div className="flex min-h-40 items-center justify-center text-stone"><Loader2 size={18} className="mr-2 animate-spin" />Carregando porcionamentos...</div>;
-  const configuredSourceIds = new Set(configs.map((config) => config.source_item_id));
-  const rawItems = (overview?.items ?? []).filter((item: InventoryItem) => item.active && item.item_type !== "finished_good" && (item.portionable || configuredSourceIds.has(item.id)));
-
-  return <section className="space-y-5 rounded-lg border border-surface-03 bg-surface-02 p-5">
-    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-lg font-black text-cream">Cadastro de Porcionamento</h2><p className="mt-1 text-sm text-stone">Configure a transformação de um insumo existente em produto porcionado. O cadastro não movimenta estoque.</p></div><button type="button" className={ghost} onClick={() => void load()}><RefreshCw size={15} /> Atualizar</button></div>
-    <div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]">
-      <div className="rounded-lg border border-surface-03 bg-surface-01 p-4"><h3 className="font-black text-cream">Nova configuração</h3><div className="mt-4 space-y-3">
-        <label className="block text-xs text-stone">Insumo de origem<select className={input} value={form.source_item_id} onChange={(e) => setForm({ ...form, source_item_id: e.target.value })}><option value="">Selecione o insumo</option>{rawItems.map((item) => <option key={item.id} value={item.id}>{item.name}{item.unit_symbol ? ` (${item.unit_symbol})` : ""}</option>)}</select></label>
-        <label className="block text-xs text-stone">Uso operacional<select className={input} value={form.usage} onChange={(e) => setForm({ ...form, usage: e.target.value as InventoryPortionConfig["usage"] })}><option value="mandatory">Porcionamento obrigatório</option><option value="optional">Porcionamento opcional</option><option value="direct">Utilização direta</option></select></label>
-        <div className="grid grid-cols-2 gap-3"><label className="block text-xs text-stone">Peso padrão<input className={input} type="number" min="0.000001" step="0.000001" value={form.portion_weight} onChange={(e) => setForm({ ...form, portion_weight: e.target.value })} /></label><label className="block text-xs text-stone">Unidade<select className={input} value={form.unit_id} onChange={(e) => setForm({ ...form, unit_id: e.target.value })}>{(overview?.units ?? []).map((unit) => <option key={unit.id} value={unit.id}>{unit.name} ({unit.symbol})</option>)}</select></label></div>
-        <div className="grid grid-cols-2 gap-3"><label className="block text-xs text-stone">Referência<select className={input} value={form.reference_fraction} onChange={(e) => setForm({ ...form, reference_fraction: e.target.value })}><option value="0.5">Meia pizza</option><option value="1">Pizza inteira</option></select></label><label className="block text-xs text-stone">Tamanho<input className={input} placeholder="Ex.: Grande" value={form.size} onChange={(e) => setForm({ ...form, size: e.target.value })} /></label></div>
-        <div className="grid grid-cols-2 gap-3"><label className="block text-xs text-stone">Estoque mínimo<input className={input} type="number" min="0" step="0.001" value={form.min_stock} onChange={(e) => setForm({ ...form, min_stock: e.target.value })} /></label><label className="block text-xs text-stone">Estoque-alvo<input className={input} type="number" min="0" step="0.001" value={form.target_stock} onChange={(e) => setForm({ ...form, target_stock: e.target.value })} /></label></div>
-        <div className="grid grid-cols-3 gap-3"><label className="block text-xs text-stone">Validade (dias)<input className={input} type="number" min="0" value={form.shelf_life_days} onChange={(e) => setForm({ ...form, shelf_life_days: e.target.value })} /></label><label className="block text-xs text-stone">Rendimento %<input className={input} type="number" min="0.01" max="100" step="0.01" value={form.yield_percent} onChange={(e) => setForm({ ...form, yield_percent: e.target.value })} /></label><label className="block text-xs text-stone">Perda %<input className={input} type="number" min="0" max="99.99" step="0.01" value={form.loss_percent} onChange={(e) => setForm({ ...form, loss_percent: e.target.value })} /></label></div>
-        <button type="button" className={button} disabled={saving || !rawItems.length} onClick={() => void save()}><Plus size={15} /> Cadastrar porcionamento</button>
-      </div></div>
-      <div className="overflow-x-auto rounded-lg border border-surface-03"><div className="grid min-w-[1050px] grid-cols-[1.3fr_1.2fr_.8fr_.8fr_1fr_.8fr_1.2fr_auto] gap-3 bg-surface-01 px-4 py-3 text-xs font-black uppercase tracking-wide text-stone"><span>Porção</span><span>Matéria-prima</span><span>Peso</span><span>Referência</span><span>Uso</span><span>Estoque</span><span>Solicitar preparo</span><span /></div>{configs.map((config) => <div key={config.id} className="grid min-w-[1050px] grid-cols-[1.3fr_1.2fr_.8fr_.8fr_1fr_.8fr_1.2fr_auto] items-center gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm"><span className="font-bold text-cream">{config.output_item_name}<small className="block text-stone">{config.output_item_sku || ""}</small></span><span className="text-stone">{config.source_item_name}</span><span className="text-stone">{formatExactQuantity(config.portion_weight)} {config.unit_symbol || ""}</span><span className="text-stone">{config.reference_fraction === 0.5 ? "Meia pizza" : "Inteira"}{config.size ? ` · ${config.size}` : ""}</span><span className="text-stone">{config.usage === "mandatory" ? "Obrigatório" : config.usage === "optional" ? "Opcional" : "Direto"}</span><span className="text-stone">{formatExactQuantity(config.min_stock)} / {formatExactQuantity(config.target_stock)}</span><div className="flex items-center gap-2"><input className={`${input} max-w-24`} aria-label={`Quantidade para ${config.output_item_name}`} inputMode="decimal" placeholder="Porções" value={prepareQuantities[config.id] || ""} onChange={(event) => setPrepareQuantities((current) => ({ ...current, [config.id]: event.target.value }))} /><button type="button" className={ghost} disabled={saving || config.usage === "direct"} onClick={() => void requestPreparation(config)}>Solicitar</button></div><button type="button" className="text-stone hover:text-red-300" disabled={saving} onClick={() => void deactivate(config)} aria-label="Desativar configuração"><X size={16} /></button></div>)}{!configs.length && <p className="px-4 py-10 text-center text-sm text-stone">Nenhuma configuração de porcionamento cadastrada.</p>}</div>
-    </div>
-    {message && <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{message}</p>}{error && <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>}
-  </section>;
+  const items = (overview?.items ?? []).filter((i: InventoryItem) => i.active && i.item_type !== "finished_good");
+  return <section className="space-y-5 rounded-lg border border-surface-03 bg-surface-02 p-5"><div className="flex items-center justify-between"><div><h2 className="text-lg font-black text-cream">Cadastro de Porcionamento</h2><p className="text-sm text-stone">Todos os insumos cadastrados aparecem para escolha.</p></div><button type="button" className={ghost} onClick={() => void load()}><RefreshCw size={15} /> Atualizar</button></div><div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]"><div className="rounded-lg border border-surface-03 bg-surface-01 p-4"><h3 className="font-black text-cream">{editing ? "Editar configuracao" : "Nova configuracao"}</h3>{editing && <button type="button" className={`${ghost} mt-2`} onClick={cancel}>Cancelar edicao</button>}<div className="mt-4 space-y-3"><label className="block text-xs text-stone">Insumo de origem<select className={input} value={form.source_item_id} onChange={(e) => update({ source_item_id: e.target.value })}><option value="">Selecione o insumo</option>{items.map((i) => <option key={i.id} value={i.id}>{i.name}{i.unit_symbol ? ` (${i.unit_symbol})` : ""}</option>)}</select></label><label className="block text-xs text-stone">Uso operacional<select className={input} value={form.usage} onChange={(e) => update({ usage: e.target.value as Form["usage"] })}><option value="mandatory">Porcionamento obrigatorio</option><option value="optional">Porcionamento opcional</option><option value="direct">Utilizacao direta</option></select></label><div className="grid grid-cols-2 gap-3"><label className="text-xs text-stone">Peso<input className={input} type="number" min="0.000001" step="0.000001" value={form.portion_weight} onChange={(e) => update({ portion_weight: e.target.value })} /></label><label className="text-xs text-stone">Unidade<select className={input} value={form.unit_id} onChange={(e) => update({ unit_id: e.target.value })}>{(overview?.units ?? []).map((u) => <option key={u.id} value={u.id}>{u.name} ({u.symbol})</option>)}</select></label></div><div className="grid grid-cols-2 gap-3"><label className="text-xs text-stone">Referencia<select className={input} value={form.reference_fraction} onChange={(e) => update({ reference_fraction: e.target.value })}><option value="0.5">Meia pizza</option><option value="1">Pizza inteira</option></select></label><label className="text-xs text-stone">Tamanho<input className={input} value={form.size} onChange={(e) => update({ size: e.target.value })} /></label></div><div className="grid grid-cols-2 gap-3"><label className="text-xs text-stone">Estoque minimo<input className={input} type="number" value={form.min_stock} onChange={(e) => update({ min_stock: e.target.value })} /></label><label className="text-xs text-stone">Estoque-alvo<input className={input} type="number" value={form.target_stock} onChange={(e) => update({ target_stock: e.target.value })} /></label></div><button type="button" className={button} disabled={saving || !items.length} onClick={() => void save()}><Plus size={15} /> {editing ? "Salvar alteracao" : "Cadastrar porcionamento"}</button></div></div><div className="overflow-x-auto rounded-lg border border-surface-03"><div className="grid min-w-[900px] grid-cols-[1.5fr_1.2fr_.8fr_.8fr_1.4fr_auto] gap-3 bg-surface-01 px-4 py-3 text-xs font-black uppercase tracking-wide text-stone"><span>Porcao</span><span>Materia-prima</span><span>Peso</span><span>Uso</span><span>Acoes</span><span /></div>{configs.map((c) => <div key={c.id} className="grid min-w-[900px] grid-cols-[1.5fr_1.2fr_.8fr_.8fr_1.4fr_auto] items-center gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm"><span className="font-bold text-cream">{c.output_item_name}</span><span className="text-stone">{c.source_item_name}</span><span className="text-stone">{formatExactQuantity(c.portion_weight)} {c.unit_symbol || ""}</span><span className="text-stone">{c.usage}</span><div className="flex gap-2"><button type="button" className={ghost} disabled={saving} onClick={() => edit(c)}><Pencil size={14} /> Editar</button><button type="button" className="rounded-lg p-2 text-stone hover:text-red-300" disabled={saving} onClick={() => void remove(c)}><X size={16} /></button></div><span /></div>)}</div></div>{message && <p className="text-emerald-300">{message}</p>}{error && <p className="text-red-300">{error}</p>}</section>;
 }

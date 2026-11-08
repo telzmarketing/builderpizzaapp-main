@@ -125,13 +125,15 @@ def test_create_generates_finished_good_without_replacing_source(monkeypatch):
     assert output.tenant_id == "tenant-a"
     assert output.id != source.id
     assert output.name.startswith("Mussarela - porcao")
+    assert "150.000000" not in output.name
+    assert "1.5E+2" not in output.name
     assert output.sku.startswith("POR-")
     assert row.source_item_id == source.id
     assert row.output_item_id == output.id
     assert source.item_type == "ingredient"
 
 
-def test_non_portionable_source_cannot_create_portion_config(monkeypatch):
+def test_selecting_source_in_portioning_enables_portionable_flag(monkeypatch):
     source = SimpleNamespace(
         id="raw-2", name="Tomate", item_type="ingredient", active=True, portionable=False,
         category_id="cat-1", default_location_id="loc-1",
@@ -140,8 +142,8 @@ def test_non_portionable_source_cannot_create_portion_config(monkeypatch):
     db = _Db(source, unit)
     monkeypatch.setattr(portion_module, "IdempotencyService", _Idempotency)
 
-    with pytest.raises(PortionConfigInvalid, match="nao esta configurado para ser porcionado"):
-        InventoryPortionConfigService(db, "tenant-a", "admin-a").create(_body(source_item_id="raw-2"), "portion-create-no")
+    InventoryPortionConfigService(db, "tenant-a", "admin-a").create(_body(source_item_id="raw-2"), "portion-create-no")
+    assert source.portionable is True
 
 
 def test_schema_rejects_target_below_minimum():

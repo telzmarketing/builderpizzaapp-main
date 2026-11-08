@@ -317,8 +317,10 @@ class InventoryPortionConfigService:
             raise PortionConfigInvalid("A materia-prima nao pode ser um produto porcionado.")
         if not source.active:
             raise PortionConfigInvalid("A materia-prima selecionada esta inativa.")
-        if getattr(source, "portionable", False) is not True:
-            raise PortionConfigInvalid("Este insumo nao esta configurado para ser porcionado. Altere o cadastro do insumo para 'Sim'.")
+        # Selecting an item in this screen is the explicit operational choice
+        # that enables portioning for it. Keep the cadastro flag synchronized
+        # without requiring a second, blocking step in another screen.
+        source.portionable = True
 
     def _ensure_not_duplicate(self, body: InventoryPortionConfigIn, exclude_id: str | None = None) -> None:
         query = self.db.query(InventoryPortionConfig).filter(
@@ -340,7 +342,8 @@ class InventoryPortionConfigService:
 
     @staticmethod
     def _output_name(source_name: str, body: InventoryPortionConfigIn, symbol: str) -> str:
-        suffix = f"{body.portion_weight.normalize()} {symbol}"
+        weight = format(body.portion_weight, "f").rstrip("0").rstrip(".") or "0"
+        suffix = f"{weight} {symbol}"
         if body.size:
             suffix += f" - {body.size}"
         return f"{source_name} - porcao {suffix}"[:180]

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, ChefHat, Database, Layers3, Loader2, Package, Plus, RefreshCw, Settings, ShoppingCart, Trash2, Truck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChefHat, Database, Layers3, Loader2, Package, Pencil, Plus, RefreshCw, Settings, ShoppingCart, Trash2, Truck } from "lucide-react";
 import { AdminPageTabs, type AdminPageTab } from "@/components/admin/AdminPageChrome";
 import AdminGestao from "./AdminGestao";
 import InventoryFoundationPanel from "@/components/admin/InventoryFoundationPanel";
@@ -317,9 +317,10 @@ function ItemsSection({
     notes: "",
     active: true,
   });
+  const [editing, setEditing] = useState<InventoryItem | null>(null);
 
   const save = () => run(
-    () => inventoryApi.createItem({
+    () => (editing ? inventoryApi.updateItem(editing.id, {
       ...form,
       category_id: form.category_id || null,
       unit_id: form.unit_id || null,
@@ -327,14 +328,24 @@ function ItemsSection({
       weight_unit_id: form.weight_unit_id || null,
       default_location_id: form.default_location_id || null,
       notes: form.notes || null,
-    }),
-    "Item de estoque cadastrado.",
-  ).then(() => setForm({ ...form, name: "", notes: "", weight_quantity: null, weight_unit_id: "" }));
+    }) : inventoryApi.createItem({
+      ...form,
+      category_id: form.category_id || null,
+      unit_id: form.unit_id || null,
+      weight_quantity: form.weight_quantity,
+      weight_unit_id: form.weight_unit_id || null,
+      default_location_id: form.default_location_id || null,
+      notes: form.notes || null,
+    })), editing ? "Item de estoque atualizado." : "Item de estoque cadastrado.",
+  ).then(() => { setEditing(null); setForm({ ...form, name: "", notes: "", weight_quantity: null, weight_unit_id: "" }); });
+
+  const editItem = (item: InventoryItem) => { setEditing(item); setForm({ name: item.name, item_type: item.item_type, portionable: item.portionable, category_id: item.category_id || "", unit_id: item.unit_id || "", weight_quantity: item.weight_quantity ?? null, weight_unit_id: item.weight_unit_id || "", default_location_id: item.default_location_id || "", min_stock: item.min_stock, notes: item.notes || "", active: item.active }); };
 
   return (
     <div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]">
       <div className="rounded-lg border border-surface-03 bg-surface-01 p-4">
-        <h3 className="text-sm font-black uppercase tracking-wide text-parchment">Novo item</h3>
+        <h3 className="text-sm font-black uppercase tracking-wide text-parchment">{editing ? "Editar item" : "Novo item"}</h3>
+        {editing && <button type="button" className={ghostButtonClass} onClick={() => { setEditing(null); setForm({ ...form, name: "", notes: "" }); }}>Cancelar edição</button>}
         <div className="mt-4 space-y-3">
           <input className={inputClass} placeholder="Nome do insumo ou produto de estoque" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           <p className="rounded-md border border-dashed border-surface-03 px-3 py-2 text-xs text-stone">{form.item_type === "ingredient" ? "O SKU será gerado automaticamente ao cadastrar o insumo." : "O SKU automático é aplicado aos insumos; este tipo de item pode usar SKU integrado, se necessário."}</p>
@@ -387,7 +398,7 @@ function ItemsSection({
             <span className="text-stone">{item.category_name || "-"}</span>
             <span className={(item.current_stock ?? 0) <= item.min_stock ? "font-bold text-amber-300" : "text-stone"}>{item.current_stock ?? 0}</span>
             <span className="text-stone">{item.min_stock}</span>
-            <DeleteButton disabled={saving} onClick={() => run(() => inventoryApi.removeItem(item.id), "Item removido.")} />
+            <div className="flex gap-1"><button type="button" className="rounded-lg p-2 text-stone hover:text-cream" disabled={saving} onClick={() => editItem(item)} title="Editar"><Pencil size={15} /></button><DeleteButton disabled={saving} onClick={() => run(() => inventoryApi.removeItem(item.id), "Item removido.")} /></div>
           </div>
         ))}
         {!data.items.length && <EmptyRow text="Nenhum item cadastrado." />}
@@ -413,6 +424,7 @@ function BaseSection({
         placeholder="Ex: Laticinios"
         rows={data.categories}
         create={(name) => inventoryApi.createCategory({ name, description: null, active: true })}
+        update={(id, name) => inventoryApi.updateCategory(id, { name, description: null, active: true })}
         remove={(id) => inventoryApi.removeCategory(id)}
         saving={saving}
         run={run}
@@ -422,6 +434,7 @@ function BaseSection({
         placeholder="Ex: Camara fria"
         rows={data.locations}
         create={(name) => inventoryApi.createLocation({ name, description: null, active: true })}
+        update={(id, name) => inventoryApi.updateLocation(id, { name, description: null, active: true })}
         remove={(id) => inventoryApi.removeLocation(id)}
         saving={saving}
         run={run}
@@ -441,14 +454,16 @@ function UnitsPanel({
   run: (action: () => Promise<unknown>, success: string) => Promise<void>;
 }) {
   const [form, setForm] = useState({ name: "", symbol: "", unit_type: "unit" as InventoryUnit["unit_type"], has_weight: false });
+  const [editing, setEditing] = useState<InventoryUnit | null>(null);
   const save = () => run(
-    () => inventoryApi.createUnit({ ...form, active: true }),
-    "Unidade cadastrada.",
-  ).then(() => setForm({ name: "", symbol: "", unit_type: "unit", has_weight: false }));
+    () => editing ? inventoryApi.updateUnit(editing.id, { ...form, active: editing.active }) : inventoryApi.createUnit({ ...form, active: true }),
+    editing ? "Unidade atualizada." : "Unidade cadastrada.",
+  ).then(() => { setEditing(null); setForm({ name: "", symbol: "", unit_type: "unit", has_weight: false }); });
 
   return (
     <div className="rounded-lg border border-surface-03 bg-surface-01 p-4">
-      <h3 className="text-sm font-black uppercase tracking-wide text-parchment">Unidades</h3>
+      <h3 className="text-sm font-black uppercase tracking-wide text-parchment">{editing ? "Editar unidade" : "Unidades"}</h3>
+      {editing && <button type="button" className={ghostButtonClass} onClick={() => { setEditing(null); setForm({ name: "", symbol: "", unit_type: "unit", has_weight: false }); }}>Cancelar edição</button>}
       <div className="mt-4 space-y-3">
         <input className={inputClass} placeholder="Nome" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         <input className={inputClass} placeholder="Sigla, ex: kg" value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value })} />
@@ -461,7 +476,7 @@ function UnitsPanel({
         <label className="flex items-center gap-2 text-sm text-stone"><input type="checkbox" checked={form.has_weight} onChange={(e) => setForm({ ...form, has_weight: e.target.checked })} /> Esta unidade terá peso por unidade</label>
         <button type="button" disabled={saving || !form.name || !form.symbol} onClick={save} className={buttonClass}><Plus size={15} /> Adicionar</button>
       </div>
-      <ListRows rows={units.map((item) => ({ id: item.id, name: `${item.name} (${item.symbol})` }))} saving={saving} remove={(id) => run(() => inventoryApi.removeUnit(id), "Unidade removida.")} />
+      <ListRows rows={units.map((item) => ({ id: item.id, name: `${item.name} (${item.symbol})`, edit: () => { setEditing(item); setForm({ name: item.name, symbol: item.symbol, unit_type: item.unit_type, has_weight: item.has_weight }); } }))} saving={saving} remove={(id) => run(() => inventoryApi.removeUnit(id), "Unidade removida.")} />
     </div>
   );
 }
@@ -472,6 +487,7 @@ function SimplePanel<T extends { id: string; name: string }>({
   rows,
   create,
   remove,
+  update,
   saving,
   run,
 }: {
@@ -480,11 +496,13 @@ function SimplePanel<T extends { id: string; name: string }>({
   rows: T[];
   create: (name: string) => Promise<unknown>;
   remove: (id: string) => Promise<unknown>;
+  update?: (id: string, name: string) => Promise<unknown>;
   saving: boolean;
   run: (action: () => Promise<unknown>, success: string) => Promise<void>;
 }) {
   const [name, setName] = useState("");
-  const save = () => run(() => create(name), `${title} atualizado.`).then(() => setName(""));
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const save = () => run(() => editingId && update ? update(editingId, name) : create(name), `${title} atualizado.`).then(() => { setName(""); setEditingId(null); });
   return (
     <div className="rounded-lg border border-surface-03 bg-surface-01 p-4">
       <h3 className="text-sm font-black uppercase tracking-wide text-parchment">{title}</h3>
@@ -492,7 +510,7 @@ function SimplePanel<T extends { id: string; name: string }>({
         <input className={inputClass} placeholder={placeholder} value={name} onChange={(e) => setName(e.target.value)} />
         <button type="button" disabled={saving || !name} onClick={save} className={buttonClass}><Plus size={15} /></button>
       </div>
-      <ListRows rows={rows} saving={saving} remove={(id) => run(() => remove(id), `${title} removido.`)} />
+      <ListRows rows={rows.map((row) => ({ ...row, edit: update ? () => { setEditingId(row.id); setName(row.name); } : undefined }))} saving={saving} remove={(id) => run(() => remove(id), `${title} removido.`)} />
     </div>
   );
 }
@@ -507,15 +525,17 @@ function SuppliersSection({
   run: (action: () => Promise<unknown>, success: string) => Promise<void>;
 }) {
   const [form, setForm] = useState({ name: "", document: "", phone: "", email: "", notes: "" });
+  const [editing, setEditing] = useState<InventorySupplier | null>(null);
   const save = () => run(
-    () => inventoryApi.createSupplier({ ...form, active: true }),
-    "Fornecedor cadastrado.",
-  ).then(() => setForm({ name: "", document: "", phone: "", email: "", notes: "" }));
+    () => editing ? inventoryApi.updateSupplier(editing.id, { ...form, active: editing.active }) : inventoryApi.createSupplier({ ...form, active: true }),
+    editing ? "Fornecedor atualizado." : "Fornecedor cadastrado.",
+  ).then(() => { setEditing(null); setForm({ name: "", document: "", phone: "", email: "", notes: "" }); });
 
   return (
     <div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]">
       <div className="rounded-lg border border-surface-03 bg-surface-01 p-4">
-        <h3 className="text-sm font-black uppercase tracking-wide text-parchment">Novo fornecedor</h3>
+        <h3 className="text-sm font-black uppercase tracking-wide text-parchment">{editing ? "Editar fornecedor" : "Novo fornecedor"}</h3>
+        {editing && <button type="button" className={ghostButtonClass} onClick={() => { setEditing(null); setForm({ name: "", document: "", phone: "", email: "", notes: "" }); }}>Cancelar edição</button>}
         <div className="mt-4 space-y-3">
           <input className={inputClass} placeholder="Nome" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           <input className={inputClass} placeholder="Documento" value={form.document} onChange={(e) => setForm({ ...form, document: e.target.value })} />
@@ -532,7 +552,7 @@ function SuppliersSection({
             <span className="font-bold text-cream">{item.name}</span>
             <span className="text-stone">{item.phone || item.email || "-"}</span>
             <span className="text-stone">{item.document || "-"}</span>
-            <DeleteButton disabled={saving} onClick={() => run(() => inventoryApi.removeSupplier(item.id), "Fornecedor removido.")} />
+            <div className="flex gap-1"><button type="button" className="rounded-lg p-2 text-stone hover:text-cream" disabled={saving} onClick={() => { setEditing(item); setForm({ name: item.name, document: item.document || "", phone: item.phone || "", email: item.email || "", notes: item.notes || "" }); }} title="Editar"><Pencil size={15} /></button><DeleteButton disabled={saving} onClick={() => run(() => inventoryApi.removeSupplier(item.id), "Fornecedor removido.")} /></div>
           </div>
         ))}
         {!data.suppliers.length && <EmptyRow text="Nenhum fornecedor cadastrado." />}
@@ -739,7 +759,7 @@ function ListRows({
   saving,
   remove,
 }: {
-  rows: Array<{ id: string; name: string }>;
+  rows: Array<{ id: string; name: string; edit?: () => void }>;
   saving: boolean;
   remove: (id: string) => void;
 }) {
@@ -748,7 +768,7 @@ function ListRows({
       {rows.map((row) => (
         <div key={row.id} className="flex items-center justify-between gap-3 rounded-lg border border-surface-03 bg-surface-02 px-3 py-2 text-sm">
           <span className="font-semibold text-cream">{row.name}</span>
-          <DeleteButton disabled={saving} onClick={() => remove(row.id)} />
+          <div className="flex gap-1">{row.edit && <button type="button" className="rounded-lg p-2 text-stone hover:text-cream" disabled={saving} onClick={row.edit} title="Editar"><Pencil size={15} /></button>}<DeleteButton disabled={saving} onClick={() => remove(row.id)} /></div>
         </div>
       ))}
       {!rows.length && <p className="rounded-lg border border-surface-03 bg-surface-02 px-3 py-4 text-center text-sm text-stone">Sem registros.</p>}

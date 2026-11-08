@@ -37,9 +37,17 @@ export function resolveRecipeIngredientSource(row: Pick<OperationalRecipeIngredi
 
 export function portionMatchesRecipeSize(config: Pick<InventoryPortionConfig, "size">, selectedSizeLabel: string) {
   const selected = selectedSizeLabel.trim().toLowerCase();
-  // A sized portion must be bound to the same sized recipe. Generic recipes
-  // may use only portions that are also generic, matching server validation.
-  return !config.size ? true : Boolean(selected) && config.size.trim().toLowerCase() === selected;
+  // A recipe without a size is still valid. When both sides have a size,
+  // retain the safety check for mismatched recipes.
+  return !config.size || !selected || config.size.trim().toLowerCase() === selected;
+}
+
+export function formatRecipeQuantity(value: number | string | null | undefined) {
+  const normalized = String(value ?? "").trim().replace(",", ".");
+  if (!normalized || !/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(normalized)) return "-";
+  const number = Number(normalized);
+  if (!Number.isFinite(number)) return "-";
+  return number.toLocaleString("pt-BR", { useGrouping: false, maximumFractionDigits: 6 });
 }
 
 export function RecipePrivateImage({ url }: { url: string }) {
@@ -252,7 +260,7 @@ export default function ProductRecipeEditor({ product, catalog, onClose }: { pro
                   <label className="text-xs">Unidade de uso<select className={input} value={row.entered_unit_id} onChange={(e) => updateIngredient(index, { entered_unit_id: e.target.value })}><option value="">Selecione a unidade de uso</option>{units.filter((unit) => (unit.active && unit.dimension) || unit.id === row.entered_unit_id).map((unit) => <option key={unit.id} value={unit.id}>{unit.name} ({unit.symbol})</option>)}</select></label>
                   <label className="text-xs">Perda tecnica (%)<input className={input} value={row.waste_percent} onChange={(e) => updateIngredient(index, { waste_percent: e.target.value })} inputMode="decimal" /></label></div>
                   <p className="text-xs text-stone">{row.supply_mode === "portion" && selectedPortion ? `Porção de ${selectedPortion.source_item_name || "insumo"} → ${selectedPortion.output_item_name || selected?.name || "produto porcionado"}. ` : `Item direto${selected ? `: ${selected.name}. ` : ". "}`}Unidade base do estoque: {selected?.unit_symbol ?? selectedPortion?.unit_symbol ?? "nao definida"}. Informe a quantidade e a unidade de uso da receita; a conversão para a unidade base é validada no servidor.</p>
-                  {!selectedSizeLabel && portionConfigs.some((config) => config.active && config.size) && <p className="text-xs text-amber-300">Selecione um tamanho da ficha para utilizar porcoes especificas.</p>}
+                  {!selectedSizeLabel && portionConfigs.some((config) => config.active && config.size) && <p className="text-xs text-stone">A porcao configurada selecionada sera usada conforme o cadastro, mesmo sem tamanho especifico na ficha.</p>}
                   <label className="block text-xs">Observacao do ingrediente<input className={input} value={row.notes} onChange={(e) => updateIngredient(index, { notes: e.target.value })} /></label>
                   <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={row.show_public} onChange={(e) => updateIngredient(index, { show_public: e.target.checked })} />Exibir nome comercial no catalogo</label>
                   <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={row.allow_removal} onChange={(e) => updateIngredient(index, { allow_removal: e.target.checked })} />Permitir retirada / substituicao deste ingrediente</label>

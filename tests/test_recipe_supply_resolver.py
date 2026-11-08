@@ -59,6 +59,14 @@ def test_portion_source_must_match_recipe_size():
     assert resolved["portion_config_version"] == 1
 
 
+def test_sized_portion_can_be_selected_by_generic_recipe():
+    config = SimpleNamespace(id="portion-1", active=True, version=1, size="Grande", output_item_id="output-1")
+    item = SimpleNamespace(id="output-1", active=True, unit_id="unit-g")
+    resolved = RecipeSupplyResolver(_Db(config, item), "tenant-a").resolve_line(_values())
+    assert resolved["inventory_item_id"] == "output-1"
+    assert resolved["supply_mode"] == "portion"
+
+
 def test_global_portion_source_can_be_used_by_a_sized_recipe():
     config = SimpleNamespace(id="portion-1", active=True, version=1, size=None, output_item_id="output-1")
     item = SimpleNamespace(id="output-1", active=True, unit_id="unit-g")

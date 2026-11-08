@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import ProductRecipeEditor, { RecipeCompositionResult, portionMatchesRecipeSize, resolveRecipeIngredientSource } from "./ProductRecipeEditor";
+import ProductRecipeEditor, { RecipeCompositionResult, formatRecipeQuantity, portionMatchesRecipeSize, resolveRecipeIngredientSource } from "./ProductRecipeEditor";
 import type { ApiProduct, InventoryPortionConfig, RecipeCompositionPreview } from "@/lib/api";
 
 const ingredient = { inventory_item_id: "cheese", name: "Mucarela", quantity: "0.100001", unit_id: "kg", unit_symbol: "kg", component_role: "flavor", position: 0, waste_percent: "0" };
@@ -20,10 +20,16 @@ describe("recipe editor feedback", () => {
   });
 
   it("keeps sized portions aligned with the recipe size", () => {
-    expect(portionMatchesRecipeSize({ size: "Grande" }, "")).toBe(false);
+    expect(portionMatchesRecipeSize({ size: "Grande" }, "")).toBe(true);
     expect(portionMatchesRecipeSize({ size: "Grande" }, "Grande")).toBe(true);
     expect(portionMatchesRecipeSize({ size: "Grande" }, "Broto")).toBe(false);
     expect(portionMatchesRecipeSize({ size: null }, "")).toBe(true);
+  });
+
+  it("formats portion weights without insignificant zeros or scientific notation", () => {
+    expect(formatRecipeQuantity("150.000000")).toBe("150");
+    expect(formatRecipeQuantity("1.5E+2")).toBe("150");
+    expect(formatRecipeQuantity("0.125000")).toBe("0,125");
   });
 
   it("renders a protected loading state without showing an empty editor as loaded", () => {

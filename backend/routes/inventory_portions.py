@@ -63,13 +63,17 @@ def deactivate_config(config_id: str, db: Session = Depends(get_db), actor: Auth
 
 
 def serialize(row):
+    weight = format(row.portion_weight, "f").rstrip("0").rstrip(".") or "0"
+    symbol = row.unit.symbol if row.unit else ""
+    display_name = row.source_item.name if row.source_item else (row.output_item.name if row.output_item else "Porcao")
+    display_name = f"{display_name} - porcao {weight} {symbol}" + (f" - {row.size}" if row.size else "")
     return InventoryPortionConfigOut(
         id=row.id,
         tenant_id=row.tenant_id,
         source_item_id=row.source_item_id,
         source_item_name=row.source_item.name if row.source_item else None,
         output_item_id=row.output_item_id,
-        output_item_name=row.output_item.name if row.output_item else None,
+        output_item_name=display_name[:180],
         output_item_sku=row.output_item.sku if row.output_item else None,
         usage=row.usage,
         portion_weight=row.portion_weight,

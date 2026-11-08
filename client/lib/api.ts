@@ -6142,8 +6142,10 @@ export const inventoryApi = {
     put<InventoryRecipeVersion>(`/gestao/inventory/products/${productId}/recipes/${recipeId}`, data),
   removeProductRecipe: (productId: string, recipeId: string) =>
     del<void>(`/gestao/inventory/products/${productId}/recipes/${recipeId}`),
-  portionConfigs: (active?: boolean) =>
-    get<InventoryPortionConfig[]>(`/gestao/inventory/v1/portion-configs${active === undefined ? "" : `?active=${active}`}`),
+  portionConfigs: async (active?: boolean) => {
+    const rows = await get<InventoryPortionConfig[]>(`/gestao/inventory/v1/portion-configs${active === undefined ? "" : `?active=${active}`}`);
+    return rows.map((row) => ({ ...row, portion_weight: Number(row.portion_weight), min_stock: Number(row.min_stock), target_stock: Number(row.target_stock) }));
+  },
   portionBalances: () => get<InventoryPortionBalance[]>("/gestao/inventory/v1/portion-configs/balances"),
   portionReplenishmentAlerts: () => get<InventoryPortionReplenishment[]>("/gestao/inventory/v1/portion-configs/replenishment-alerts"),
   requestPortionPreparation: (id: string, body: { target_quantity: string; scheduled_for?: string | null; notes?: string | null; expected_version?: number }, key: string) =>
