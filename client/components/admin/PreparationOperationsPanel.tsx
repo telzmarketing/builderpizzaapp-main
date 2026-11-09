@@ -81,7 +81,7 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
   const [approved, setApproved] = useState("");
   const [discarded, setDiscarded] = useState("0");
   const [reason, setReason] = useState("");
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetMode, setSheetMode] = useState<"technical" | "completion" | null>(null);
   const [sheetLoading, setSheetLoading] = useState(false);
   const [portionConfirmation, setPortionConfirmation] = useState<"yes" | "no" | null>(null);
   const [actualQuantity, setActualQuantity] = useState("");
@@ -113,8 +113,8 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
     }
   }
 
-  async function openSheet() {
-    setSheetOpen(true);
+  async function openSheet(mode: "technical" | "completion") {
+    setSheetMode(mode);
     setPortionConfirmation(null);
     setError("");
     if (!recipe) await loadRecipeAndStock();
@@ -143,7 +143,7 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
     const reported = await preparationApi.report(order.id, { expected_version: version, produced_quantity: String(producedQuantity), approved_quantity: String(producedQuantity), discarded_quantity: String(difference), input_allocations: preparationAllocationPayload(allocations), losses: [], output_location_id: outputLocationId, output_lot_code: `POR-${Date.now()}`, portion_grams: currentRecipe.ingredients[0]?.quantity || null, prepared_at: new Date().toISOString(), reason: difference ? "Quantidade nao porcionada informada pelo operador." : null }, key("report", order.id));
     await preparationApi.complete(order.id, reported.version, key("complete", order.id));
     if (reported.execution_id) onExecution(reported.execution_id);
-    setPortionConfirmation(null); setActualQuantity(""); setSheetOpen(false);
+    setPortionConfirmation(null); setActualQuantity(""); setSheetMode(null);
     await onRefresh();
   }
 
@@ -182,8 +182,8 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
           <p className="mt-1 text-xs font-bold text-gold">{stateLabel(order.status)} · versão {order.version}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className={ghost} disabled={busy} onClick={() => run(openSheet, "Ficha carregada.")}><ClipboardList size={15} /> Ficha</button>
-          {!['completed', 'cancelled'].includes(order.status) && <button type="button" className={button} disabled={busy} onClick={() => void run(async () => { await openSheet(); setPortionConfirmation("yes"); }, "Ficha carregada.")}>Efetuado</button>}
+          <button type="button" className={ghost} disabled={busy} onClick={() => void run(() => openSheet("technical"), "Ficha técnica carregada.")}><ClipboardList size={15} /> Ficha</button>
+          {!['completed', 'cancelled'].includes(order.status) && <button type="button" className={button} disabled={busy} onClick={() => void run(async () => { await openSheet("completion"); setPortionConfirmation("yes"); }, "Confirmação de quantidade aberta.")}>Efetuado</button>}
           {['draft', 'approved', 'scheduled', 'waiting'].includes(order.status) && <button type="button" className={ghost} disabled={busy} onClick={() => { if (window.confirm("Excluir esta solicitação de porcionamento? Ela será cancelada e retirada da fila.")) void run(() => preparationApi.manage(order.id, "cancel", { expected_version: order.version, reason: "Solicitação de porcionamento excluída pelo operador." }, key("cancel", order.id)), "Solicitação de porcionamento excluída."); }}><Trash2 size={15} /> Excluir solicitação</button>}
           {order.status === "approved" && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.manage(order.id, "schedule", { expected_version: order.version }, key("schedule", order.id)), "Ordem enviada ao KDS.")}>Enviar ao KDS</button>}
           {canStart && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.start(order.id, order.version, key("start", order.id)), "Preparo iniciado.")}><Play size={15} /> Iniciar</button>}
@@ -193,15 +193,15 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
         </div>
       </div>
 
-      {sheetOpen && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 p-4"><div className="mx-auto mt-8 max-w-2xl rounded-xl border border-surface-03 bg-surface-02 p-5 text-sm shadow-2xl">
-        <div className="flex items-center justify-between"><h3 className="text-lg font-black text-cream">Ficha tecnica de porcionamento</h3><button type="button" className={ghost} onClick={() => setSheetOpen(false)}>Fechar</button></div>
+      {sheetMode && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 p-4"><div className="mx-auto mt-8 max-w-2xl rounded-xl border border-surface-03 bg-surface-02 p-5 text-sm shadow-2xl">
+        <div className="flex items-center justify-between"><h3 className="text-lg font-black text-cream">{sheetMode === "technical" ? "Ficha técnica de porcionamento" : "Efetuar porcionamento"}</h3><button type="button" className={ghost} onClick={() => setSheetMode(null)}>Fechar</button></div>
         {sheetLoading && <div className="mt-4 flex items-center gap-2 rounded-lg border border-surface-03 bg-surface-01 p-4 text-stone"><Loader2 size={17} className="animate-spin" /> Carregando ficha tecnica...</div>}
         {!sheetLoading && !recipe && error && <p role="alert" className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-200">{error}</p>}
         {!sheetLoading && recipe && <>
         <p className="mt-2 text-stone">{recipe.output_item_name || order.output_item_name || "Produto porcionado"} · quantidade solicitada: <b className="text-cream">{exact(order.target_quantity)} {recipe.output_unit_symbol || order.output_unit_symbol || "porcoes"}</b></p>
         {recipe.instructions && <p className="mt-3 whitespace-pre-line rounded-lg bg-surface-01 p-3 text-stone">{recipe.instructions}</p>}
         <div className="mt-3 grid gap-2 sm:grid-cols-2">{(recipe.ingredients ?? []).map((item, index) => <div key={`${item.inventory_item_id}-${item.unit_id}-${index}`} className="rounded bg-surface-01 px-3 py-2 text-stone">{item.inventory_item_name || "Insumo"}: <b className="text-cream">{exact(item.quantity)} {item.unit_symbol || ""}</b> por porcao</div>)}</div>
-        {portionConfirmation && <div className="mt-4 rounded-lg border border-gold/50 bg-gold/10 p-3"><p className="font-bold text-cream">Foi porcionada a quantidade solicitada?</p><div className="mt-2 flex gap-2"><button type="button" className={button} disabled={busy} onClick={() => void run(() => finalizePortioning(order.target_quantity), "Porcionamento efetuado.")}>Sim</button><button type="button" className={ghost} disabled={busy} onClick={() => setPortionConfirmation("no")}>Nao</button></div>{portionConfirmation === "no" && <div className="mt-3"><label className="text-xs text-stone">Informe a quantidade porcionada<input className={input} inputMode="decimal" value={actualQuantity} onChange={(event) => setActualQuantity(event.target.value)} /></label><button type="button" className={`${button} mt-2`} disabled={busy || !actualQuantity} onClick={() => { if (confirm(`Quantidade informada: ${exact(actualQuantity)}. Esta correta?`)) void run(() => finalizePortioning(actualQuantity), "Porcionamento efetuado."); }}>Confirmar quantidade</button></div>}</div>}
+          {sheetMode === "completion" && portionConfirmation && <div className="mt-4 rounded-lg border border-gold/50 bg-gold/10 p-3"><p className="font-bold text-cream">Foi porcionada a quantidade solicitada?</p><div className="mt-2 flex gap-2"><button type="button" className={button} disabled={busy} onClick={() => void run(() => finalizePortioning(order.target_quantity), "Porcionamento efetuado.")}>Sim</button><button type="button" className={ghost} disabled={busy} onClick={() => setPortionConfirmation("no")}>Não</button></div>{portionConfirmation === "no" && <div className="mt-3"><label className="text-xs text-stone">Informe a quantidade porcionada<input className={input} inputMode="decimal" value={actualQuantity} onChange={(event) => setActualQuantity(event.target.value)} /></label><button type="button" className={`${button} mt-2`} disabled={busy || !actualQuantity} onClick={() => { if (confirm(`Quantidade informada: ${exact(actualQuantity)}. Está correta?`)) void run(() => finalizePortioning(actualQuantity), "Porcionamento efetuado."); }}>Confirmar quantidade</button></div>}</div>}
         <p className={recipe.executable ? "font-bold text-emerald-300" : "font-bold text-amber-300"}>{recipe.executable ? "Ficha executavel" : "Ficha pendente"}</p>
         {recipe.instructions && <p className="mt-2 text-stone">{recipe.instructions}</p>}
         {(recipe.warnings ?? []).map((warning) => <p key={`${warning.code}-${warning.message}`} className="mt-2 flex gap-2 text-amber-200"><TriangleAlert size={15} /> {warning.message}</p>)}
@@ -275,11 +275,11 @@ export default function PreparationOperationsPanel({ showKdsLink = true }: { sho
     {loading && <div className="flex min-h-32 items-center justify-center text-stone"><Loader2 size={18} className="mr-2 animate-spin" /> Carregando ordens...</div>}
     {executionId && <button type="button" className={button} onClick={() => setLabelsOpen(true)}>Emitir etiquetas</button>}
     <PreparationLabelPrintDialog executionId={executionId} open={labelsOpen} onOpenChange={setLabelsOpen} />
-    {!loading && view === "operator" && <div className="space-y-3">{activeOrders.length === 0 ? <p className="rounded-lg border border-dashed border-surface-03 p-6 text-center text-sm text-stone">Nenhuma ordem de preparo pendente.</p> : activeOrders.map((order) => <OrderCard key={order.id} order={order} onRefresh={load} onExecution={(id) => { setExecutionId(id); }} />)}</div>}
+    {!loading && view === "operator" && <div className="space-y-3">{activeOrders.length === 0 ? <p className="rounded-lg border border-dashed border-surface-03 p-6 text-center text-sm text-stone">Nenhuma ordem de preparo pendente.</p> : activeOrders.map((order) => <OrderCard key={order.id} order={order} onRefresh={load} onExecution={(id) => { setExecutionId(id); setLabelsOpen(true); }} />)}</div>}
     {!loading && view === "planning" && <div className="space-y-4">
       <PcpWeeklyPanel />
       <div className={box}><h3 className="font-black text-cream">Nova ordem por ficha cadastrada</h3>{knownRecipes.length ? <div className="mt-3 grid gap-3 md:grid-cols-3"><label className="text-sm">Ficha técnica<select className={input} value={recipeId} onChange={(event) => setRecipeId(event.target.value)}><option value="">Selecionar ficha</option>{knownRecipes.map((recipe) => <option key={recipe.id} value={recipe.id}>{recipe.name}</option>)}</select></label><label className="text-sm">Quantidade planejada<input className={input} inputMode="decimal" value={target} onChange={(event) => setTarget(event.target.value)} /></label><label className="text-sm">Data e horário<input className={input} type="datetime-local" value={plannedFor} onChange={(event) => setPlannedFor(event.target.value)} /></label><button type="button" className={`${button} md:col-span-3`} disabled={saving || !recipeId || !target} onClick={() => void createOrder()}>Criar ordem de preparo</button></div> : <p className="mt-3 text-sm text-stone">Nenhuma ficha operacional foi disponibilizada. Cadastre e valide a ficha antes de programar um preparo.</p>}</div>
-      {orders.length === 0 ? <p className="rounded-lg border border-dashed border-surface-03 p-6 text-center text-sm text-stone">Nenhuma ordem cadastrada.</p> : orders.map((order) => <OrderCard key={order.id} order={order} onRefresh={load} onExecution={(id) => { setExecutionId(id); }} />)}
+      {orders.length === 0 ? <p className="rounded-lg border border-dashed border-surface-03 p-6 text-center text-sm text-stone">Nenhuma ordem cadastrada.</p> : orders.map((order) => <OrderCard key={order.id} order={order} onRefresh={load} onExecution={(id) => { setExecutionId(id); setLabelsOpen(true); }} />)}
     </div>}
     {message && <p className="text-sm font-semibold text-emerald-300">{message}</p>}
     {error && <p className="flex gap-2 text-sm font-semibold text-red-300"><AlertTriangle size={16} /> {error}</p>}
