@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { Loader2, RefreshCw, Send } from "lucide-react";
 import { inventoryApi, type InventoryPortionBalance, type InventoryPortionReplenishment } from "@/lib/api";
+import { formatQuantity } from "@/lib/formatQuantity";
 
 function formatExactQuantity(value: number | string | null | undefined) {
-  if (value === null || value === undefined) return "-";
-  const numeric = Number(String(value).trim().replace(",", "."));
-  return Number.isFinite(numeric) ? numeric.toLocaleString("pt-BR", { useGrouping: false, maximumFractionDigits: 6 }) : "-";
+  return formatQuantity(value);
 }
 
 function numericQuantity(value: number | string | null | undefined) {

@@ -9,6 +9,7 @@ import {
   type FoundationReservation,
   type FoundationPackaging,
 } from "@/lib/api";
+import { formatQuantity } from "@/lib/formatQuantity";
 
 const input =
   "w-full rounded border border-surface-03 bg-surface-01 p-2 text-cream";
@@ -248,7 +249,7 @@ export default function InventoryFoundationPanel() {
                   {[b.physical, b.usable, b.reserved, b.available].map(
                     (v, i) => (
                       <td key={i} className="p-2">
-                        {v}
+                        {formatQuantity(v)}
                       </td>
                     ),
                   )}
@@ -431,7 +432,7 @@ export default function InventoryFoundationPanel() {
               try {
                 const result = await api.preview(selection());
                 setPreview(
-                  `${result.quantity} ${units.find((u) => u.id === result.unit_id)?.symbol || result.unit_id}`,
+                  `${formatQuantity(result.quantity)} ${units.find((u) => u.id === result.unit_id)?.symbol || result.unit_id}`,
                 );
               } catch (e) {
                 setError(
@@ -715,7 +716,7 @@ export default function InventoryFoundationPanel() {
               className="flex flex-wrap items-center justify-between gap-2 border-t border-surface-03 py-2 text-sm text-stone"
             >
               <span>
-                {itemName(r.item_id)} — {r.quantity} — {r.status}
+                {itemName(r.item_id)} — {formatQuantity(r.quantity)} — {r.status}
               </span>
               {r.status === "active" && (
                 <button

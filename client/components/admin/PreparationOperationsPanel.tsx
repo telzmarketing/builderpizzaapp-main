@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, ChefHat, ClipboardList, Loader2, Play, Ref
 import { inventoryApi, inventoryFoundationApi, preparationApi, type FoundationLot, type InventoryOverview, type PreparationInputAllocation, type PreparationOrder, type PreparationRecipe, type PreparationRecipeDefinition } from "@/lib/api";
 import { PreparationLabelPrintDialog } from "@/components/kds/LabelPrintDialog";
 import PcpWeeklyPanel from "@/components/admin/PcpWeeklyPanel";
+import { formatQuantity } from "@/lib/formatQuantity";
 
 const box = "preparation-card rounded-xl border border-surface-03 bg-surface-02 p-4 shadow-lg shadow-black/10";
 const input = "w-full rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream outline-none focus:border-gold";
@@ -249,7 +250,7 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
         <p className={recipe.executable ? "font-bold text-emerald-300" : "font-bold text-amber-300"}>{recipe.executable ? "Ficha executavel" : "Ficha pendente"}</p>
         {recipe.instructions && <p className="mt-2 text-stone">{recipe.instructions}</p>}
         {(recipe.warnings ?? []).map((warning) => <p key={`${warning.code}-${warning.message}`} className="mt-2 flex gap-2 text-amber-200"><TriangleAlert size={15} /> {warning.message}</p>)}
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">{(recipe.ingredients ?? []).map((item, index) => <div key={`${item.inventory_item_id}-${item.unit_id}-${index}`} className="rounded bg-surface-02 px-2 py-1 text-xs text-stone">{item.inventory_item_name || itemName(item.inventory_item_id) || "Insumo sem identificação"}: <b className="text-cream">{item.quantity} {item.unit_symbol || ""}</b></div>)}</div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">{(recipe.ingredients ?? []).map((item, index) => <div key={`${item.inventory_item_id}-${item.unit_id}-${index}`} className="rounded bg-surface-02 px-2 py-1 text-xs text-stone">{item.inventory_item_name || itemName(item.inventory_item_id) || "Insumo sem identificação"}: <b className="text-cream">{formatQuantity(item.quantity)} {item.unit_symbol || ""}</b></div>)}</div>
         </>}
       </div></div>}
 
@@ -266,7 +267,7 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
               const ingredient = recipe.ingredients[draft.ingredientIndex];
               const itemLots = lots.filter((lot) => lot.item_id === draft.item_id && lot.status === "available" && (!draft.location_id || lot.location_id === draft.location_id));
               return <div key={draft.id} className="grid gap-2 rounded-lg border border-surface-03 bg-surface-02 p-2 md:grid-cols-[minmax(0,1.4fr)_minmax(7rem,0.8fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_auto] md:items-end">
-                <div><p className="text-xs font-bold text-cream">{ingredient?.inventory_item_name || itemName(draft.item_id)}</p><p className="text-xs text-stone">Ficha: {ingredient?.quantity} {ingredient?.unit_symbol || ""} · unidade {ingredient?.unit_id || draft.unit_id}</p></div>
+                <div><p className="text-xs font-bold text-cream">{ingredient?.inventory_item_name || itemName(draft.item_id)}</p><p className="text-xs text-stone">Ficha: {formatQuantity(ingredient?.quantity)} {ingredient?.unit_symbol || ""} · unidade {ingredient?.unit_id || draft.unit_id}</p></div>
                 <label className="text-xs text-stone">Quantidade<input aria-label={`Quantidade ${itemName(draft.item_id)}`} className={input} inputMode="decimal" value={draft.quantity} onChange={(event) => updateAllocation(draft.id, { quantity: event.target.value })} /></label>
                 <label className="text-xs text-stone">Local<select aria-label={`Local ${itemName(draft.item_id)}`} className={input} value={draft.location_id} onChange={(event) => updateAllocation(draft.id, { location_id: event.target.value, lot_id: null })}><option value="">Selecionar local</option>{(inventory?.locations ?? []).filter((location) => location.active).map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
                 <label className="text-xs text-stone">Lote<select aria-label={`Lote ${itemName(draft.item_id)}`} className={input} value={draft.lot_id ?? ""} onChange={(event) => updateAllocation(draft.id, { lot_id: event.target.value || null })}><option value="">Sem lote rastreado</option>{itemLots.map((lot) => <option key={lot.id} value={lot.id}>{lot.lot_code} · {locationName(lot.location_id)}</option>)}</select></label>

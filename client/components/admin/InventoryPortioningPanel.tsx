@@ -6,6 +6,7 @@ import {
   type InventoryOverview,
   type InventoryPortionConfig,
 } from "@/lib/api";
+import { formatQuantity } from "@/lib/formatQuantity";
 
 const input =
   "w-full rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream";
@@ -15,17 +16,7 @@ const ghost =
   "inline-flex items-center justify-center gap-2 rounded-lg border border-surface-03 px-3 py-2 text-sm font-bold text-stone hover:text-cream";
 const opKey = (prefix: string) => `${prefix}:${crypto.randomUUID()}`;
 export function formatExactQuantity(value: number | string | null | undefined) {
-  const n = Number(
-    String(value ?? "")
-      .trim()
-      .replace(",", "."),
-  );
-  return Number.isFinite(n)
-    ? n.toLocaleString("pt-BR", {
-        useGrouping: false,
-        maximumFractionDigits: 6,
-      })
-    : "-";
+  return formatQuantity(value);
 }
 export function portionUsageLabel(
   value: InventoryPortionConfig["usage"] | string,

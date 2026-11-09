@@ -8,7 +8,7 @@ from backend.core.exceptions import DomainError
 from backend.models.preparation import InventoryOperationRecipe, InventoryOperationRecipeItem, PreparationOrder, PreparationExecution
 from backend.models.inventory import InventoryItem, InventoryLocation, InventoryStockMovement, InventoryUnit
 from backend.models.inventory_foundation import InventoryOperation, InventoryLot, InventoryReservation
-from backend.services.inventory_foundation_service import InventoryFoundationService, utcnow
+from backend.services.inventory_foundation_service import InventoryFoundationService, convert_decimal, utcnow
 
 class PreparationInvalid(DomainError): http_status = 422
 class PreparationConflict(DomainError): http_status = 409
@@ -155,6 +155,7 @@ class PreparationService:
             recipe_quantities[key] = recipe_quantities.get(key, Decimal("0")) + Decimal(recipe_item.quantity)
 
         allocated_quantities = {}
+        normalized_allocations = []
         for allocation in allocations:
             if not isinstance(allocation, dict):
                 raise PreparationInvalid("Cada consumo deve ser um objeto de alocacao.")
@@ -186,6 +187,8 @@ class PreparationService:
                     raise PreparationInvalid("Lote do consumo nao pertence ao local informado.")
 
             allocated_quantities[key] = allocated_quantities.get(key, Decimal("0")) + quantity
+            base_unit_id, base_quantity = self._to_item_base_quantity(item, unit, quantity, foundation)
+            normalized_allocations.append((allocation, base_unit_id, base_quantity))
 
         scale = Decimal(processed_quantity) / Decimal(recipe.yield_quantity)
         for key, recipe_quantity in recipe_quantities.items():
@@ -199,6 +202,30 @@ class PreparationService:
         unexpected = set(allocated_quantities) - set(recipe_quantities)
         if unexpected:
             raise PreparationInvalid("Existe consumo de item ou unidade fora da receita operacional.")
+
+        for allocation, base_unit_id, base_quantity in normalized_allocations:
+            allocation["unit_id"] = base_unit_id
+            allocation["quantity"] = _d(base_quantity)
+
+    def _to_item_base_quantity(self, item, source_unit, quantity, foundation):
+        """Convert a recipe/use quantity into the stock item's base unit."""
+        base_unit_id = getattr(item, "unit_id", None) or source_unit.id
+        if base_unit_id == source_unit.id:
+            return base_unit_id, quantity
+        base_unit = foundation._get(InventoryUnit, base_unit_id, lock=True)
+        if (
+            not source_unit.dimension
+            or not base_unit.dimension
+            or source_unit.dimension != base_unit.dimension
+            or not source_unit.conversion_factor
+            or not base_unit.conversion_factor
+        ):
+            raise PreparationInvalid(
+                "A unidade da receita precisa ser conversivel para a unidade-base do insumo."
+            )
+        return base_unit.id, convert_decimal(
+            quantity, source_unit.conversion_factor, base_unit.conversion_factor
+        )
 
     def command(self,oid,command,b,key):
         if not key: raise PreparationInvalid("Idempotency-Key obrigatoria.")
@@ -231,21 +258,25 @@ class PreparationService:
             return
         quantities = {}
         scale = Decimal(order.target_quantity) / Decimal(recipe.yield_quantity)
-        for recipe_item in recipe.items:
-            key = (recipe_item.item_id, recipe_item.unit_id)
-            quantities[key] = quantities.get(key, Decimal("0")) + Decimal(recipe_item.quantity) * scale
-        item_ids = sorted({item_id for item_id, _ in quantities})
         foundation = InventoryFoundationService(self.db, self.tenant_id, self.actor_id)
+        item_ids = sorted({recipe_item.item_id for recipe_item in recipe.items})
         items = {item.id: item for item in foundation._lock_items(item_ids)}
-        for item_id, unit_id in quantities:
+        for recipe_item in recipe.items:
+            item = items[recipe_item.item_id]
+            unit = foundation._get(InventoryUnit, recipe_item.unit_id, lock=True)
+            base_unit_id, base_quantity = self._to_item_base_quantity(
+                item, unit, Decimal(recipe_item.quantity) * scale, foundation
+            )
+            if base_unit_id != item.unit_id:
+                raise PreparationInvalid("Unidade-base do insumo nao esta configurada.")
+            quantities[item.id] = quantities.get(item.id, Decimal("0")) + base_quantity
+        for item_id in quantities:
             item = items[item_id]
-            if item.unit_id != unit_id:
-                raise PreparationInvalid("Unidade da receita nao corresponde a unidade-base do insumo.")
             location_id = item.default_location_id
             if not location_id:
                 raise PreparationInvalid(f"O insumo {item_id} precisa de local padrao para reservar o preparo.")
             available = foundation._available(item_id, location_id, None)
-            if available < quantities[(item_id, unit_id)]:
+            if available < quantities[item_id]:
                 raise PreparationConflict(f"Saldo insuficiente para reservar o insumo {item_id}.")
         operation_key = f"preparation-reservation:{order.id}"
         operation = InventoryOperation(
@@ -254,11 +285,11 @@ class PreparationService:
             idempotency_key=operation_key,
             request_hash=hashlib.sha256(operation_key.encode()).hexdigest(),
             status="committed", actor_id=self.actor_id, version=1,
-            result_json={"order_id": order.id, "items": {item_id: _d(quantity) for (item_id, _), quantity in quantities.items()},
+            result_json={"order_id": order.id, "items": {item_id: _d(quantity) for item_id, quantity in quantities.items()},
                          "reason": "preparation_order_approved"}, committed_at=utcnow(),
         )
         self.db.add(operation)
-        for (item_id, unit_id), quantity in quantities.items():
+        for item_id, quantity in quantities.items():
             item = items[item_id]
             self.db.add(InventoryReservation(
                 id=uuid.uuid4().hex, tenant_id=self.tenant_id,

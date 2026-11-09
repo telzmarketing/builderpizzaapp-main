@@ -21,6 +21,7 @@ import {
   type InventorySupplier,
   type InventoryUnit,
 } from "@/lib/api";
+import { formatQuantity } from "@/lib/formatQuantity";
 
 type Section = "settings" | "items" | "ingredient-stock" | "portioning" | "portion-stock" | "replenishment" | "foundation" | "purchases" | "entries" | "suppliers" | "preparation" | "base";
 type InventoryGroup = "cadastro" | "estoque" | "producao" | "operacao";
@@ -101,10 +102,7 @@ function currency(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
 }
 
-function quantity(value: number | string | null | undefined) {
-  const numeric = Number(String(value ?? 0).replace(",", "."));
-  return Number.isFinite(numeric) ? numeric.toLocaleString("pt-BR", { useGrouping: false, maximumFractionDigits: 6 }) : "0";
-}
+const quantity = (value: number | string | null | undefined) => formatQuantity(value, "0");
 
 export default function GestaoInventory() {
   const location = useLocation();
@@ -728,7 +726,7 @@ function EntriesSection({
             <span className="font-bold text-cream">{item.item_name || item.item_id}</span>
             <span className={item.movement_type === "out" ? "font-bold text-red-300" : "font-bold text-emerald-300"}>{item.movement_type === "out" ? "Saida" : "Entrada"}</span>
             <span className="text-stone">{item.location_name || "-"}</span>
-            <span className="text-stone">{item.quantity}</span>
+           <span className="text-stone">{quantity(item.quantity)}</span>
             <span className="text-stone">{currency(item.unit_cost)}</span>
             {item.reversed ? <span className="text-stone">Estornada</span> : <button type="button" disabled={saving} onClick={() => run(() => inventoryApi.removeManualEntry(item.id), "Entrada estornada; historico preservado.")} className={ghostButtonClass}>Estornar</button>}
           </div>

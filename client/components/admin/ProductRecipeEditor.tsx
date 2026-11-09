@@ -9,6 +9,7 @@ import {
   type RecipeCompositionPreview,
   type RecipeCompositionCustomization,
 } from "@/lib/api";
+import { formatQuantity } from "@/lib/formatQuantity";
 
 const input = "w-full rounded-lg border border-surface-03 bg-surface-01 p-2 text-sm text-cream disabled:opacity-50";
 const button = "rounded-lg border border-surface-03 px-3 py-2 text-sm text-parchment disabled:opacity-50";
@@ -47,7 +48,7 @@ export function formatRecipeQuantity(value: number | string | null | undefined) 
   if (!normalized || !/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(normalized)) return "-";
   const number = Number(normalized);
   if (!Number.isFinite(number)) return "-";
-  return number.toLocaleString("pt-BR", { useGrouping: false, maximumFractionDigits: 6 });
+  return formatQuantity(number);
 }
 
 export function RecipePrivateImage({ url }: { url: string }) {
@@ -305,7 +306,7 @@ export default function ProductRecipeEditor({ product, catalog, onClose }: { pro
               {preview && <RecipeCompositionResult result={preview} />}
             </section>
           </section>
-          <aside className="min-w-0 space-y-4"><h3 className="font-bold">Historico</h3>{!recipes.length && <p className="text-sm text-stone">Nenhuma ficha cadastrada. O cadastro comercial permanece disponivel.</p>}{recipes.map((recipe) => <article key={recipe.id} className="space-y-2 rounded-lg border border-surface-03 bg-surface-01 p-3"><div className="flex justify-between"><strong>v{recipe.version_number}</strong><span className="text-xs">{recipe.active ? "Ativa" : "Arquivada"}</span></div><p className="text-xs text-stone">{[recipe.component_role, recipe.product_size_label, recipe.product_crust_type_name, recipe.complement_name].filter(Boolean).join(" · ")}</p>{recipe.items?.map((row, index) => <p key={row.id ?? index} className="text-xs">{row.inventory_item_name ?? "Insumo"}: {row.quantity} {row.unit_symbol ?? ""}</p>)}{recipe.instructions && <p className="whitespace-pre-wrap text-xs">{recipe.instructions}</p>}{recipe.preparation_steps?.length > 0 && <ol className="list-inside list-decimal text-xs">{recipe.preparation_steps.map((step, index) => <li key={index}>{step}</li>)}</ol>}<RecipePrivateImage url={recipe.reference_image_url ?? ""} /><button className={button} disabled={busy} onClick={() => edit(recipe)}>Usar v{recipe.version_number} como referencia</button>{recipe.active && <button className={button} disabled={busy} onClick={() => void archive(recipe)}>Arquivar v{recipe.version_number}</button>}</article>)}</aside>
+        <aside className="min-w-0 space-y-4"><h3 className="font-bold">Historico</h3>{!recipes.length && <p className="text-sm text-stone">Nenhuma ficha cadastrada. O cadastro comercial permanece disponivel.</p>}{recipes.map((recipe) => <article key={recipe.id} className="space-y-2 rounded-lg border border-surface-03 bg-surface-01 p-3"><div className="flex justify-between"><strong>v{recipe.version_number}</strong><span className="text-xs">{recipe.active ? "Ativa" : "Arquivada"}</span></div><p className="text-xs text-stone">{[recipe.component_role, recipe.product_size_label, recipe.product_crust_type_name, recipe.complement_name].filter(Boolean).join(" · ")}</p>{recipe.items?.map((row, index) => <p key={row.id ?? index} className="text-xs">{row.inventory_item_name ?? "Insumo"}: {formatQuantity(row.quantity)} {row.unit_symbol ?? ""}</p>)}{recipe.instructions && <p className="whitespace-pre-wrap text-xs">{recipe.instructions}</p>}{recipe.preparation_steps?.length > 0 && <ol className="list-inside list-decimal text-xs">{recipe.preparation_steps.map((step, index) => <li key={index}>{step}</li>)}</ol>}<RecipePrivateImage url={recipe.reference_image_url ?? ""} /><button className={button} disabled={busy} onClick={() => edit(recipe)}>Usar v{recipe.version_number} como referencia</button>{recipe.active && <button className={button} disabled={busy} onClick={() => void archive(recipe)}>Arquivar v{recipe.version_number}</button>}</article>)}</aside>
         </div>}
       </div>
     </div>
@@ -313,7 +314,7 @@ export default function ProductRecipeEditor({ product, catalog, onClose }: { pro
 }
 
 export function RecipeCompositionResult({ result }: { result: RecipeCompositionPreview }) {
-  const rows = (items: RecipeCompositionPreview["ingredients"]) => <ul className="space-y-1 text-sm">{items.map((row, index) => <li key={`${row.inventory_item_id}:${index}`}>{row.name}: <strong>{row.quantity} {row.unit_symbol ?? ""}</strong></li>)}</ul>;
+  const rows = (items: RecipeCompositionPreview["ingredients"]) => <ul className="space-y-1 text-sm">{items.map((row, index) => <li key={`${row.inventory_item_id}:${index}`}>{row.name}: <strong>{formatQuantity(row.quantity)} {row.unit_symbol ?? ""}</strong></li>)}</ul>;
   return <div className="space-y-3 rounded-lg bg-surface-01 p-3" role="status">
     <p className={result.complete ? "text-emerald-300" : "text-amber-300"}>{result.complete ? "Composicao completa" : "Composicao incompleta — nao utilizar como receita completa"}</p>
     {!result.complete && <ul className="text-xs text-amber-300">{result.missing.map((value) => <li key={value}>{value}</li>)}</ul>}
