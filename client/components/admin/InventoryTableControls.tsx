@@ -2,8 +2,9 @@ import type { ReactNode } from "react";
 
 export function filterAndSort<T, K extends string>(rows: T[], search: string, sort: K, fields: Record<K, (row: T) => string | number>) {
   const needle = search.trim().toLocaleLowerCase("pt-BR");
+  const readers = Object.values(fields) as Array<(row: T) => string | number>;
   return rows
-    .filter((row) => !needle || Object.values(fields).some((read) => String(read(row)).toLocaleLowerCase("pt-BR").includes(needle)))
+    .filter((row) => !needle || readers.some((read) => String(read(row)).toLocaleLowerCase("pt-BR").includes(needle)))
     .slice()
     .sort((left, right) => {
       const a = fields[sort](left);

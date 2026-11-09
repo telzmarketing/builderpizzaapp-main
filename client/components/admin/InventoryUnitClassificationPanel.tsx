@@ -89,24 +89,26 @@ export default function InventoryUnitClassificationPanel() {
 
   return (
     <form className="space-y-3 rounded-lg border border-surface-03 bg-surface-01 p-4" onSubmit={submit}>
-      <h3 className="font-bold text-cream">Classificacao tecnica das unidades</h3>
-      <p className="text-sm text-stone">Cadastre ou confirme a dimensao e o fator da unidade neste unico local de base do estoque.</p>
+      <h3 className="font-bold text-cream">Classificação técnica das unidades</h3>
+      <p className="text-sm text-stone">Classifique a unidade de compra para permitir conversões como KG → GR. O peso por embalagem só é necessário para pacotes, caixas ou unidades.</p>
       {loading ? <p className="text-sm text-stone">Carregando unidades...</p> : <>
         <select aria-label="Unidade a classificar" className={input} value={definition.id} onChange={(event) => selectUnit(event.target.value)}>
           <option value="">Nova unidade</option>
-          {units.map((row) => <option key={row.id} value={row.id}>{row.name} ({row.symbol}){row.dimension ? "" : " - classificacao pendente"}</option>)}
+          {units.map((row) => <option key={row.id} value={row.id}>{row.name} ({row.symbol}){row.dimension ? "" : " - classificação pendente"}</option>)}
         </select>
         {(["name", "symbol", "code", "conversion_factor"] as const).map((field) => (
           <label key={field} className="block text-sm text-stone">
-            {{ name: "Nome", symbol: "Sigla", code: "Codigo unico", conversion_factor: "Fator confirmado" }[field]}
+            {{ name: "Nome", symbol: "Sigla", code: "Código único", conversion_factor: "Fator de conversão" }[field]}
             <input required className={input} value={definition[field]} onChange={(event) => setDefinition({ ...definition, [field]: event.target.value })} />
           </label>
         ))}
-        <select aria-label="Dimensao" className={input} value={definition.dimension} onChange={(event) => setDefinition({ ...definition, dimension: event.target.value })}>
+        <label className="block text-sm text-stone">Dimensão
+        <select aria-label="Dimensão" className={input} value={definition.dimension} onChange={(event) => setDefinition({ ...definition, dimension: event.target.value })}>
           <option value="mass">Massa (kg)</option>
           <option value="volume">Volume (L)</option>
           <option value="count">Contagem (unidade)</option>
-        </select>
+        </select></label>
+        <p className="text-xs text-stone">Use fator 1 para a unidade de referência (KG) e 0,001 para gramas (GR).</p>
         <button className={button} disabled={saving}>{saving ? "Salvando..." : "Confirmar unidade"}</button>
       </>}
       {message && <p role="status" className="text-sm text-emerald-300">{message}</p>}

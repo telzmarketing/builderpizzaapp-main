@@ -376,43 +376,41 @@ function ItemsSection({
   return (
     <div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]">
       <div className="rounded-lg border border-surface-03 bg-surface-01 p-4">
-        <h3 className="text-sm font-black uppercase tracking-wide text-parchment">{editing ? "Editar item" : "Novo item"}</h3>
+        <h3 className="text-sm font-black uppercase tracking-wide text-parchment">{editing ? "Editar insumo" : "Novo insumo"}</h3>
         {editing && <button type="button" className={ghostButtonClass} onClick={() => { setEditing(null); setForm({ ...form, name: "", notes: "" }); }}>Cancelar edição</button>}
         <div className="mt-4 space-y-3">
-          <input className={inputClass} placeholder="Nome do insumo ou produto de estoque" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <label className="block text-sm text-stone">Identificação do insumo<input className={inputClass} placeholder="Ex.: Calabresa" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
           <p className="rounded-md border border-dashed border-surface-03 px-3 py-2 text-xs text-stone">{form.item_type === "ingredient" ? "O SKU será gerado automaticamente ao cadastrar o insumo." : "O SKU automático é aplicado aos insumos; este tipo de item pode usar SKU integrado, se necessário."}</p>
-          <select className={inputClass} value={form.item_type} onChange={(e) => setForm({ ...form, item_type: e.target.value as InventoryItem["item_type"] })}>
+          <label className="block text-sm text-stone">Tipo de cadastro<select className={inputClass} value={form.item_type} onChange={(e) => setForm({ ...form, item_type: e.target.value as InventoryItem["item_type"] })}>
             <option value="ingredient">Insumo</option>
             <option value="finished_good">Produto acabado</option>
             <option value="packaging">Embalagem</option>
             <option value="supply">Material</option>
-          </select>
+          </select></label>
           <label className="block text-sm text-stone">Produto será porcionado para uso?
             <select className={inputClass} value={form.portionable ? "yes" : "no"} onChange={(e) => setForm({ ...form, portionable: e.target.value === "yes" })}>
               <option value="no">Não será porcionado para uso</option>
               <option value="yes">Será porcionado para uso</option>
             </select>
           </label>
-          <select className={inputClass} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
-            <option value="">Categoria</option>
+          <label className="block text-sm text-stone">Categoria<select className={inputClass} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
+            <option value="">Selecione a categoria</option>
             {data.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
-          <select className={inputClass} value={form.unit_id} onChange={(e) => setForm({ ...form, unit_id: e.target.value, weight_quantity: null, weight_unit_id: "" })}>
-            <option value="">Unidade base</option>
+          </select></label>
+          <label className="block text-sm text-stone">Unidade de compra / estoque<select className={inputClass} value={form.unit_id} onChange={(e) => setForm({ ...form, unit_id: e.target.value, weight_quantity: null, weight_unit_id: "" })}>
+            <option value="">Selecione a unidade</option>
             {data.units.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.symbol})</option>)}
-          </select>
-          {data.units.find((item) => item.id === form.unit_id)?.has_weight && <div className="grid gap-2 sm:grid-cols-2">
-            <input className={inputClass} required type="number" min="0.000001" step="0.000001" placeholder="Peso por unidade" value={form.weight_quantity ?? ""} onChange={(e) => setForm({ ...form, weight_quantity: e.target.value ? Number(e.target.value) : null })} />
+          </select></label>
+          {data.units.find((item) => item.id === form.unit_id)?.has_weight && <div className="rounded-md border border-gold/40 bg-gold/10 p-3 text-sm text-stone"><p className="font-bold text-cream">Peso da embalagem</p><p className="mt-1 text-xs">Preencha somente para pacote, caixa ou outra embalagem. Para KG ou GR, classifique a unidade em Base do Estoque.</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><label>Peso total por embalagem<input className={inputClass} required type="number" min="0.000001" step="0.000001" placeholder="Ex.: 5" value={form.weight_quantity ?? ""} onChange={(e) => setForm({ ...form, weight_quantity: e.target.value ? Number(e.target.value) : null })} /></label><label>Unidade do peso
             <select className={inputClass} required value={form.weight_unit_id} onChange={(e) => setForm({ ...form, weight_unit_id: e.target.value })}>
-              <option value="">Unidade do peso</option>
+              <option value="">Selecione a unidade do peso</option>
               {data.units.filter((item) => item.active && item.unit_type === "mass").map((item) => <option key={item.id} value={item.id}>{item.name} ({item.symbol})</option>)}
-            </select>
-          </div>}
-          <select className={inputClass} value={form.default_location_id} onChange={(e) => setForm({ ...form, default_location_id: e.target.value })}>
-            <option value="">Local padrao</option>
+            </select></label></div></div>}
+          <label className="block text-sm text-stone">Local padrão<select className={inputClass} value={form.default_location_id} onChange={(e) => setForm({ ...form, default_location_id: e.target.value })}>
+            <option value="">Selecione o local</option>
             {data.locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
-          <input className={inputClass} type="number" min="0" step="0.001" placeholder="Estoque mínimo" value={form.min_stock} onChange={(e) => setForm({ ...form, min_stock: Number(e.target.value) })} />
+          </select></label>
+          <label className="block text-sm text-stone">Estoque mínimo<input className={inputClass} type="number" min="0" step="0.001" placeholder="Ex.: 5" value={form.min_stock} onChange={(e) => setForm({ ...form, min_stock: Number(e.target.value) })} /></label>
           <textarea className={inputClass} placeholder="Observações internas" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           <button type="button" disabled={saving || !form.name} onClick={save} className={buttonClass}>
             <Plus size={15} /> Cadastrar item
@@ -502,12 +500,12 @@ function UnitsPanel({
         <input className={inputClass} placeholder="Nome" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         <input className={inputClass} placeholder="Sigla, ex: kg" value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value })} />
         <select className={inputClass} value={form.unit_type} onChange={(e) => setForm({ ...form, unit_type: e.target.value as InventoryUnit["unit_type"] })}>
-          <option value="unit">Unidade</option>
+          <option value="unit">Unidade / contagem</option>
           <option value="mass">Massa</option>
           <option value="volume">Volume</option>
-          <option value="package">Pacote</option>
+          <option value="package">Embalagem (pacote, pote, balde ou caixa)</option>
         </select>
-        <label className="flex items-center gap-2 text-sm text-stone"><input type="checkbox" checked={form.has_weight} onChange={(e) => setForm({ ...form, has_weight: e.target.checked })} /> Esta unidade terá peso por unidade</label>
+        <label className="flex items-center gap-2 text-sm text-stone"><input type="checkbox" checked={form.has_weight} onChange={(e) => setForm({ ...form, has_weight: e.target.checked })} /> Esta unidade de compra tem peso próprio (pacote, pote, balde ou caixa)</label>
         <button type="button" disabled={saving || !form.name || !form.symbol} onClick={save} className={buttonClass}><Plus size={15} /> {editing ? "Salvar alteração" : "Adicionar unidade"}</button>
       </div>
       <input className={`${inputClass} mt-4`} placeholder="Buscar unidade..." value={search} onChange={(event) => setSearch(event.target.value)} aria-label="Buscar unidade" />

@@ -700,7 +700,7 @@ class InventoryService:
         weight_unit_id = data.get("weight_unit_id")
         if unit and unit.has_weight:
             if weight_quantity is None or not weight_unit_id:
-                raise InventoryInvalidReference("Esta unidade exige peso por unidade e unidade de peso.")
+                raise InventoryInvalidReference("Esta unidade de compra exige o peso total da embalagem e a unidade desse peso.")
         elif weight_quantity is not None or weight_unit_id:
             raise InventoryInvalidReference("Peso so pode ser informado para uma unidade configurada com peso.")
         if weight_unit_id:

@@ -240,8 +240,14 @@ class PreparationService:
                 return base_unit.id, normalized_quantity(
                     Decimal(quantity_in_weight_unit) / Decimal(str(weight_quantity))
                 )
+        if getattr(source_unit, "unit_type", None) == "mass":
+            raise PreparationInvalid(
+                "A unidade de compra do insumo esta sem classificacao tecnica. "
+                "Em Base do Estoque, classifique-a como massa e informe o fator de conversao."
+            )
         raise PreparationInvalid(
-            "A unidade da receita precisa ser conversivel para a unidade-base do insumo."
+            "O insumo e comprado por embalagem ou unidade. Cadastre o peso total por embalagem "
+            "e a unidade desse peso no cadastro do insumo."
         )
 
     def command(self,oid,command,b,key):

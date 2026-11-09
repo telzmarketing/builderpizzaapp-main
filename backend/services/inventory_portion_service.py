@@ -220,9 +220,20 @@ class InventoryPortionConfigService:
                     Decimal(quantity_in_weight_unit) / Decimal(str(source.weight_quantity))
                 )
             else:
-                raise PortionConfigInvalid("A unidade da porcao precisa ser conversivel para a unidade-base do insumo.")
+                raise PortionConfigInvalid(
+                    "A unidade do peso da embalagem precisa estar classificada como massa "
+                    "e ser conversivel para gramas."
+                )
         else:
-            raise PortionConfigInvalid("Cadastre o peso por unidade do insumo para converter a porcao em gramas.")
+            if source_unit.unit_type == "mass":
+                raise PortionConfigInvalid(
+                    "A unidade de compra do insumo esta sem classificacao tecnica. "
+                    "Em Base do Estoque, classifique-a como massa e informe o fator de conversao antes de solicitar o porcionamento."
+                )
+            raise PortionConfigInvalid(
+                "O insumo e comprado por embalagem ou unidade. Cadastre o peso total por embalagem "
+                "e a unidade desse peso no cadastro do insumo."
+            )
         technical_instructions = row.technical_instructions or f"Produzir a porcao configurada de {source.name}."
         if row.handling_instructions:
             technical_instructions = f"{technical_instructions}\n\nManuseio: {row.handling_instructions}"
