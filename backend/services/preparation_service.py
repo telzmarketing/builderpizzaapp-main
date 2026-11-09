@@ -8,7 +8,7 @@ from backend.core.exceptions import DomainError
 from backend.models.preparation import InventoryOperationRecipe, InventoryOperationRecipeItem, PreparationOrder, PreparationExecution
 from backend.models.inventory import InventoryItem, InventoryLocation, InventoryStockMovement, InventoryUnit
 from backend.models.inventory_foundation import InventoryOperation, InventoryLot, InventoryReservation
-from backend.services.inventory_foundation_service import InventoryFoundationService, convert_decimal, utcnow
+from backend.services.inventory_foundation_service import InventoryFoundationService, convert_decimal, normalized_quantity, utcnow
 
 class PreparationInvalid(DomainError): http_status = 422
 class PreparationConflict(DomainError): http_status = 409
@@ -214,17 +214,34 @@ class PreparationService:
             return base_unit_id, quantity
         base_unit = foundation._get(InventoryUnit, base_unit_id, lock=True)
         if (
-            not source_unit.dimension
-            or not base_unit.dimension
-            or source_unit.dimension != base_unit.dimension
-            or not source_unit.conversion_factor
-            or not base_unit.conversion_factor
+            source_unit.dimension
+            and base_unit.dimension
+            and source_unit.dimension == base_unit.dimension
+            and source_unit.conversion_factor
+            and base_unit.conversion_factor
         ):
-            raise PreparationInvalid(
-                "A unidade da receita precisa ser conversivel para a unidade-base do insumo."
+            return base_unit.id, convert_decimal(
+                quantity, source_unit.conversion_factor, base_unit.conversion_factor
             )
-        return base_unit.id, convert_decimal(
-            quantity, source_unit.conversion_factor, base_unit.conversion_factor
+        weight_quantity = getattr(item, "weight_quantity", None)
+        weight_unit_id = getattr(item, "weight_unit_id", None)
+        if weight_quantity and weight_unit_id:
+            weight_unit = foundation._get(InventoryUnit, weight_unit_id, lock=True)
+            if (
+                source_unit.dimension == "mass"
+                and weight_unit.dimension == "mass"
+                and source_unit.conversion_factor
+                and weight_unit.conversion_factor
+                and Decimal(str(weight_quantity)) > 0
+            ):
+                quantity_in_weight_unit = convert_decimal(
+                    quantity, source_unit.conversion_factor, weight_unit.conversion_factor
+                )
+                return base_unit.id, normalized_quantity(
+                    Decimal(quantity_in_weight_unit) / Decimal(str(weight_quantity))
+                )
+        raise PreparationInvalid(
+            "A unidade da receita precisa ser conversivel para a unidade-base do insumo."
         )
 
     def command(self,oid,command,b,key):

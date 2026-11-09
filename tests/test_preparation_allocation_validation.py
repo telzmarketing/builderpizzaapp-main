@@ -115,6 +115,29 @@ def test_converts_portion_unit_to_stock_base_unit():
     assert allocation["quantity"] == "0.150000"
 
 
+def test_converts_grams_to_weighted_package_stock_unit():
+    service = PreparationService(db=None, tenant_id="tenant-a", actor_id="admin-a")
+    recipe = SimpleNamespace(
+        yield_quantity=Decimal("1"),
+        items=[SimpleNamespace(item_id="calabresa", unit_id="g", quantity=Decimal("150"))],
+    )
+    allocation = {"item_id": "calabresa", "unit_id": "g", "quantity": "150", "location_id": "kitchen"}
+    foundation = _Foundation({
+        (InventoryItem, "calabresa"): SimpleNamespace(
+            id="calabresa", unit_id="package", weight_quantity=Decimal("5"), weight_unit_id="kg"
+        ),
+        (InventoryUnit, "g"): SimpleNamespace(id="g", dimension="mass", conversion_factor=Decimal("1")),
+        (InventoryUnit, "kg"): SimpleNamespace(id="kg", dimension="mass", conversion_factor=Decimal("1000")),
+        (InventoryUnit, "package"): SimpleNamespace(id="package", dimension="count", conversion_factor=Decimal("1")),
+        (InventoryLocation, "kitchen"): SimpleNamespace(id="kitchen"),
+    })
+
+    service._validate_input_allocations(recipe, [allocation], Decimal("1"), foundation)
+
+    assert allocation["unit_id"] == "package"
+    assert allocation["quantity"] == "0.030000"
+
+
 def test_rejects_malformed_quantity_as_domain_error():
     service, recipe, foundation = _service_and_recipe()
 

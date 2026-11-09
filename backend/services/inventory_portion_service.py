@@ -17,7 +17,7 @@ from backend.models.preparation import InventoryOperationRecipe, InventoryOperat
 from backend.models.inventory_portion import InventoryPortionConfig
 from backend.schemas.inventory_portion import InventoryPortionConfigIn
 from backend.services.idempotency_service import IdempotencyService
-from backend.services.inventory_foundation_service import convert_decimal
+from backend.services.inventory_foundation_service import convert_decimal, normalized_quantity
 
 
 def display_portion_name(row: InventoryPortionConfig) -> str:
@@ -192,10 +192,37 @@ class InventoryPortionConfigService:
             raise PortionConfigInvalid("O insumo e a porcao precisam ter unidades cadastradas.")
         if source_unit.id == portion_unit.id:
             recipe_quantity = Decimal(row.portion_weight)
-        else:
-            if not source_unit.dimension or not portion_unit.dimension or source_unit.dimension != portion_unit.dimension or not source_unit.conversion_factor or not portion_unit.conversion_factor:
-                raise PortionConfigInvalid("A unidade da porcao precisa ser conversivel para a unidade-base do insumo.")
+        elif (
+            source_unit.dimension
+            and portion_unit.dimension
+            and source_unit.dimension == portion_unit.dimension
+            and source_unit.conversion_factor
+            and portion_unit.conversion_factor
+        ):
             recipe_quantity = convert_decimal(row.portion_weight, portion_unit.conversion_factor, source_unit.conversion_factor)
+        elif source.weight_quantity and source.weight_unit_id:
+            weight_unit = self.db.query(InventoryUnit).filter(
+                InventoryUnit.id == source.weight_unit_id,
+                InventoryUnit.tenant_id == self.tenant_id,
+            ).first()
+            if (
+                weight_unit
+                and portion_unit.dimension == "mass"
+                and weight_unit.dimension == "mass"
+                and portion_unit.conversion_factor
+                and weight_unit.conversion_factor
+                and Decimal(str(source.weight_quantity)) > 0
+            ):
+                quantity_in_weight_unit = convert_decimal(
+                    row.portion_weight, portion_unit.conversion_factor, weight_unit.conversion_factor
+                )
+                recipe_quantity = normalized_quantity(
+                    Decimal(quantity_in_weight_unit) / Decimal(str(source.weight_quantity))
+                )
+            else:
+                raise PortionConfigInvalid("A unidade da porcao precisa ser conversivel para a unidade-base do insumo.")
+        else:
+            raise PortionConfigInvalid("Cadastre o peso por unidade do insumo para converter a porcao em gramas.")
         technical_instructions = row.technical_instructions or f"Produzir a porcao configurada de {source.name}."
         if row.handling_instructions:
             technical_instructions = f"{technical_instructions}\n\nManuseio: {row.handling_instructions}"
