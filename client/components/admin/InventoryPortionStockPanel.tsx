@@ -3,6 +3,7 @@ import { Loader2, RefreshCw, Send } from "lucide-react";
 import { inventoryApi, type InventoryPortionBalance, type InventoryPortionReplenishment } from "@/lib/api";
 import { formatQuantity } from "@/lib/formatQuantity";
 import { filterAndSort, InventoryTableControls } from "./InventoryTableControls";
+import InventoryStockAdjustmentDialog, { hasUnresolvedAdjustment, type AdjustmentItem } from "./InventoryStockAdjustmentDialog";
 
 function formatExactQuantity(value: number | string | null | undefined) {
   return formatQuantity(value);
@@ -23,6 +24,7 @@ export default function InventoryPortionStockPanel() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"name" | "available" | "in_preparation">("name");
+  const [adjusting, setAdjusting] = useState<AdjustmentItem | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -34,6 +36,21 @@ export default function InventoryPortionStockPanel() {
   };
 
   useEffect(() => { load(); }, []);
+
+  const refreshAfterAdjustment = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [, balances, replenishment] = await Promise.all([inventoryApi.overview(), inventoryApi.portionBalances(), inventoryApi.portionReplenishmentAlerts()]);
+      setRows(balances);
+      setAlerts(replenishment);
+      setMessage("Ajuste registrado. Saldos de insumos e porções atualizados.");
+    } catch (cause) {
+      setError(`Ajuste registrado, mas não foi possível atualizar todas as visões: ${cause instanceof Error ? cause.message : "tente atualizar novamente."}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const visibleRows = useMemo(() => filterAndSort(rows, search, sort, { name: (row) => `${row.output_item_name} ${row.source_item_name || ""}`, available: (row) => numericQuantity(row.available_stock), in_preparation: (row) => numericQuantity(row.in_preparation) }), [rows, search, sort]);
   const conversionAlerts = useMemo(() => new Map(alerts.map((row) => [row.config_id, row])), [alerts]);
@@ -75,13 +92,14 @@ export default function InventoryPortionStockPanel() {
           {visibleRows.map((row) => <div key={row.config_id} className={`grid min-w-[1180px] grid-cols-[1.45fr_1.05fr_.55fr_.7fr_.7fr_.75fr_.7fr_1.1fr_1.25fr] items-center gap-2 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm ${numericQuantity(row.available_stock) <= numericQuantity(row.min_stock) ? "bg-amber-500/5" : ""}`}>
             <span className="font-bold text-cream">{row.output_item_name}<small className="block text-stone">mínimo {formatExactQuantity(row.min_stock)} · alvo {formatExactQuantity(row.target_stock)} porções</small>{row.legacy_output_unit && <small className="block text-amber-300">Cadastro legado: a unidade técnica de peso também consta como unidade de saída. Revise antes de executar novas ordens.</small>}</span>
             <span className="text-stone">{row.source_item_name || "-"}{row.source_stock != null && <small className="block text-gold">Bruto: {formatExactQuantity(row.source_stock)} {row.source_unit_symbol || "unid."}</small>}</span><span className="text-stone">PRQ</span><span className="text-stone">{formatExactQuantity(row.physical_stock)}</span><span className="text-stone">{formatExactQuantity(row.reserved_stock)}</span><span className={numericQuantity(row.available_stock) <= numericQuantity(row.min_stock) ? "font-bold text-amber-200" : "text-emerald-200"}>{formatExactQuantity(row.available_stock)}</span><span className="text-stone">{formatExactQuantity(row.in_preparation)}</span><span className="text-stone">{numericQuantity(row.unit_cost).toFixed(2)}{row.next_expiry ? ` · ${new Date(row.next_expiry).toLocaleDateString("pt-BR")}` : ""}</span>
-            <div className="flex min-w-0 items-center gap-1"><input aria-label={`Quantidade de ${row.output_item_name}`} className="w-16 rounded-md border border-surface-03 bg-surface-02 px-2 py-1 text-xs text-cream" type="number" min="0.000001" step="0.000001" value={requestQuantities[row.config_id] ?? ""} placeholder={formatExactQuantity(Math.max(0, numericQuantity(row.target_stock) - numericQuantity(row.available_stock) - numericQuantity(row.in_preparation)))} onChange={(event) => setRequestQuantities((current) => ({ ...current, [row.config_id]: event.target.value }))} disabled={row.usage === "direct"} /><button type="button" title="Solicitar Porcionamento" aria-label="Solicitar Porcionamento" className="inline-flex items-center gap-1 rounded-md bg-gold px-2 py-1 text-xs font-black text-black disabled:opacity-60" disabled={savingId === row.config_id || row.usage === "direct"} onClick={() => void requestPreparation(row)}>{savingId === row.config_id ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}<span className="hidden xl:inline">Solicitar</span></button></div>
+            <div className="flex min-w-0 flex-wrap items-center gap-1"><input aria-label={`Quantidade de ${row.output_item_name}`} className="w-16 rounded-md border border-surface-03 bg-surface-02 px-2 py-1 text-xs text-cream" type="number" min="1" step="1" value={requestQuantities[row.config_id] ?? ""} placeholder={formatExactQuantity(Math.max(0, numericQuantity(row.target_stock) - numericQuantity(row.available_stock) - numericQuantity(row.in_preparation)))} onChange={(event) => setRequestQuantities((current) => ({ ...current, [row.config_id]: event.target.value }))} disabled={row.usage === "direct"} /><button type="button" title="Solicitar Porcionamento" aria-label="Solicitar Porcionamento" className="inline-flex items-center gap-1 rounded-md bg-gold px-2 py-1 text-xs font-black text-black disabled:opacity-60" disabled={savingId === row.config_id || row.usage === "direct"} onClick={() => void requestPreparation(row)}>{savingId === row.config_id ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}<span className="hidden xl:inline">Solicitar</span></button><button type="button" className="rounded-md border border-surface-03 px-2 py-1 text-xs font-bold text-cream hover:bg-surface-03" disabled={savingId === row.config_id} onClick={() => setAdjusting({ id: row.output_item_id, name: row.output_item_name, unitSymbol: "PRQ", portioned: true })}>Corrigir / registrar perda{hasUnresolvedAdjustment(row.output_item_id) && <small className="block text-amber-300">Resultado pendente</small>}</button></div>
           </div>)}
           {!visibleRows.length && <p className="px-4 py-10 text-center text-sm text-stone">{rows.length ? "Nenhum produto encontrado." : "Nenhum produto porcionado ativo."}</p>}
         </div>
       )}
       {error && <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>}
       {message && <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{message}</p>}
+      <InventoryStockAdjustmentDialog item={adjusting} onClose={() => setAdjusting(null)} onAdjusted={() => void refreshAfterAdjustment()} />
     </section>
   );
 }

@@ -72,6 +72,15 @@ def test_portion_balance_uses_ledger_valid_reservations_and_open_preparation_wit
         alerts = service.replenishment_alerts()
         assert alerts[0]["status"] == "ok"
         assert alerts[0]["suggested_portions"] == Decimal("0")
+
+        db.add_all([
+            InventoryStockMovement(id="correction-a", tenant_id="tenant-a", item_id="portion-a", location_id="loc", quantity_delta=5, unit_cost=0, source_type="inventory_adjustment", source_id="correction", movement_type="in", reason="Contagem"),
+            InventoryStockMovement(id="loss-a", tenant_id="tenant-a", item_id="portion-a", location_id="loc", quantity_delta=-3, unit_cost=0, source_type="inventory_adjustment", source_id="loss", movement_type="out", reason="Validade"),
+        ])
+        db.commit()
+        adjusted = service.balances()[0]
+        assert adjusted["physical_stock"] == Decimal("12.000000")
+        assert adjusted["unit_cost"] == Decimal("2.00000000")
     finally:
         db.close()
         engine.dispose()

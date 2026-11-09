@@ -1,8 +1,13 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
+from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, BeforeValidator, Field, model_validator
+from backend.schemas.inventory_foundation import Id, Quantity, StrictIn, decimal_input
+
+
+SignedQuantity = Annotated[Decimal, BeforeValidator(decimal_input), Field(max_digits=20, decimal_places=6)]
 
 InventoryItemType = Literal["ingredient", "finished_good", "packaging", "supply"]
 InventoryUnitType = Literal["unit", "mass", "volume", "package"]
@@ -203,6 +208,51 @@ class InventoryStockBalanceOut(BaseModel):
     min_stock: float
     below_min_stock: bool
     active: bool
+
+
+class InventoryAdjustmentBucketOut(BaseModel):
+    location_id: str | None
+    location_name: str | None
+    lot_id: str | None
+    lot_code: str | None
+    physical: str
+    reserved: str
+    available: str
+    unit_symbol: str
+
+
+class InventoryAdjustmentIn(StrictIn):
+    kind: Literal["correction", "loss"]
+    business_key: UUID
+    quantity: Quantity
+    expected_physical: SignedQuantity
+    location_id: Id | None = None
+    lot_id: Id | None = None
+    reason: str = Field(min_length=1, max_length=120)
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def loss_requires_positive_quantity(self):
+        if self.kind == "loss" and self.quantity <= 0:
+            raise ValueError("Perda exige quantidade positiva.")
+        return self
+
+
+class InventoryAdjustmentOut(BaseModel):
+    operation_id: str
+    movement_id: str | None
+    item_id: str
+    kind: Literal["correction", "loss"]
+    location_id: str | None
+    lot_id: str | None
+    previous_physical: str
+    physical: str
+    reserved: str
+    available: str
+    delta: str
+    unit_symbol: str
+    unit_cost: str
+    cost_status: Literal["unvalued"]
 
 
 class InventoryRecipeItemIn(BaseModel):

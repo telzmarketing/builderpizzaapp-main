@@ -111,6 +111,7 @@ class InventoryPortionConfigService:
         physical = {item_id: value for item_id, value in physical_rows}
         cost_rows = self.db.query(
             InventoryStockMovement.item_id,
+            func.coalesce(func.sum(InventoryStockMovement.quantity_delta), 0),
             func.coalesce(func.sum(InventoryStockMovement.quantity_delta * InventoryStockMovement.unit_cost), 0),
         ).filter(
             InventoryStockMovement.tenant_id == self.tenant_id,
@@ -118,7 +119,13 @@ class InventoryPortionConfigService:
             InventoryStockMovement.quantity_delta > 0,
             InventoryStockMovement.unit_cost > 0,
         ).group_by(InventoryStockMovement.item_id).all()
-        costs = {item_id: value for item_id, value in cost_rows}
+        # A count correction or loss changes physical stock, not the unit cost
+        # of previously valued production. Unvalued adjustments must not dilute it.
+        costs = {
+            item_id: (Decimal(str(total_cost)) / Decimal(str(valued_quantity))).quantize(Decimal("0.00000001"))
+            for item_id, valued_quantity, total_cost in cost_rows
+            if Decimal(str(valued_quantity)) > 0
+        }
         expiry_rows = self.db.query(InventoryLot.item_id, func.min(InventoryLot.expires_on)).filter(
             InventoryLot.tenant_id == self.tenant_id,
             InventoryLot.item_id.in_(output_ids),
@@ -145,7 +152,7 @@ class InventoryPortionConfigService:
             "min_stock": row.min_stock,
             "target_stock": row.target_stock,
             "active": row.active,
-            "unit_cost": (Decimal(str(costs.get(row.output_item_id, 0))) / Decimal(str(physical.get(row.output_item_id, 0)))).quantize(Decimal("0.00000001")) if Decimal(str(physical.get(row.output_item_id, 0))) > 0 else Decimal("0"),
+            "unit_cost": costs.get(row.output_item_id, Decimal("0")),
             "next_expiry": expiries.get(row.output_item_id),
         } for row in configs]
 

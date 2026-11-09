@@ -9,6 +9,7 @@ import InventoryReceiptDocumentsPanel from "@/components/admin/InventoryReceiptD
 import PreparationOperationsPanel from "@/components/admin/PreparationOperationsPanel";
 import InventoryPortioningPanel from "@/components/admin/InventoryPortioningPanel";
 import InventoryPortionStockPanel from "@/components/admin/InventoryPortionStockPanel";
+import InventoryStockAdjustmentDialog, { hasUnresolvedAdjustment, type AdjustmentItem } from "@/components/admin/InventoryStockAdjustmentDialog";
 import { filterAndSort, InventoryTableControls } from "@/components/admin/InventoryTableControls";
 import {
   inventoryApi,
@@ -185,6 +186,20 @@ function InventoryBase({ section }: { section: Exclude<Section, "settings" | "fo
     }
   }
 
+  async function refreshAfterAdjustment() {
+    setLoading(true);
+    setError("");
+    try {
+      const [overview] = await Promise.all([inventoryApi.overview(), inventoryApi.portionBalances(), inventoryApi.portionReplenishmentAlerts()]);
+      setData(overview);
+      setMessage("Ajuste registrado. Saldos de insumos e porções atualizados.");
+    } catch (err) {
+      setError(`Ajuste registrado, mas não foi possível atualizar todas as visões: ${err instanceof Error ? err.message : "tente atualizar novamente."}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <section className="space-y-5 rounded-lg border border-surface-03 bg-surface-02 p-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -206,7 +221,7 @@ function InventoryBase({ section }: { section: Exclude<Section, "settings" | "fo
       {!loading && (
         <>
           {section === "items" && <ItemsSection data={data} saving={saving} run={run} />}
-          {section === "ingredient-stock" && <IngredientStockSection data={data} saving={saving} onRequestPurchase={() => run(() => inventoryApi.createReplenishmentRequest(), "Solicitação de compras gerada. Nenhum saldo foi alterado.")} />}
+          {section === "ingredient-stock" && <IngredientStockSection data={data} saving={saving} onRequestPurchase={() => run(() => inventoryApi.createReplenishmentRequest(), "Solicitação de compras gerada. Nenhum saldo foi alterado.")} onAdjusted={() => void refreshAfterAdjustment()} />}
           {section === "base" && <BaseSection data={data} saving={saving} run={run} />}
           {section === "suppliers" && <SuppliersSection data={data} saving={saving} run={run} />}
           {section === "purchases" && <PurchasesSection data={data} saving={saving} run={run} />}
@@ -284,9 +299,10 @@ function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: Invent
   );
 }
 
-function IngredientStockSection({ data, saving, onRequestPurchase }: { data: InventoryOverview; saving: boolean; onRequestPurchase: () => Promise<void> }) {
+function IngredientStockSection({ data, saving, onRequestPurchase, onAdjusted }: { data: InventoryOverview; saving: boolean; onRequestPurchase: () => Promise<void>; onAdjusted: () => void }) {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"name" | "current_stock" | "min_stock">("name");
+  const [adjusting, setAdjusting] = useState<AdjustmentItem | null>(null);
   const ingredients = data.items
     .filter((item) => item.active && item.item_type === "ingredient")
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
@@ -304,22 +320,26 @@ function IngredientStockSection({ data, saving, onRequestPurchase }: { data: Inv
         </button>
       </div>
       <InventoryTableControls search={search} onSearch={setSearch} sort={sort} onSort={(value) => setSort(value as typeof sort)} options={[{ value: "name", label: "Insumo (A-Z)" }, { value: "current_stock", label: "Saldo atual" }, { value: "min_stock", label: "Mínimo" }]} />
-      <TableHeader columns={["Insumo", "Unidade", "Local", "Saldo atual", "Mínimo", "Situação"]} />
+      <div className="overflow-x-auto"><div className="min-w-[900px]">
+      <TableHeader columns={["Insumo", "Unidade", "Local", "Saldo atual", "Mínimo", "Situação", "Ação"]} />
       {visibleIngredients.map((item) => {
         const current = item.current_stock ?? 0;
         const belowMinimum = current < item.min_stock;
         return (
-          <div key={item.id} className="grid grid-cols-[1.6fr_.8fr_1.2fr_1fr_1fr_1fr] gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
+          <div key={item.id} className="grid grid-cols-7 items-center gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
             <span className="font-bold text-cream">{item.name}<small className="block text-stone">{item.sku || "Sem SKU"}</small></span>
             <span className="text-stone">{item.unit_symbol || item.unit_name || "-"}</span>
             <span className="text-stone">{item.default_location_name || "-"}</span>
             <span className={belowMinimum ? "font-bold text-amber-200" : "text-emerald-200"}>{quantity(current)}</span>
             <span className="text-stone">{quantity(item.min_stock)}</span>
             <span className={belowMinimum ? "font-bold text-amber-200" : "text-emerald-200"}>{belowMinimum ? "Abaixo do mínimo" : "Disponível"}</span>
+            <button type="button" className="rounded-lg border border-surface-03 px-2 py-2 text-xs font-bold text-cream hover:bg-surface-03 disabled:opacity-50" disabled={saving} onClick={() => setAdjusting({ id: item.id, name: item.name, unitSymbol: item.unit_symbol || item.unit_name || "unid." })}>Corrigir / registrar perda{hasUnresolvedAdjustment(item.id) && <small className="block text-amber-300">Resultado pendente</small>}</button>
           </div>
         );
       })}
       {!visibleIngredients.length && <EmptyRow text={ingredients.length ? "Nenhum insumo encontrado." : "Nenhum insumo ativo cadastrado."} />}
+      </div></div>
+      <InventoryStockAdjustmentDialog item={adjusting} onClose={() => setAdjusting(null)} onAdjusted={onAdjusted} />
     </div>
   );
 }

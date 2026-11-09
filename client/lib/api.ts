@@ -2332,6 +2332,28 @@ export interface InventoryStockBalance {
   active: boolean;
 }
 
+export interface InventoryAdjustmentBucket {
+  location_id: string | null;
+  location_name: string | null;
+  lot_id: string | null;
+  lot_code: string | null;
+  physical: string | number;
+  reserved: string | number;
+  available: string | number;
+  unit_symbol: string | null;
+}
+
+export interface InventoryAdjustmentInput {
+  business_key: string;
+  kind: "correction" | "loss";
+  quantity: string;
+  expected_physical: string | number;
+  location_id?: string | null;
+  lot_id?: string | null;
+  reason: string;
+  notes?: string;
+}
+
 export interface InventoryRecipeItem {
   id?: string;
   recipe_id?: string;
@@ -6137,6 +6159,10 @@ export const inventoryApi = {
   updateItem: (id: string, data: Omit<InventoryItem, "id" | "tenant_id" | "category_name" | "unit_name" | "unit_symbol" | "default_location_name" | "created_at" | "updated_at">) =>
     put<InventoryItem>(`/gestao/inventory/items/${id}`, data),
   removeItem: (id: string) => del<void>(`/gestao/inventory/items/${id}`),
+  adjustmentBuckets: (itemId: string) =>
+    get<InventoryAdjustmentBucket[]>(`/gestao/inventory/items/${encodeURIComponent(itemId)}/adjustment-buckets`),
+  createAdjustment: (itemId: string, body: InventoryAdjustmentInput, key: string) =>
+    request<Record<string, unknown>>("POST", `/gestao/inventory/items/${encodeURIComponent(itemId)}/adjustments`, body, { "Idempotency-Key": key }),
   createPurchase: (data: Omit<InventoryPurchase, "id" | "tenant_id" | "supplier_name" | "total_amount" | "created_at" | "updated_at">) =>
     post<InventoryPurchase>("/gestao/inventory/purchases", data),
   createReplenishmentRequest: () =>

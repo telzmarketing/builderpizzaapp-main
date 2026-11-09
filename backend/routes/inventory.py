@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
@@ -12,6 +12,9 @@ from backend.schemas.inventory import (
     InventoryCategoryOut,
     InventoryItemIn,
     InventoryItemOut,
+    InventoryAdjustmentBucketOut,
+    InventoryAdjustmentIn,
+    InventoryAdjustmentOut,
     InventoryLocationIn,
     InventoryLocationOut,
     InventoryManualEntryIn,
@@ -29,6 +32,7 @@ from backend.schemas.inventory import (
     InventoryUnitOut,
 )
 from backend.services.inventory_service import InventoryService
+from backend.services.inventory_adjustment_service import InventoryAdjustmentService
 
 router = APIRouter(prefix="/gestao/inventory", tags=["gestao-inventory"])
 
@@ -38,6 +42,22 @@ def service(db: Session, tenant_context: TenantContext | None, actor: Authorized
     # rollout flags are off. The RBAC resolver supplies the canonical legacy
     # owner when there is no selected tenant.
     return InventoryService(db, actor.tenant_id, actor.tenant_context, actor_id=actor.user_id)
+
+
+@router.get("/items/{item_id}/adjustment-buckets", response_model=list[InventoryAdjustmentBucketOut])
+def adjustment_buckets(item_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "view"))):
+    try:
+        return InventoryAdjustmentService(db, actor.tenant_id, actor.user_id, actor.tenant_context).buckets(item_id)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/items/{item_id}/adjustments", response_model=InventoryAdjustmentOut, status_code=201)
+def create_adjustment(item_id: str, body: InventoryAdjustmentIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "manage")), key: str = Header(alias="Idempotency-Key", min_length=1, max_length=200)):
+    try:
+        return InventoryAdjustmentService(db, actor.tenant_id, actor.user_id, actor.tenant_context).adjust(item_id, body, key)
+    except DomainError as exc:
+        return err(exc)
 
 
 @router.get("/overview", response_model=InventoryOverviewOut)
