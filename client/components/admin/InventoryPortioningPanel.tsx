@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2, Pencil, Plus, RefreshCw, X } from "lucide-react";
 import {
   inventoryApi,
@@ -7,6 +7,7 @@ import {
   type InventoryPortionConfig,
 } from "@/lib/api";
 import { formatQuantity } from "@/lib/formatQuantity";
+import { filterAndSort, InventoryTableControls } from "./InventoryTableControls";
 
 const input =
   "w-full rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream";
@@ -68,7 +69,10 @@ export default function InventoryPortioningPanel() {
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [search, setSearch] = useState(""),
+    [sort, setSort] = useState<"name" | "weight">("name");
   const update = (v: Partial<Form>) => setForm((x) => ({ ...x, ...v }));
+  const visibleConfigs = useMemo(() => filterAndSort(configs, search, sort, { name: (config) => `${config.output_item_name} ${config.source_item_name}`, weight: (config) => Number(config.portion_weight) || 0 }), [configs, search, sort]);
   async function load() {
     setLoading(true);
     try {
@@ -333,6 +337,7 @@ export default function InventoryPortioningPanel() {
           </div>
         </div>
         <div className="overflow-x-auto rounded-lg border border-surface-03">
+          <InventoryTableControls search={search} onSearch={setSearch} sort={sort} onSort={(value) => setSort(value as typeof sort)} options={[{ value: "name", label: "Porção (A-Z)" }, { value: "weight", label: "Peso" }]} />
           <div className="grid min-w-[900px] grid-cols-[1.5fr_1.2fr_.8fr_.8fr_1.4fr_auto] gap-3 bg-surface-01 px-4 py-3 text-xs font-black uppercase tracking-wide text-stone">
             <span>Porção</span>
             <span>Matéria-prima</span>
@@ -341,7 +346,7 @@ export default function InventoryPortioningPanel() {
             <span>Ações</span>
             <span />
           </div>
-          {configs.map((c) => (
+          {visibleConfigs.map((c) => (
             <div
               key={c.id}
               className="grid min-w-[900px] grid-cols-[1.5fr_1.2fr_.8fr_.8fr_1.4fr_auto] items-center gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm"
@@ -373,6 +378,7 @@ export default function InventoryPortioningPanel() {
               <span />
             </div>
           ))}
+          {!visibleConfigs.length && <p className="px-4 py-10 text-center text-sm text-stone">{configs.length ? "Nenhum porcionamento encontrado." : "Nenhum porcionamento cadastrado."}</p>}
         </div>
       </div>
       {message && <p className="text-emerald-300">{message}</p>}

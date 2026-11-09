@@ -9,6 +9,7 @@ import InventoryReceiptDocumentsPanel from "@/components/admin/InventoryReceiptD
 import PreparationOperationsPanel from "@/components/admin/PreparationOperationsPanel";
 import InventoryPortioningPanel from "@/components/admin/InventoryPortioningPanel";
 import InventoryPortionStockPanel from "@/components/admin/InventoryPortionStockPanel";
+import { filterAndSort, InventoryTableControls } from "@/components/admin/InventoryTableControls";
 import {
   inventoryApi,
   type InventoryCategory,
@@ -221,6 +222,8 @@ function InventoryBase({ section }: { section: Exclude<Section, "settings" | "fo
 }
 
 function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: InventoryOverview; saving: boolean; onCreatePurchase: () => Promise<void> }) {
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<"name" | "current_stock" | "min_stock" | "shortage">("name");
   const needs = useMemo(
     () => data.items
       .filter((item) => item.active && item.current_stock !== undefined && item.current_stock < item.min_stock)
@@ -228,6 +231,7 @@ function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: Invent
       .sort((a, b) => b.shortage - a.shortage),
     [data.items],
   );
+  const visibleNeeds = useMemo(() => filterAndSort(needs, search, sort, { name: (item) => item.name, current_stock: (item) => item.current_stock ?? 0, min_stock: (item) => item.min_stock, shortage: (item) => item.shortage }), [needs, search, sort]);
 
   const latestCostFor = (itemId: string) => data.purchases
     .flatMap((purchase) => purchase.items)
@@ -262,8 +266,9 @@ function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: Invent
         </button>
       </div>
       <div className="overflow-hidden rounded-lg border border-surface-03">
+        <InventoryTableControls search={search} onSearch={setSearch} sort={sort} onSort={(value) => setSort(value as typeof sort)} options={[{ value: "name", label: "Insumo (A-Z)" }, { value: "current_stock", label: "Estoque atual" }, { value: "min_stock", label: "Mínimo" }, { value: "shortage", label: "Necessidade" }]} />
         <TableHeader columns={["Insumo", "Estoque atual", "Mínimo", "Necessidade", "Unidade"]} />
-        {needs.map((item) => (
+        {visibleNeeds.map((item) => (
           <div key={item.id} className="grid grid-cols-[1.5fr_1fr_1fr_1fr_.8fr] gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
             <span className="font-bold text-cream">{item.name}<small className="block text-stone">{item.sku || item.category_name || "Sem categoria"}</small></span>
             <span className="text-red-200">{quantity(item.current_stock)}</span>
@@ -272,7 +277,7 @@ function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: Invent
             <span className="text-stone">{item.unit_symbol || item.unit_name || "-"}</span>
           </div>
         ))}
-        {!needs.length && <EmptyRow text="Nenhum item abaixo do estoque mínimo." />}
+        {!visibleNeeds.length && <EmptyRow text={needs.length ? "Nenhum insumo encontrado." : "Nenhum item abaixo do estoque mínimo."} />}
       </div>
       <p className="text-xs text-stone">A necessidade é calculada a partir do estoque atual e do mínimo cadastrado. O custo unitário usa o último custo disponível; quando ausente, fica em R$ 0,00 para revisão na aba Compras.</p>
     </div>
@@ -280,9 +285,12 @@ function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: Invent
 }
 
 function IngredientStockSection({ data, saving, onRequestPurchase }: { data: InventoryOverview; saving: boolean; onRequestPurchase: () => Promise<void> }) {
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<"name" | "current_stock" | "min_stock">("name");
   const ingredients = data.items
     .filter((item) => item.active && item.item_type === "ingredient")
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const visibleIngredients = useMemo(() => filterAndSort(ingredients, search, sort, { name: (item) => item.name, current_stock: (item) => item.current_stock ?? 0, min_stock: (item) => item.min_stock }), [ingredients, search, sort]);
 
   return (
     <div className="overflow-hidden rounded-lg border border-surface-03">
@@ -295,8 +303,9 @@ function IngredientStockSection({ data, saving, onRequestPurchase }: { data: Inv
           {saving ? <Loader2 size={15} className="animate-spin" /> : <ShoppingCart size={15} />} Solicitar compra
         </button>
       </div>
+      <InventoryTableControls search={search} onSearch={setSearch} sort={sort} onSort={(value) => setSort(value as typeof sort)} options={[{ value: "name", label: "Insumo (A-Z)" }, { value: "current_stock", label: "Saldo atual" }, { value: "min_stock", label: "Mínimo" }]} />
       <TableHeader columns={["Insumo", "Unidade", "Local", "Saldo atual", "Mínimo", "Situação"]} />
-      {ingredients.map((item) => {
+      {visibleIngredients.map((item) => {
         const current = item.current_stock ?? 0;
         const belowMinimum = current < item.min_stock;
         return (
@@ -310,7 +319,7 @@ function IngredientStockSection({ data, saving, onRequestPurchase }: { data: Inv
           </div>
         );
       })}
-      {!ingredients.length && <EmptyRow text="Nenhum insumo ativo cadastrado." />}
+      {!visibleIngredients.length && <EmptyRow text={ingredients.length ? "Nenhum insumo encontrado." : "Nenhum insumo ativo cadastrado."} />}
     </div>
   );
 }
@@ -324,6 +333,8 @@ function ItemsSection({
   saving: boolean;
   run: (action: () => Promise<unknown>, success: string) => Promise<void>;
 }) {
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<"name" | "current_stock" | "min_stock">("name");
   const [form, setForm] = useState({
     name: "",
     item_type: "ingredient" as InventoryItem["item_type"],
@@ -360,6 +371,7 @@ function ItemsSection({
   ).then(() => { setEditing(null); setForm({ ...form, name: "", notes: "", weight_quantity: null, weight_unit_id: "" }); });
 
   const editItem = (item: InventoryItem) => { setEditing(item); setForm({ name: item.name, item_type: item.item_type, portionable: item.portionable, category_id: item.category_id || "", unit_id: item.unit_id || "", weight_quantity: item.weight_quantity ?? null, weight_unit_id: item.weight_unit_id || "", default_location_id: item.default_location_id || "", min_stock: item.min_stock, notes: item.notes || "", active: item.active }); };
+  const visibleItems = useMemo(() => filterAndSort(data.items, search, sort, { name: (item) => item.name, current_stock: (item) => item.current_stock ?? 0, min_stock: (item) => item.min_stock }), [data.items, search, sort]);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]">
@@ -409,8 +421,9 @@ function ItemsSection({
       </div>
 
       <div className="overflow-hidden rounded-lg border border-surface-03">
+        <InventoryTableControls search={search} onSearch={setSearch} sort={sort} onSort={(value) => setSort(value as typeof sort)} options={[{ value: "name", label: "Item (A-Z)" }, { value: "current_stock", label: "Saldo" }, { value: "min_stock", label: "Mínimo" }]} />
         <TableHeader columns={["Item", "Tipo", "Unidade", "Categoria", "Saldo", "Minimo", ""]} />
-        {data.items.map((item) => (
+        {visibleItems.map((item) => (
           <div key={item.id} className="grid grid-cols-[1.5fr_1fr_1fr_1fr_1fr_.7fr_auto] gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
             <span className="font-bold text-cream">{item.name}<small className="block text-stone">{item.sku || "-"}</small></span>
             <span className="text-stone">{item.item_type.replace(/_/g, " ")}</span>
@@ -421,7 +434,7 @@ function ItemsSection({
             <div className="flex gap-1"><button type="button" className="rounded-lg p-2 text-stone hover:text-cream" disabled={saving} onClick={() => editItem(item)} title="Editar"><Pencil size={15} /></button><DeleteButton disabled={saving} onClick={() => run(() => inventoryApi.removeItem(item.id), "Item removido.")} /></div>
           </div>
         ))}
-        {!data.items.length && <EmptyRow text="Nenhum item cadastrado." />}
+        {!visibleItems.length && <EmptyRow text={data.items.length ? "Nenhum item encontrado." : "Nenhum item cadastrado."} />}
       </div>
     </div>
   );
@@ -475,6 +488,7 @@ function UnitsPanel({
 }) {
   const [form, setForm] = useState({ name: "", symbol: "", unit_type: "unit" as InventoryUnit["unit_type"], has_weight: false });
   const [editing, setEditing] = useState<InventoryUnit | null>(null);
+  const [search, setSearch] = useState("");
   const save = () => run(
     () => editing ? inventoryApi.updateUnit(editing.id, { ...form, active: editing.active }) : inventoryApi.createUnit({ ...form, active: true }),
     editing ? "Unidade atualizada." : "Unidade cadastrada.",
@@ -496,7 +510,8 @@ function UnitsPanel({
         <label className="flex items-center gap-2 text-sm text-stone"><input type="checkbox" checked={form.has_weight} onChange={(e) => setForm({ ...form, has_weight: e.target.checked })} /> Esta unidade terá peso por unidade</label>
         <button type="button" disabled={saving || !form.name || !form.symbol} onClick={save} className={buttonClass}><Plus size={15} /> {editing ? "Salvar alteração" : "Adicionar unidade"}</button>
       </div>
-      <ListRows rows={units.map((item) => ({ id: item.id, name: `${item.name} (${item.symbol})`, edit: () => { setEditing(item); setForm({ name: item.name, symbol: item.symbol, unit_type: item.unit_type, has_weight: item.has_weight }); } }))} saving={saving} remove={(id) => run(() => inventoryApi.removeUnit(id), "Unidade removida.")} />
+      <input className={`${inputClass} mt-4`} placeholder="Buscar unidade..." value={search} onChange={(event) => setSearch(event.target.value)} aria-label="Buscar unidade" />
+      <ListRows rows={units.filter((item) => `${item.name} ${item.symbol}`.toLocaleLowerCase("pt-BR").includes(search.trim().toLocaleLowerCase("pt-BR"))).sort((a, b) => a.name.localeCompare(b.name, "pt-BR")).map((item) => ({ id: item.id, name: `${item.name} (${item.symbol})`, edit: () => { setEditing(item); setForm({ name: item.name, symbol: item.symbol, unit_type: item.unit_type, has_weight: item.has_weight }); } }))} saving={saving} remove={(id) => run(() => inventoryApi.removeUnit(id), "Unidade removida.")} />
     </div>
   );
 }
@@ -522,6 +537,7 @@ function SimplePanel<T extends { id: string; name: string }>({
 }) {
   const [name, setName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const save = () => run(() => editingId && update ? update(editingId, name) : create(name), `${title} atualizado.`).then(() => { setName(""); setEditingId(null); });
   return (
     <div className="rounded-lg border border-surface-03 bg-surface-01 p-4">
@@ -530,7 +546,8 @@ function SimplePanel<T extends { id: string; name: string }>({
         <input className={inputClass} placeholder={placeholder} value={name} onChange={(e) => setName(e.target.value)} />
         <button type="button" aria-label={editingId ? `Salvar ${title.toLowerCase()}` : `Adicionar ${title.toLowerCase()}`} disabled={saving || !name} onClick={save} className={buttonClass}><Plus size={15} /> <span className="hidden sm:inline">{editingId ? "Salvar" : "Adicionar"}</span></button>
       </div>
-      <ListRows rows={rows.map((row) => ({ ...row, edit: update ? () => { setEditingId(row.id); setName(row.name); } : undefined }))} saving={saving} remove={(id) => run(() => remove(id), `${title} removido.`)} />
+      <input className={`${inputClass} mt-3`} placeholder={`Buscar ${title.toLowerCase()}...`} value={search} onChange={(event) => setSearch(event.target.value)} aria-label={`Buscar ${title.toLowerCase()}`} />
+      <ListRows rows={rows.filter((row) => row.name.toLocaleLowerCase("pt-BR").includes(search.trim().toLocaleLowerCase("pt-BR"))).sort((a, b) => a.name.localeCompare(b.name, "pt-BR")).map((row) => ({ ...row, edit: update ? () => { setEditingId(row.id); setName(row.name); } : undefined }))} saving={saving} remove={(id) => run(() => remove(id), `${title} removido.`)} />
     </div>
   );
 }
@@ -544,12 +561,15 @@ function SuppliersSection({
   saving: boolean;
   run: (action: () => Promise<unknown>, success: string) => Promise<void>;
 }) {
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<"name" | "document">("name");
   const [form, setForm] = useState({ name: "", document: "", phone: "", email: "", notes: "" });
   const [editing, setEditing] = useState<InventorySupplier | null>(null);
   const save = () => run(
     () => editing ? inventoryApi.updateSupplier(editing.id, { ...form, active: editing.active }) : inventoryApi.createSupplier({ ...form, active: true }),
     editing ? "Fornecedor atualizado." : "Fornecedor cadastrado.",
   ).then(() => { setEditing(null); setForm({ name: "", document: "", phone: "", email: "", notes: "" }); });
+  const visibleSuppliers = useMemo(() => filterAndSort(data.suppliers, search, sort, { name: (item) => item.name, document: (item) => item.document || "" }), [data.suppliers, search, sort]);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]">
@@ -566,8 +586,9 @@ function SuppliersSection({
         </div>
       </div>
       <div className="overflow-hidden rounded-lg border border-surface-03">
+        <InventoryTableControls search={search} onSearch={setSearch} sort={sort} onSort={(value) => setSort(value as typeof sort)} options={[{ value: "name", label: "Fornecedor (A-Z)" }, { value: "document", label: "Documento" }]} />
         <TableHeader columns={["Fornecedor", "Contato", "Documento", ""]} />
-        {data.suppliers.map((item) => (
+        {visibleSuppliers.map((item) => (
           <div key={item.id} className="grid grid-cols-[1.4fr_1.3fr_1fr_auto] gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
             <span className="font-bold text-cream">{item.name}</span>
             <span className="text-stone">{item.phone || item.email || "-"}</span>
@@ -575,7 +596,7 @@ function SuppliersSection({
             <div className="flex gap-1"><button type="button" className="rounded-lg p-2 text-stone hover:text-cream" disabled={saving} onClick={() => { setEditing(item); setForm({ name: item.name, document: item.document || "", phone: item.phone || "", email: item.email || "", notes: item.notes || "" }); }} title="Editar"><Pencil size={15} /></button><DeleteButton disabled={saving} onClick={() => run(() => inventoryApi.removeSupplier(item.id), "Fornecedor removido.")} /></div>
           </div>
         ))}
-        {!data.suppliers.length && <EmptyRow text="Nenhum fornecedor cadastrado." />}
+        {!visibleSuppliers.length && <EmptyRow text={data.suppliers.length ? "Nenhum fornecedor encontrado." : "Nenhum fornecedor cadastrado."} />}
       </div>
     </div>
   );
@@ -590,6 +611,8 @@ function PurchasesSection({
   saving: boolean;
   run: (action: () => Promise<unknown>, success: string) => Promise<void>;
 }) {
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<"reference" | "total_amount">("reference");
   const [form, setForm] = useState({
     supplier_id: "",
     invoice_number: "",
@@ -633,6 +656,7 @@ function PurchasesSection({
     }),
     "Compra confirmada. O Financeiro criara a conta a pagar se a automacao estiver habilitada.",
   );
+  const visiblePurchases = useMemo(() => filterAndSort(data.purchases, search, sort, { reference: (item) => `${item.invoice_number || ""} ${item.supplier_name || ""} ${item.id}`, total_amount: (item) => item.total_amount ?? 0 }), [data.purchases, search, sort]);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]">
@@ -659,8 +683,9 @@ function PurchasesSection({
         </div>
       </div>
       <div className="overflow-hidden rounded-lg border border-surface-03">
+        <InventoryTableControls search={search} onSearch={setSearch} sort={sort} onSort={(value) => setSort(value as typeof sort)} options={[{ value: "reference", label: "Compra (A-Z)" }, { value: "total_amount", label: "Valor total" }]} />
         <TableHeader columns={["Compra", "Fornecedor", "Itens", "Total", ""]} />
-        {data.purchases.map((item) => (
+        {visiblePurchases.map((item) => (
           <div key={item.id} className="grid grid-cols-[1fr_1fr_1.2fr_.8fr_auto] gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
             <span className="font-bold text-cream">{item.invoice_number || item.id}<small className="block text-stone">{item.status === "confirmed" ? "Confirmada" : "Rascunho"}</small></span>
             <span className="text-stone">{item.supplier_name || "-"}</span>
@@ -678,7 +703,7 @@ function PurchasesSection({
             </span>
           </div>
         ))}
-        {!data.purchases.length && <EmptyRow text="Nenhuma compra cadastrada." />}
+        {!visiblePurchases.length && <EmptyRow text={data.purchases.length ? "Nenhuma compra encontrada." : "Nenhuma compra cadastrada."} />}
       </div>
     </div>
   );
@@ -693,6 +718,8 @@ function EntriesSection({
   saving: boolean;
   run: (action: () => Promise<unknown>, success: string) => Promise<void>;
 }) {
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<"item" | "quantity" | "cost">("item");
   const [form, setForm] = useState({ item_id: "", location_id: "", movement_type: "in" as "in" | "out", quantity: 1, unit_cost: 0, reason: "initial_stock", notes: "" });
   const save = () => run(
     () => inventoryApi.createManualEntry({
@@ -706,6 +733,7 @@ function EntriesSection({
     }),
     "Movimento manual registrado.",
   ).then(() => setForm({ item_id: "", location_id: "", movement_type: "in", quantity: 1, unit_cost: 0, reason: "initial_stock", notes: "" }));
+  const visibleEntries = useMemo(() => filterAndSort(data.manual_entries, search, sort, { item: (entry) => `${entry.item_name || ""} ${entry.movement_type || ""} ${entry.location_name || ""}`, quantity: (entry) => entry.quantity, cost: (entry) => entry.unit_cost }), [data.manual_entries, search, sort]);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]">
@@ -734,8 +762,9 @@ function EntriesSection({
         </div>
       </div>
       <div className="overflow-hidden rounded-lg border border-surface-03">
+        <InventoryTableControls search={search} onSearch={setSearch} sort={sort} onSort={(value) => setSort(value as typeof sort)} options={[{ value: "item", label: "Item (A-Z)" }, { value: "quantity", label: "Quantidade" }, { value: "cost", label: "Custo unitário" }]} />
         <TableHeader columns={["Item", "Tipo", "Local", "Quantidade", "Custo", ""]} />
-        {data.manual_entries.map((item) => (
+        {visibleEntries.map((item) => (
           <div key={item.id} className="grid grid-cols-[1.2fr_.8fr_1fr_.8fr_.8fr_auto] gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
             <span className="font-bold text-cream">{item.item_name || item.item_id}</span>
             <span className={item.movement_type === "out" ? "font-bold text-red-300" : "font-bold text-emerald-300"}>{item.movement_type === "out" ? "Saida" : "Entrada"}</span>
@@ -745,7 +774,7 @@ function EntriesSection({
             {item.reversed ? <span className="text-stone">Estornada</span> : <button type="button" disabled={saving} onClick={() => run(() => inventoryApi.removeManualEntry(item.id), "Entrada estornada; historico preservado.")} className={ghostButtonClass}>Estornar</button>}
           </div>
         ))}
-        {!data.manual_entries.length && <EmptyRow text="Nenhuma entrada manual registrada." />}
+        {!visibleEntries.length && <EmptyRow text={data.manual_entries.length ? "Nenhum movimento encontrado." : "Nenhuma entrada manual registrada."} />}
       </div>
       <div className="xl:col-span-2 border-t border-surface-03 pt-5">
         <InventoryReceiptDocumentsPanel />
