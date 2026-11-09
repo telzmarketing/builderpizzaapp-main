@@ -698,24 +698,24 @@ function EntriesSection({
       <div className="rounded-lg border border-surface-03 bg-surface-01 p-4">
         <h3 className="text-sm font-black uppercase tracking-wide text-parchment">Novo movimento manual</h3>
         <div className="mt-4 space-y-3">
-          <select className={inputClass} value={form.movement_type} onChange={(e) => setForm({ ...form, movement_type: e.target.value as "in" | "out", reason: e.target.value === "out" ? "manual_out" : "initial_stock" })}>
+          <label className="block text-xs font-bold text-stone">Tipo de movimento<select className={`${inputClass} mt-1`} value={form.movement_type} onChange={(e) => setForm({ ...form, movement_type: e.target.value as "in" | "out", reason: e.target.value === "out" ? "manual_out" : "initial_stock" })}>
             <option value="in">Entrada de estoque</option>
-            <option value="out">Saida de estoque</option>
-          </select>
-          <select className={inputClass} value={form.item_id} onChange={(e) => setForm({ ...form, item_id: e.target.value })}>
-            <option value="">Item</option>
+            <option value="out">Saída de estoque</option>
+          </select></label>
+          <label className="block text-xs font-bold text-stone">Insumo<select className={`${inputClass} mt-1`} value={form.item_id} onChange={(e) => setForm({ ...form, item_id: e.target.value })}>
+            <option value="">Selecione o insumo</option>
             {data.items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
-          <select className={inputClass} value={form.location_id} onChange={(e) => setForm({ ...form, location_id: e.target.value })}>
-            <option value="">Local</option>
+          </select></label>
+          <label className="block text-xs font-bold text-stone">Local de estoque<select className={`${inputClass} mt-1`} value={form.location_id} onChange={(e) => setForm({ ...form, location_id: e.target.value })}>
+            <option value="">Selecione o local</option>
             {data.locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
+          </select></label>
           <div className="grid grid-cols-2 gap-2">
-            <input className={inputClass} type="number" min="0.001" step="0.001" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })} />
-            <input className={inputClass} type="number" min="0" step="0.01" value={form.unit_cost} onChange={(e) => setForm({ ...form, unit_cost: Number(e.target.value) })} />
+            <label className="block text-xs font-bold text-stone">Quantidade{data.items.find((item) => item.id === form.item_id)?.unit_symbol ? ` (${data.items.find((item) => item.id === form.item_id)?.unit_symbol})` : ""}<input className={`${inputClass} mt-1`} type="number" min="0.001" step="0.001" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })} /></label>
+            <label className="block text-xs font-bold text-stone">Custo unitário (R$)<input className={`${inputClass} mt-1`} type="number" min="0" step="0.01" value={form.unit_cost} onChange={(e) => setForm({ ...form, unit_cost: Number(e.target.value) })} /></label>
           </div>
-          <input className={inputClass} placeholder="Motivo" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
-          <textarea className={inputClass} placeholder="Observacoes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          <label className="block text-xs font-bold text-stone">Motivo do movimento<input className={`${inputClass} mt-1`} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></label>
+          <label className="block text-xs font-bold text-stone">Observações<textarea className={`${inputClass} mt-1`} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label>
           <button type="button" disabled={saving || !form.item_id} onClick={save} className={buttonClass}><Plus size={15} /> Registrar movimento</button>
         </div>
       </div>
