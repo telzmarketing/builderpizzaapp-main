@@ -69,6 +69,25 @@ export function validatePreparationAllocationDrafts(drafts: PreparationAllocatio
   return null;
 }
 
+export function emptyPreparationRecipe(order: PreparationOrder): PreparationRecipe {
+  return {
+    preparation_order_id: order.id,
+    recipe_version_id: "",
+    executable: false,
+    output_item_id: "",
+    output_item_name: order.output_item_name || null,
+    target_quantity: String(order.target_quantity ?? "0"),
+    output_unit_id: "",
+    output_unit_symbol: order.output_unit_symbol || null,
+    instructions: null,
+    preparation_steps: [],
+    ingredients: [],
+    warnings: [
+      { code: "missing_recipe", message: "Nenhuma ficha técnica foi cadastrada para este porcionamento." },
+    ],
+  };
+}
+
 function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder; onRefresh: () => Promise<void>; onExecution: (id: string) => void }) {
   const [recipe, setRecipe] = useState<PreparationRecipe | null>(null);
   const [inventory, setInventory] = useState<InventoryOverview | null>(null);
@@ -88,7 +107,11 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
 
   async function run(action: () => Promise<unknown>, success: string) {
     setBusy(true); setError(""); setMessage("");
-    try { const result = await action(); if (result && typeof result === "object" && "execution_id" in result && typeof result.execution_id === "string") onExecution(result.execution_id); setMessage(success); await onRefresh(); } catch (err) { setError(err instanceof Error ? err.message : "Nao foi possivel executar a operacao."); } finally { setBusy(false); }
+    try {
+      const result = await action();
+      setMessage(success);
+      if (result !== "modal-opened") await onRefresh();
+    } catch (err) { setError(err instanceof Error ? err.message : "Nao foi possivel executar a operacao."); } finally { setBusy(false); }
   }
 
   const canStart = ["waiting", "scheduled"].includes(order.status);
@@ -96,35 +119,56 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
   const canComplete = canReport && Number(order.produced_quantity) + Number(order.lost_quantity) + Number(order.discarded_quantity) === Number(order.target_quantity);
   const allocationError = validatePreparationAllocationDrafts(allocationDrafts);
 
-  async function loadRecipeAndStock() {
+  async function loadRecipeAndStock(includeStock: boolean) {
     setSheetLoading(true);
+    setError("");
     try {
-      const [nextRecipe, nextInventory, nextLots] = await Promise.all([
-        preparationApi.recipe(order.id),
-        inventoryApi.overview(),
-        inventoryFoundationApi.lots(),
-      ]);
+      let nextRecipe: PreparationRecipe;
+      try {
+        nextRecipe = await preparationApi.recipe(order.id);
+      } catch (caught) {
+        // A ficha técnica é consultiva: uma ordem sem ficha ainda precisa abrir
+        // o modal, mostrando a estrutura vazia e o motivo da pendência.
+        nextRecipe = emptyPreparationRecipe(order);
+        if (!(caught instanceof Error && /404|nao encontrada|não encontrada/i.test(caught.message))) {
+          setError(caught instanceof Error ? caught.message : "Nao foi possivel carregar a ficha tecnica.");
+        }
+      }
       setRecipe(nextRecipe);
-      setInventory(nextInventory);
-      setLots(nextLots.items);
-      setAllocationDrafts(buildPreparationAllocationDrafts(nextRecipe, nextInventory, nextLots.items));
+      if (includeStock && nextRecipe.executable) {
+        const [inventoryResult, lotsResult] = await Promise.allSettled([
+          inventoryApi.overview(),
+          inventoryFoundationApi.lots(),
+        ]);
+        if (inventoryResult.status === "fulfilled") setInventory(inventoryResult.value);
+        if (lotsResult.status === "fulfilled") setLots(lotsResult.value.items);
+        if (inventoryResult.status === "fulfilled" && lotsResult.status === "fulfilled") {
+          setAllocationDrafts(buildPreparationAllocationDrafts(nextRecipe, inventoryResult.value, lotsResult.value.items));
+        } else {
+          setError("Nao foi possivel carregar os locais e lotes do estoque para efetuar o porcionamento.");
+        }
+      }
     } finally {
       setSheetLoading(false);
     }
   }
 
-  async function openSheet(mode: "technical" | "completion") {
+  async function openSheet(mode: "technical" | "completion"): Promise<"modal-opened"> {
     setSheetMode(mode);
-    setPortionConfirmation(null);
+    setPortionConfirmation(mode === "completion" ? "yes" : null);
+    setRecipe(null);
     setError("");
-    if (!recipe) await loadRecipeAndStock();
+    // O modal abre imediatamente. Nenhuma rota de estoque pode impedir a
+    // consulta da ficha técnica ou a confirmação da quantidade.
+    await loadRecipeAndStock(mode === "completion");
+    return "modal-opened";
   }
 
   async function finalizePortioning(quantity: string) {
     const producedQuantity = Number(String(quantity).replace(",", "."));
     if (!Number.isFinite(producedQuantity) || producedQuantity <= 0) throw new Error("Informe uma quantidade porcionada positiva.");
     if (producedQuantity > Number(order.target_quantity)) throw new Error("A quantidade porcionada nao pode superar a quantidade solicitada.");
-    if (!recipe) await loadRecipeAndStock();
+    if (!recipe) await loadRecipeAndStock(true);
     const currentRecipe = recipe ?? await preparationApi.recipe(order.id);
     const currentInventory = inventory ?? await inventoryApi.overview();
     const currentDrafts = allocationDrafts.length ? allocationDrafts : buildPreparationAllocationDrafts(currentRecipe, currentInventory, []);

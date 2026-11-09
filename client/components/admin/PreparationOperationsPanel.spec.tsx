@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPreparationAllocationDrafts,
+  emptyPreparationRecipe,
   preparationAllocationPayload,
   validatePreparationAllocationDrafts,
 } from "./PreparationOperationsPanel";
@@ -45,6 +46,28 @@ const lots: FoundationLot[] = [{
 }];
 
 describe("PreparationOperationsPanel structured allocations", () => {
+  it("keeps the technical sheet available as an empty pending sheet", () => {
+    const empty = emptyPreparationRecipe({
+      id: "order-empty",
+      recipe_id: "missing-recipe",
+      recipe_name: null,
+      output_item_name: "Brócolis porcionado",
+      output_unit_symbol: "GR",
+      target_quantity: "20",
+      produced_quantity: "0",
+      lost_quantity: "0",
+      discarded_quantity: "0",
+      status: "waiting",
+      version: 1,
+      execution_id: null,
+    });
+
+    expect(empty.executable).toBe(false);
+    expect(empty.ingredients).toEqual([]);
+    expect(empty.warnings[0].code).toBe("missing_recipe");
+    expect(empty.output_item_name).toBe("Brócolis porcionado");
+  });
+
   it("builds one editable row per recipe ingredient using the item's default location", () => {
     const drafts = buildPreparationAllocationDrafts(recipe, inventory, lots);
 
