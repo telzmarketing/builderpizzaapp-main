@@ -186,7 +186,7 @@ export default function InventoryFoundationPanel() {
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold text-cream">
-          Saldos, lotes e conversoes
+          Saldos, lotes e conversões
         </h2>
         <button
           type="button"

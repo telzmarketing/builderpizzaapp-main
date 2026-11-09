@@ -82,6 +82,21 @@ const sections: AdminPageTab<Section>[] = [
   { id: "settings", label: "Configurações", icon: Settings },
 ];
 
+const sectionContent: Record<Section, { title: string; description: string }> = {
+  items: { title: "Cadastro de Insumos", description: "Cadastre os insumos, embalagens e materiais usados pelo estoque." },
+  "ingredient-stock": { title: "Estoque de Insumos", description: "Consulte os saldos atuais, mínimos e locais dos insumos cadastrados." },
+  portioning: { title: "Cadastro de Porcionamento", description: "Configure como cada insumo será transformado em porções para uso." },
+  "portion-stock": { title: "Estoque de Porcionamento", description: "Consulte as porções disponíveis e solicite novos porcionamentos." },
+  replenishment: { title: "Reposição de Estoque", description: "Identifique os insumos abaixo do mínimo e gere uma solicitação de compra." },
+  foundation: { title: "Base do Estoque", description: "Cadastre unidades, categorias, locais e conversões usadas pelo estoque." },
+  purchases: { title: "Compras de Estoque", description: "Crie, revise e confirme compras de insumos sem alterar o saldo antes da entrada." },
+  entries: { title: "Entradas e Movimentos de Estoque", description: "Registre entradas, saídas e ajustes manuais com motivo e observações." },
+  suppliers: { title: "Cadastro de Fornecedores", description: "Cadastre e mantenha os fornecedores utilizados nas compras de estoque." },
+  preparation: { title: "Preparo de Porcionamento", description: "Acompanhe as solicitações, consulte a ficha e registre o porcionamento efetuado." },
+  base: { title: "Base do Estoque", description: "Cadastre as estruturas auxiliares que sustentam os controles de estoque." },
+  settings: { title: "Configurações do Estoque", description: "Configure as opções gerais do módulo de estoque." },
+};
+
 const emptyOverview: InventoryOverview = {
   units: [],
   categories: [],
@@ -139,6 +154,7 @@ function InventoryBase({ section }: { section: Exclude<Section, "settings" | "fo
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const content = sectionContent[section];
 
   const load = () => {
     setLoading(true);
@@ -172,10 +188,8 @@ function InventoryBase({ section }: { section: Exclude<Section, "settings" | "fo
     <section className="space-y-5 rounded-lg border border-surface-03 bg-surface-02 p-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 className="text-lg font-black text-cream">{section === "ingredient-stock" ? "Estoque de Insumos" : "Cadastros base de Estoque"}</h2>
-          <p className="mt-1 text-sm text-stone">
-            {section === "ingredient-stock" ? "Saldo atual dos insumos cadastrados. Entradas e saídas são registradas na aba Entradas." : "Insumos, unidades, categorias, locais, fornecedores, compras em rascunho e entradas manuais."}
-          </p>
+          <h2 className="text-lg font-black text-cream">{content.title}</h2>
+          <p className="mt-1 text-sm text-stone">{content.description}</p>
         </div>
         <button type="button" onClick={load} className={ghostButtonClass}>
           <RefreshCw size={15} /> Atualizar
@@ -230,11 +244,11 @@ function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: Invent
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-amber-200">Itens abaixo do minimo</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-amber-200">Itens abaixo do mínimo</p>
           <p className="mt-1 text-2xl font-black text-amber-100">{needs.length}</p>
         </div>
         <div className="rounded-lg border border-surface-03 bg-surface-01 p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-stone">Estimativa com ultimo custo</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-stone">Estimativa com último custo</p>
           <p className="mt-1 text-2xl font-black text-cream">{currency(estimated)}</p>
         </div>
       </div>
@@ -248,7 +262,7 @@ function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: Invent
         </button>
       </div>
       <div className="overflow-hidden rounded-lg border border-surface-03">
-        <TableHeader columns={["Insumo", "Estoque atual", "Minimo", "Necessidade", "Unidade"]} />
+        <TableHeader columns={["Insumo", "Estoque atual", "Mínimo", "Necessidade", "Unidade"]} />
         {needs.map((item) => (
           <div key={item.id} className="grid grid-cols-[1.5fr_1fr_1fr_1fr_.8fr] gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
             <span className="font-bold text-cream">{item.name}<small className="block text-stone">{item.sku || item.category_name || "Sem categoria"}</small></span>
@@ -258,9 +272,9 @@ function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: Invent
             <span className="text-stone">{item.unit_symbol || item.unit_name || "-"}</span>
           </div>
         ))}
-        {!needs.length && <EmptyRow text="Nenhum item abaixo do estoque minimo." />}
+        {!needs.length && <EmptyRow text="Nenhum item abaixo do estoque mínimo." />}
       </div>
-      <p className="text-xs text-stone">A necessidade é calculada a partir do estoque atual e do mínimo cadastrado. O custo unitário usa o último custo disponível; quando ausente, fica em zero para revisão na aba Compras.</p>
+      <p className="text-xs text-stone">A necessidade é calculada a partir do estoque atual e do mínimo cadastrado. O custo unitário usa o último custo disponível; quando ausente, fica em R$ 0,00 para revisão na aba Compras.</p>
     </div>
   );
 }
@@ -386,8 +400,8 @@ function ItemsSection({
             <option value="">Local padrao</option>
             {data.locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
-          <input className={inputClass} type="number" min="0" step="0.001" placeholder="Estoque minimo" value={form.min_stock} onChange={(e) => setForm({ ...form, min_stock: Number(e.target.value) })} />
-          <textarea className={inputClass} placeholder="Observacoes internas" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          <input className={inputClass} type="number" min="0" step="0.001" placeholder="Estoque mínimo" value={form.min_stock} onChange={(e) => setForm({ ...form, min_stock: Number(e.target.value) })} />
+          <textarea className={inputClass} placeholder="Observações internas" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           <button type="button" disabled={saving || !form.name} onClick={save} className={buttonClass}>
             <Plus size={15} /> Cadastrar item
           </button>
@@ -480,7 +494,7 @@ function UnitsPanel({
           <option value="package">Pacote</option>
         </select>
         <label className="flex items-center gap-2 text-sm text-stone"><input type="checkbox" checked={form.has_weight} onChange={(e) => setForm({ ...form, has_weight: e.target.checked })} /> Esta unidade terá peso por unidade</label>
-        <button type="button" disabled={saving || !form.name || !form.symbol} onClick={save} className={buttonClass}><Plus size={15} /> Adicionar</button>
+        <button type="button" disabled={saving || !form.name || !form.symbol} onClick={save} className={buttonClass}><Plus size={15} /> {editing ? "Salvar alteração" : "Adicionar unidade"}</button>
       </div>
       <ListRows rows={units.map((item) => ({ id: item.id, name: `${item.name} (${item.symbol})`, edit: () => { setEditing(item); setForm({ name: item.name, symbol: item.symbol, unit_type: item.unit_type, has_weight: item.has_weight }); } }))} saving={saving} remove={(id) => run(() => inventoryApi.removeUnit(id), "Unidade removida.")} />
     </div>
@@ -512,9 +526,9 @@ function SimplePanel<T extends { id: string; name: string }>({
   return (
     <div className="rounded-lg border border-surface-03 bg-surface-01 p-4">
       <h3 className="text-sm font-black uppercase tracking-wide text-parchment">{title}</h3>
-      <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex gap-2">
         <input className={inputClass} placeholder={placeholder} value={name} onChange={(e) => setName(e.target.value)} />
-        <button type="button" disabled={saving || !name} onClick={save} className={buttonClass}><Plus size={15} /></button>
+        <button type="button" aria-label={editingId ? `Salvar ${title.toLowerCase()}` : `Adicionar ${title.toLowerCase()}`} disabled={saving || !name} onClick={save} className={buttonClass}><Plus size={15} /> <span className="hidden sm:inline">{editingId ? "Salvar" : "Adicionar"}</span></button>
       </div>
       <ListRows rows={rows.map((row) => ({ ...row, edit: update ? () => { setEditingId(row.id); setName(row.name); } : undefined }))} saving={saving} remove={(id) => run(() => remove(id), `${title} removido.`)} />
     </div>
@@ -547,7 +561,7 @@ function SuppliersSection({
           <input className={inputClass} placeholder="Documento" value={form.document} onChange={(e) => setForm({ ...form, document: e.target.value })} />
           <input className={inputClass} placeholder="Telefone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
           <input className={inputClass} placeholder="E-mail" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          <textarea className={inputClass} placeholder="Observacoes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          <textarea className={inputClass} placeholder="Observações" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           <button type="button" disabled={saving || !form.name} onClick={save} className={buttonClass}><Plus size={15} /> Cadastrar</button>
         </div>
       </div>
@@ -625,22 +639,22 @@ function PurchasesSection({
       <div className="rounded-lg border border-surface-03 bg-surface-01 p-4">
         <h3 className="text-sm font-black uppercase tracking-wide text-parchment">Nova compra em rascunho</h3>
         <div className="mt-4 space-y-3">
-          <select className={inputClass} value={form.supplier_id} onChange={(e) => setForm({ ...form, supplier_id: e.target.value })}>
-            <option value="">Fornecedor</option>
+          <label className="block text-sm text-stone">Fornecedor<select className={inputClass} value={form.supplier_id} onChange={(e) => setForm({ ...form, supplier_id: e.target.value })}>
+            <option value="">Selecione o fornecedor</option>
             {data.suppliers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
-          <input className={inputClass} placeholder="Numero da nota/pedido" value={form.invoice_number} onChange={(e) => setForm({ ...form, invoice_number: e.target.value })} />
-          <input className={inputClass} type="date" value={form.expected_date} onChange={(e) => setForm({ ...form, expected_date: e.target.value })} />
-          <select className={inputClass} value={form.item_id} onChange={(e) => setForm({ ...form, item_id: e.target.value })}>
-            <option value="">Item</option>
+          </select></label>
+          <label className="block text-sm text-stone">Número da nota ou pedido<input className={inputClass} placeholder="Ex.: NF 12345" value={form.invoice_number} onChange={(e) => setForm({ ...form, invoice_number: e.target.value })} /></label>
+          <label className="block text-sm text-stone">Data prevista de recebimento<input className={inputClass} type="date" value={form.expected_date} onChange={(e) => setForm({ ...form, expected_date: e.target.value })} /></label>
+          <label className="block text-sm text-stone">Insumo<select className={inputClass} value={form.item_id} onChange={(e) => setForm({ ...form, item_id: e.target.value })}>
+            <option value="">Selecione o insumo</option>
             {data.items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
+          </select></label>
           <div className="grid grid-cols-2 gap-2">
-            <input className={inputClass} type="number" min="0.001" step="0.001" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })} />
-            <input className={inputClass} type="number" min="0" step="0.01" value={form.unit_cost} onChange={(e) => setForm({ ...form, unit_cost: Number(e.target.value) })} />
+            <label className="block text-sm text-stone">Quantidade<input aria-label="Quantidade da compra" className={inputClass} type="number" min="0.001" step="0.001" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })} /></label>
+            <label className="block text-sm text-stone">Custo unitário (R$)<input aria-label="Custo unitário da compra" className={inputClass} type="number" min="0" step="0.01" value={form.unit_cost} onChange={(e) => setForm({ ...form, unit_cost: Number(e.target.value) })} /></label>
           </div>
           <p className="text-sm font-bold text-stone">Total: {currency(total)}</p>
-          <textarea className={inputClass} placeholder="Observacoes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          <textarea className={inputClass} placeholder="Observações" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           <button type="button" disabled={saving} onClick={save} className={buttonClass}><Plus size={15} /> Salvar rascunho</button>
         </div>
       </div>

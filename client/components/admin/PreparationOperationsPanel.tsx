@@ -20,7 +20,7 @@ function listValue(value: PreparationOrder[] | { items: PreparationOrder[] }) {
 }
 
 function stateLabel(state: string) {
-  return ({ draft: "Aguardando execucao", approved: "Aguardando execucao", scheduled: "Aguardando execucao", waiting: "Aguardando execucao", in_progress: "Em preparo", partially_completed: "Parcial", completed: "Concluido", paused: "Pausado", blocked: "Bloqueado", cancelled: "Cancelado" } as Record<string, string>)[state] ?? state;
+  return ({ draft: "Rascunho", approved: "Aprovado para preparo", scheduled: "Agendado", waiting: "Aguardando execução", in_progress: "Em preparo", partially_completed: "Parcial", completed: "Concluído", paused: "Pausado", blocked: "Bloqueado", cancelled: "Cancelado" } as Record<string, string>)[state] ?? state;
 }
 
 function exact(value: string | number | null | undefined) {
@@ -132,7 +132,7 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
         // o modal, mostrando a estrutura vazia e o motivo da pendência.
         nextRecipe = emptyPreparationRecipe(order);
         if (!(caught instanceof Error && /404|nao encontrada|não encontrada/i.test(caught.message))) {
-          setError(caught instanceof Error ? caught.message : "Nao foi possivel carregar a ficha tecnica.");
+          setError(caught instanceof Error ? caught.message : "Não foi possível carregar a ficha técnica.");
         }
       }
       setRecipe(nextRecipe);
@@ -240,12 +240,12 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
 
       {sheetMode && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 p-4"><div className="mx-auto mt-8 max-w-2xl rounded-xl border border-surface-03 bg-surface-02 p-5 text-sm shadow-2xl">
         <div className="flex items-center justify-between"><h3 className="text-lg font-black text-cream">{sheetMode === "technical" ? "Ficha técnica de porcionamento" : "Efetuar porcionamento"}</h3><button type="button" className={ghost} onClick={() => setSheetMode(null)}>Fechar</button></div>
-        {sheetLoading && <div className="mt-4 flex items-center gap-2 rounded-lg border border-surface-03 bg-surface-01 p-4 text-stone"><Loader2 size={17} className="animate-spin" /> Carregando ficha tecnica...</div>}
+        {sheetLoading && <div className="mt-4 flex items-center gap-2 rounded-lg border border-surface-03 bg-surface-01 p-4 text-stone"><Loader2 size={17} className="animate-spin" /> Carregando ficha técnica...</div>}
         {!sheetLoading && !recipe && error && <p role="alert" className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-200">{error}</p>}
         {!sheetLoading && recipe && <>
         <p className="mt-2 text-stone">{recipe.output_item_name || order.output_item_name || "Produto porcionado"} · quantidade solicitada: <b className="text-cream">{exact(order.target_quantity)} {recipe.output_unit_symbol || order.output_unit_symbol || "porcoes"}</b></p>
         {recipe.instructions && <p className="mt-3 whitespace-pre-line rounded-lg bg-surface-01 p-3 text-stone">{recipe.instructions}</p>}
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">{(recipe.ingredients ?? []).map((item, index) => <div key={`${item.inventory_item_id}-${item.unit_id}-${index}`} className="rounded bg-surface-01 px-3 py-2 text-stone">{item.inventory_item_name || "Insumo"}: <b className="text-cream">{exact(item.quantity)} {item.unit_symbol || ""}</b> por porcao</div>)}</div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">{(recipe.ingredients ?? []).map((item, index) => <div key={`${item.inventory_item_id}-${item.unit_id}-${index}`} className="rounded bg-surface-01 px-3 py-2 text-stone">{item.inventory_item_name || "Insumo"}: <b className="text-cream">{exact(item.quantity)} {item.unit_symbol || ""}</b> por porção</div>)}</div>
           {sheetMode === "completion" && portionConfirmation && <div className="mt-4 rounded-lg border border-gold/50 bg-gold/10 p-3"><p className="font-bold text-cream">Foi porcionada a quantidade solicitada?</p><div className="mt-2 flex gap-2"><button type="button" className={button} disabled={busy} onClick={() => void run(() => finalizePortioning(order.target_quantity), "Porcionamento efetuado.")}>Sim</button><button type="button" className={ghost} disabled={busy} onClick={() => setPortionConfirmation("no")}>Não</button></div>{portionConfirmation === "no" && <div className="mt-3"><label className="text-xs text-stone">Informe a quantidade porcionada<input className={input} inputMode="decimal" value={actualQuantity} onChange={(event) => setActualQuantity(event.target.value)} /></label><button type="button" className={`${button} mt-2`} disabled={busy || !actualQuantity} onClick={() => { if (confirm(`Quantidade informada: ${exact(actualQuantity)}. Está correta?`)) void run(() => finalizePortioning(actualQuantity), "Porcionamento efetuado."); }}>Confirmar quantidade</button></div>}</div>}
         <p className={recipe.executable ? "font-bold text-emerald-300" : "font-bold text-amber-300"}>{recipe.executable ? "Ficha executavel" : "Ficha pendente"}</p>
         {recipe.instructions && <p className="mt-2 text-stone">{recipe.instructions}</p>}
@@ -276,7 +276,7 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
             })}
           </div>
         </div>}
-        <input className={`${input} md:col-span-4`} placeholder="Motivo de perda ou descarte (obrigatorio quando aplicavel)" value={reason} onChange={(e) => setReason(e.target.value)} />
+        <input className={`${input} md:col-span-4`} placeholder="Motivo de perda ou descarte (obrigatório quando aplicável)" value={reason} onChange={(e) => setReason(e.target.value)} />
       </div>}
       {message && <p className="mt-3 text-sm font-semibold text-emerald-300">{message}</p>}
       {error && <p className="mt-3 flex gap-2 text-sm font-semibold text-red-300"><AlertTriangle size={16} /> {error}</p>}
@@ -313,7 +313,7 @@ export default function PreparationOperationsPanel({ showKdsLink = true }: { sho
 
   return <section className="preparation-panel space-y-5 rounded-xl border border-surface-03 bg-surface-02 p-4 shadow-2xl shadow-black/15 sm:p-5">
     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-      <div><h2 className="text-lg font-black text-cream">Preparo e planejamento</h2><p className="mt-1 text-sm text-stone">Ordens, fichas e apontamentos de producao com controle de versao.</p></div>
+      <div><h2 className="text-lg font-black text-cream">Preparo e planejamento</h2><p className="mt-1 text-sm text-stone">Ordens, fichas e apontamentos de produção com controle de versão.</p></div>
       {showKdsLink && <Link to="/painel/preparo" className={ghost}>Abrir KDS Cozinha Preparo</Link>}
       <div className="flex flex-wrap gap-2"><button type="button" className={view === "operator" ? button : ghost} onClick={() => setView("operator")}>Operacao</button><button type="button" className={view === "planning" ? button : ghost} onClick={() => setView("planning")}>Planejamento</button><button type="button" className={ghost} onClick={() => void load()}><RefreshCw size={15} /> Atualizar</button></div>
     </div>

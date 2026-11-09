@@ -127,7 +127,7 @@ export default function InventoryPortioningPanel() {
       const min = Number(form.min_stock),
         target = Number(form.target_stock);
       if (target < min)
-        throw new Error("O estoque-alvo deve ser maior ou igual ao minimo.");
+        throw new Error("O estoque-alvo deve ser maior ou igual ao mínimo.");
       const p = {
         source_item_id: form.source_item_id,
         usage: form.usage,
@@ -205,11 +205,11 @@ export default function InventoryPortioningPanel() {
       <div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]">
         <div className="rounded-lg border border-surface-03 bg-surface-01 p-4">
           <h3 className="font-black text-cream">
-            {editing ? "Editar configuracao" : "Nova configuracao"}
+            {editing ? "Editar configuração" : "Nova configuração"}
           </h3>
           {editing && (
             <button type="button" className={`${ghost} mt-2`} onClick={cancel}>
-              Cancelar edicao
+              Cancelar edição
             </button>
           )}
           <div className="mt-4 space-y-3">
@@ -238,9 +238,9 @@ export default function InventoryPortioningPanel() {
                   update({ usage: e.target.value as Form["usage"] })
                 }
               >
-                <option value="mandatory">Porcionamento obrigatorio</option>
+                <option value="mandatory">Porcionamento obrigatório</option>
                 <option value="optional">Porcionamento opcional</option>
-                <option value="direct">Utilizacao direta</option>
+                <option value="direct">Utilização direta</option>
               </select>
             </label>
             <div className="grid grid-cols-2 gap-3">
@@ -272,7 +272,7 @@ export default function InventoryPortioningPanel() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <label className="text-xs text-stone">
-                Referencia
+                Referência
                 <select
                   className={input}
                   value={form.reference_fraction}
@@ -295,7 +295,7 @@ export default function InventoryPortioningPanel() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <label className="text-xs text-stone">
-                Estoque minimo
+                Estoque mínimo
                 <input
                   className={input}
                   type="number"
@@ -314,8 +314,8 @@ export default function InventoryPortioningPanel() {
               </label>
             </div>
             <label className="block text-xs text-stone">
-              Ficha tecnica de porcionamento
-              <textarea className={`${input} min-h-24`} value={form.technical_instructions} onChange={(e) => update({ technical_instructions: e.target.value })} placeholder="Descreva o preparo, a porcao e a gramatura." />
+              Ficha técnica de porcionamento
+              <textarea className={`${input} min-h-24`} value={form.technical_instructions} onChange={(e) => update({ technical_instructions: e.target.value })} placeholder="Descreva o preparo, a porção e a gramatura." />
             </label>
             <label className="block text-xs text-stone">
               Manuseio e armazenamento
@@ -328,17 +328,17 @@ export default function InventoryPortioningPanel() {
               onClick={() => void save()}
             >
               <Plus size={15} />{" "}
-              {editing ? "Salvar alteracao" : "Cadastrar porcionamento"}
+              {editing ? "Salvar alteração" : "Cadastrar porcionamento"}
             </button>
           </div>
         </div>
         <div className="overflow-x-auto rounded-lg border border-surface-03">
           <div className="grid min-w-[900px] grid-cols-[1.5fr_1.2fr_.8fr_.8fr_1.4fr_auto] gap-3 bg-surface-01 px-4 py-3 text-xs font-black uppercase tracking-wide text-stone">
-            <span>Porcao</span>
-            <span>Materia-prima</span>
+            <span>Porção</span>
+            <span>Matéria-prima</span>
             <span>Peso</span>
             <span>Uso</span>
-            <span>Acoes</span>
+            <span>Ações</span>
             <span />
           </div>
           {configs.map((c) => (
