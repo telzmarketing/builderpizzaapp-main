@@ -255,7 +255,7 @@ class InventoryService:
         from datetime import datetime, timezone
         balances = self._stock_balance_map()
         items = (self._db.query(InventoryItem)
-                 .filter(InventoryItem.tenant_id == self._tenant_id, InventoryItem.active.is_(True))
+                 .filter(InventoryItem.tenant_id == self._tenant_id, InventoryItem.active.is_(True), InventoryItem.item_type != "finished_good")
                  .order_by(InventoryItem.name).all())
         low = [item for item in items if balances.get(item.id, ZERO) < decimal_value(item.min_stock)]
         if not low:
@@ -411,6 +411,7 @@ class InventoryService:
             {
                 "item_id": item.id,
                 "item_name": item.name,
+                "item_type": item.item_type,
                 "unit_symbol": item.unit.symbol if item.unit else None,
                 "current_stock": round(balances.get(item.id, 0.0), 6),
                 "min_stock": item.min_stock,
@@ -701,12 +702,17 @@ class InventoryService:
         if unit and unit.has_weight:
             if weight_quantity is None or not weight_unit_id:
                 raise InventoryInvalidReference("Esta unidade de compra exige o peso total da embalagem e a unidade desse peso.")
-        elif weight_quantity is not None or weight_unit_id:
-            raise InventoryInvalidReference("Peso so pode ser informado para uma unidade configurada com peso.")
+        if (weight_quantity is not None) != bool(weight_unit_id):
+            raise InventoryInvalidReference("Informe o peso total da embalagem junto com a unidade desse peso.")
+        if weight_quantity is not None:
+            if not unit or unit.dimension in ("mass", "volume"):
+                raise InventoryInvalidReference("Peso de embalagem so se aplica a insumo comprado por unidade ou embalagem.")
+            if decimal_value(weight_quantity) <= 0:
+                raise InventoryInvalidReference("O peso total da embalagem deve ser positivo.")
         if weight_unit_id:
             weight_unit = self._ensure(InventoryUnit, weight_unit_id, "Unidade de peso")
-            if not weight_unit.active or (weight_unit.unit_type != "mass" and weight_unit.dimension != "mass"):
-                raise InventoryInvalidReference("A unidade de peso deve ser uma unidade de massa ativa.")
+            if not weight_unit.active or weight_unit.dimension != "mass" or not weight_unit.conversion_factor:
+                raise InventoryInvalidReference("A unidade de peso deve estar ativa e classificada como massa, com fator de conversao.")
         if data.get("default_location_id"):
             self._ensure(InventoryLocation, data["default_location_id"], "Local")
 

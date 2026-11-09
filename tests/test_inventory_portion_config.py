@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from decimal import Decimal
 
 import pytest
 
@@ -113,15 +114,18 @@ def test_create_generates_finished_good_without_replacing_source(monkeypatch):
     source = SimpleNamespace(
         id="raw-1", name="Mussarela", item_type="ingredient", active=True,
         category_id="cat-1", default_location_id="loc-1", portionable=True,
+        unit_id="unit-g", weight_unit_id=None,
     )
-    unit = SimpleNamespace(id="unit-g", symbol="g", active=True)
+    unit = SimpleNamespace(id="unit-g", name="Gramas", symbol="g", active=True, dimension="mass", conversion_factor=1)
     db = _Db(source, unit)
     monkeypatch.setattr(portion_module, "IdempotencyService", _Idempotency)
+    monkeypatch.setattr(InventoryPortionConfigService, "_portion_count_unit", lambda self: SimpleNamespace(id="unit-portion"))
 
     row = InventoryPortionConfigService(db, "tenant-a", "admin-a").create(_body(), "portion-create-1")
 
     output = next(item for item in db.added if isinstance(item, InventoryItem))
     assert output.item_type == "finished_good"
+    assert output.unit_id == "unit-portion"
     assert output.tenant_id == "tenant-a"
     assert output.id != source.id
     assert output.name.startswith("Mussarela - porcao")
@@ -136,14 +140,33 @@ def test_create_generates_finished_good_without_replacing_source(monkeypatch):
 def test_selecting_source_in_portioning_enables_portionable_flag(monkeypatch):
     source = SimpleNamespace(
         id="raw-2", name="Tomate", item_type="ingredient", active=True, portionable=False,
-        category_id="cat-1", default_location_id="loc-1",
+        category_id="cat-1", default_location_id="loc-1", unit_id="unit-g", weight_unit_id=None,
     )
-    unit = SimpleNamespace(id="unit-g", symbol="g", active=True)
+    unit = SimpleNamespace(id="unit-g", name="Gramas", symbol="g", active=True, dimension="mass", conversion_factor=1)
     db = _Db(source, unit)
     monkeypatch.setattr(portion_module, "IdempotencyService", _Idempotency)
+    monkeypatch.setattr(InventoryPortionConfigService, "_portion_count_unit", lambda self: SimpleNamespace(id="unit-portion"))
 
     InventoryPortionConfigService(db, "tenant-a", "admin-a").create(_body(source_item_id="raw-2"), "portion-create-no")
     assert source.portionable is True
+
+
+def test_create_rejects_unclassified_purchase_unit_before_creating_output(monkeypatch):
+    source = SimpleNamespace(
+        id="raw-1", name="Calabresa", item_type="ingredient", active=True, portionable=False,
+        category_id="cat-1", default_location_id="loc-1", unit_id="legacy-kg", weight_unit_id=None,
+        weight_quantity=None,
+    )
+    unit = SimpleNamespace(id="unit-g", name="Gramas", symbol="GR", active=True, dimension="mass", conversion_factor=1)
+    db = _Db(source, unit)
+    monkeypatch.setattr(portion_module, "IdempotencyService", _Idempotency)
+    monkeypatch.setattr(InventoryPortionConfigService, "_find_unit", lambda self, unit_id: SimpleNamespace(
+        id="legacy-kg", name="Quilograma legado", active=True, dimension=None, conversion_factor=None,
+    ))
+
+    with pytest.raises(PortionConfigInvalid, match="Classifique a unidade de compra"):
+        InventoryPortionConfigService(db, "tenant-a", "admin-a").create(_body(), "invalid-unit")
+    assert not db.added
 
 
 def test_schema_rejects_target_below_minimum():
@@ -172,3 +195,17 @@ def test_existing_portion_config_cannot_change_physical_unit(monkeypatch):
 
     assert row.unit_id == "unit-g"
     assert row.version == 1
+
+
+def test_existing_portion_config_cannot_mix_new_weight_with_old_stock(monkeypatch):
+    row = SimpleNamespace(
+        id="portion-1", source_item_id="raw-1", unit_id="unit-g", version=1,
+        portion_weight=Decimal("150"), reference_fraction=Decimal("0.5"), size="Grande",
+    )
+    service = InventoryPortionConfigService(object(), "tenant-a", "admin-a")
+    monkeypatch.setattr(service, "_get", lambda _config_id: row)
+    monkeypatch.setattr(portion_module, "IdempotencyService", _UpdateIdempotency)
+
+    with pytest.raises(PortionConfigInvalid, match="identidade da porcao"):
+        service.update("portion-1", _body(portion_weight="200"), "portion-update-weight")
+    assert row.portion_weight == Decimal("150")

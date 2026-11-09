@@ -51,8 +51,8 @@ def test_portion_balance_uses_ledger_valid_reservations_and_open_preparation_wit
         db.commit()
 
         config = SimpleNamespace(
-            id="config-a", output_item_id="portion-a", output_item=SimpleNamespace(name="Mussarela 150 g"),
-            source_item=SimpleNamespace(name="Mussarela"), unit=SimpleNamespace(symbol="g"),
+            id="config-a", output_item_id="portion-a", source_item_id="raw-a", unit_id="g", output_item=SimpleNamespace(name="Mussarela 150 g", unit_id="g"),
+            source_item=SimpleNamespace(name="Mussarela", unit_id=None, weight_unit_id=None, unit=None), unit=SimpleNamespace(symbol="g"),
             portion_weight=Decimal("1"), yield_percent=Decimal("100"), min_stock=Decimal("3"), target_stock=Decimal("10"), active=True,
         )
         service = InventoryPortionConfigService(db, "tenant-a", "actor")
@@ -62,7 +62,8 @@ def test_portion_balance_uses_ledger_valid_reservations_and_open_preparation_wit
 
         assert result == [{
             "config_id": "config-a", "output_item_id": "portion-a", "output_item_name": "Mussarela - porcao 1 g",
-            "source_item_name": "Mussarela", "unit_symbol": "g", "usage": "mandatory", "physical_stock": Decimal("10.000000"),
+            "source_item_name": "Mussarela", "source_stock": 0, "source_unit_symbol": None, "legacy_output_unit": True,
+            "unit_symbol": "g", "usage": "mandatory", "physical_stock": Decimal("10.000000"),
             "reserved_stock": Decimal("2.000000"), "available_stock": Decimal("8.000000"),
             "in_preparation": Decimal("3.000000"), "min_stock": Decimal("3"),
             "target_stock": Decimal("10"), "active": True, "unit_cost": Decimal("2.00000000"), "next_expiry": None,

@@ -226,7 +226,7 @@ function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: Invent
   const [sort, setSort] = useState<"name" | "current_stock" | "min_stock" | "shortage">("name");
   const needs = useMemo(
     () => data.items
-      .filter((item) => item.active && item.current_stock !== undefined && item.current_stock < item.min_stock)
+      .filter((item) => item.active && item.item_type !== "finished_good" && item.current_stock !== undefined && item.current_stock < item.min_stock)
       .map((item) => ({ ...item, shortage: Math.max(item.min_stock - (item.current_stock ?? 0), 0) }))
       .sort((a, b) => b.shortage - a.shortage),
     [data.items],
@@ -349,6 +349,11 @@ function ItemsSection({
     active: true,
   });
   const [editing, setEditing] = useState<InventoryItem | null>(null);
+  const navigate = useNavigate();
+  const selectedUnit = data.units.find((item) => item.id === form.unit_id);
+  const weightUnits = data.units.filter((item) => item.active && item.dimension === "mass" && item.conversion_factor != null);
+  const selectedUnitUnclassified = Boolean(selectedUnit && !selectedUnit.dimension);
+  const showPackageWeight = Boolean(selectedUnit && (selectedUnit.has_weight || selectedUnit.dimension === "count" || !selectedUnit.dimension || selectedUnit.unit_type === "package"));
 
   const save = () => run(
     () => (editing ? inventoryApi.updateItem(editing.id, {
@@ -399,12 +404,13 @@ function ItemsSection({
           </select></label>
           <label className="block text-sm text-stone">Unidade de compra / estoque<select className={inputClass} value={form.unit_id} onChange={(e) => setForm({ ...form, unit_id: e.target.value, weight_quantity: null, weight_unit_id: "" })}>
             <option value="">Selecione a unidade</option>
-            {data.units.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.symbol})</option>)}
+            {data.units.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name} ({item.symbol}){!item.dimension ? " — classificação pendente" : ""}</option>)}
           </select></label>
-          {data.units.find((item) => item.id === form.unit_id)?.has_weight && <div className="rounded-md border border-gold/40 bg-gold/10 p-3 text-sm text-stone"><p className="font-bold text-cream">Peso da embalagem</p><p className="mt-1 text-xs">Preencha somente para pacote, caixa ou outra embalagem. Para KG ou GR, classifique a unidade em Base do Estoque.</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><label>Peso total por embalagem<input className={inputClass} required type="number" min="0.000001" step="0.000001" placeholder="Ex.: 5" value={form.weight_quantity ?? ""} onChange={(e) => setForm({ ...form, weight_quantity: e.target.value ? Number(e.target.value) : null })} /></label><label>Unidade do peso
-            <select className={inputClass} required value={form.weight_unit_id} onChange={(e) => setForm({ ...form, weight_unit_id: e.target.value })}>
+          {selectedUnitUnclassified && <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100"><AlertTriangle size={15} className="mt-0.5 shrink-0" /><span>Esta unidade ainda não tem classificação técnica. Classifique-a em Base do Estoque antes de solicitar o porcionamento. <button type="button" className="font-bold underline" onClick={() => navigate(`${inventoryRouteBase}/${sectionSlugs.base}`)}>Abrir Base / Classificação</button></span></div>}
+          {showPackageWeight && <div className="rounded-md border border-gold/40 bg-gold/10 p-3 text-sm text-stone"><p className="font-bold text-cream">Peso por unidade/embalagem</p><p className="mt-1 text-xs">Informe para porção, pacote, pote, balde ou caixa. Para KG ou GR classificados como massa, a conversão é direta e este campo não é necessário.</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><label>Peso total por unidade<input className={inputClass} required={Boolean(selectedUnit?.has_weight)} type="number" min="0.000001" step="0.000001" placeholder="Ex.: 5" value={form.weight_quantity ?? ""} onChange={(e) => setForm({ ...form, weight_quantity: e.target.value ? Number(e.target.value) : null })} /></label><label>Unidade do peso
+            <select className={inputClass} required={Boolean(selectedUnit?.has_weight)} value={form.weight_unit_id} onChange={(e) => setForm({ ...form, weight_unit_id: e.target.value })}>
               <option value="">Selecione a unidade do peso</option>
-              {data.units.filter((item) => item.active && item.unit_type === "mass").map((item) => <option key={item.id} value={item.id}>{item.name} ({item.symbol})</option>)}
+              {weightUnits.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.symbol})</option>)}
             </select></label></div></div>}
           <label className="block text-sm text-stone">Local padrão<select className={inputClass} value={form.default_location_id} onChange={(e) => setForm({ ...form, default_location_id: e.target.value })}>
             <option value="">Selecione o local</option>
@@ -425,7 +431,7 @@ function ItemsSection({
           <div key={item.id} className="grid grid-cols-[1.5fr_1fr_1fr_1fr_1fr_.7fr_auto] gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
             <span className="font-bold text-cream">{item.name}<small className="block text-stone">{item.sku || "-"}</small></span>
             <span className="text-stone">{item.item_type.replace(/_/g, " ")}</span>
-            <span className="text-stone">{item.unit_symbol || "-"}</span>
+            <span className="text-stone">{item.unit_symbol || "-"}{item.weight_quantity != null && item.weight_unit_symbol ? <small className="block text-gold">{quantity(item.weight_quantity)} {item.weight_unit_symbol}/unidade</small> : null}</span>
             <span className="text-stone">{item.category_name || "-"}</span>
             <span className={(item.current_stock ?? 0) <= item.min_stock ? "font-bold text-amber-300" : "text-stone"}>{quantity(item.current_stock)}</span>
             <span className="text-stone">{quantity(item.min_stock)}</span>

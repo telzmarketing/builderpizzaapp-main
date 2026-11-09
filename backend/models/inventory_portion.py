@@ -21,6 +21,8 @@ class InventoryPortionConfig(Base):
             "tenant_id", "source_item_id", "usage", "portion_weight", "unit_id", "reference_fraction",
             text("coalesce(size, '')"),
             unique=True,
+            postgresql_where=text("active = true"),
+            sqlite_where=text("active = 1"),
         ),
         ForeignKeyConstraint(
             ["tenant_id", "source_item_id"],

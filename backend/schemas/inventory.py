@@ -21,6 +21,8 @@ class InventoryUnitIn(BaseModel):
 class InventoryUnitOut(InventoryUnitIn):
     id: str
     tenant_id: str
+    dimension: Literal["mass", "volume", "count"] | None = None
+    conversion_factor: Decimal | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -195,6 +197,7 @@ class InventoryStockMovementOut(BaseModel):
 class InventoryStockBalanceOut(BaseModel):
     item_id: str
     item_name: str
+    item_type: InventoryItemType = "ingredient"
     unit_symbol: str | None = None
     current_stock: float
     min_stock: float

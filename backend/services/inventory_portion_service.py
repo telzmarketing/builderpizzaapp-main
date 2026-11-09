@@ -17,7 +17,8 @@ from backend.models.preparation import InventoryOperationRecipe, InventoryOperat
 from backend.models.inventory_portion import InventoryPortionConfig
 from backend.schemas.inventory_portion import InventoryPortionConfigIn
 from backend.services.idempotency_service import IdempotencyService
-from backend.services.inventory_foundation_service import convert_decimal, normalized_quantity
+from backend.services.inventory_foundation_service import FoundationInvalid, normalized_quantity
+from backend.services.inventory_portion_conversion import PortionConversionError, source_quantity_for_portion
 
 
 def display_portion_name(row: InventoryPortionConfig) -> str:
@@ -75,12 +76,13 @@ class InventoryPortionConfigService:
         if not configs:
             return []
         output_ids = [row.output_item_id for row in configs]
+        source_ids = [row.source_item_id for row in configs]
         physical_rows = self.db.query(
             InventoryStockMovement.item_id,
             func.coalesce(func.sum(InventoryStockMovement.quantity_delta), 0),
         ).filter(
             InventoryStockMovement.tenant_id == self.tenant_id,
-            InventoryStockMovement.item_id.in_(output_ids),
+            InventoryStockMovement.item_id.in_(output_ids + source_ids),
         ).group_by(InventoryStockMovement.item_id).all()
         reserved_rows = self.db.query(
             InventoryReservation.item_id,
@@ -131,6 +133,9 @@ class InventoryPortionConfigService:
             "output_item_id": row.output_item_id,
             "output_item_name": display_portion_name(row),
             "source_item_name": row.source_item.name if row.source_item else None,
+            "source_stock": physical.get(row.source_item_id, 0),
+            "source_unit_symbol": row.source_item.unit.symbol if row.source_item and row.source_item.unit else None,
+            "legacy_output_unit": bool(row.output_item and row.output_item.unit_id == row.unit_id),
             "unit_symbol": row.unit.symbol if row.unit else None,
             "usage": getattr(row, "usage", "mandatory"),
             "physical_stock": physical.get(row.output_item_id, 0),
@@ -154,15 +159,23 @@ class InventoryPortionConfigService:
             minimum = Decimal(str(row.min_stock or 0))
             target = Decimal(str(row.target_stock or 0))
             suggested = max(Decimal("0"), target - available - in_preparation)
-            # The configured portion weight is expressed in the source unit.
-            # Yield is a percentage of usable source material after technical loss.
-            source_quantity = (suggested * Decimal(str(row.portion_weight)) * Decimal("100") / Decimal(str(row.yield_percent))).quantize(Decimal("0.000001"))
+            source_quantity = None
+            conversion_error = None
+            source_unit = self._find_unit(row.source_item.unit_id) if row.source_item and row.source_item.unit_id else None
+            try:
+                per_portion = self._source_quantity(row.source_item, source_unit, row.unit, row.portion_weight, row.yield_percent)
+                source_quantity = normalized_quantity(suggested * per_portion)
+            except (PortionConversionError, FoundationInvalid) as exc:
+                conversion_error = str(exc)
             alerts.append({
                 "config_id": row.id,
                 "output_item_id": row.output_item_id,
                 "output_item_name": display_portion_name(row),
                 "source_item_name": row.source_item.name if row.source_item else None,
                 "unit_symbol": row.unit.symbol if row.unit else None,
+                "source_unit_symbol": source_unit.symbol if source_unit else None,
+                "conversion_error": conversion_error,
+                "legacy_output_unit": bool(row.output_item and row.output_item.unit_id == row.unit_id),
                 "usage": getattr(row, "usage", "mandatory"),
                 "available_stock": available,
                 "in_preparation": in_preparation,
@@ -186,54 +199,14 @@ class InventoryPortionConfigService:
             InventoryOperationRecipe.active.is_(True),
         ).order_by(InventoryOperationRecipe.version_number.desc(), InventoryOperationRecipe.id.desc()).first()
         source = row.source_item
-        source_unit = self.db.query(InventoryUnit).filter(InventoryUnit.id == source.unit_id, InventoryUnit.tenant_id == self.tenant_id).first() if source and source.unit_id else None
+        source_unit = self._find_unit(source.unit_id) if source and source.unit_id else None
         portion_unit = row.unit
-        if not source or not source_unit or not portion_unit:
-            raise PortionConfigInvalid("O insumo e a porcao precisam ter unidades cadastradas.")
-        if source_unit.id == portion_unit.id:
-            recipe_quantity = Decimal(row.portion_weight)
-        elif (
-            source_unit.dimension
-            and portion_unit.dimension
-            and source_unit.dimension == portion_unit.dimension
-            and source_unit.conversion_factor
-            and portion_unit.conversion_factor
-        ):
-            recipe_quantity = convert_decimal(row.portion_weight, portion_unit.conversion_factor, source_unit.conversion_factor)
-        elif source.weight_quantity and source.weight_unit_id:
-            weight_unit = self.db.query(InventoryUnit).filter(
-                InventoryUnit.id == source.weight_unit_id,
-                InventoryUnit.tenant_id == self.tenant_id,
-            ).first()
-            if (
-                weight_unit
-                and portion_unit.dimension == "mass"
-                and weight_unit.dimension == "mass"
-                and portion_unit.conversion_factor
-                and weight_unit.conversion_factor
-                and Decimal(str(source.weight_quantity)) > 0
-            ):
-                quantity_in_weight_unit = convert_decimal(
-                    row.portion_weight, portion_unit.conversion_factor, weight_unit.conversion_factor
-                )
-                recipe_quantity = normalized_quantity(
-                    Decimal(quantity_in_weight_unit) / Decimal(str(source.weight_quantity))
-                )
-            else:
-                raise PortionConfigInvalid(
-                    "A unidade do peso da embalagem precisa estar classificada como massa "
-                    "e ser conversivel para gramas."
-                )
-        else:
-            if source_unit.unit_type == "mass":
-                raise PortionConfigInvalid(
-                    "A unidade de compra do insumo esta sem classificacao tecnica. "
-                    "Em Base do Estoque, classifique-a como massa e informe o fator de conversao antes de solicitar o porcionamento."
-                )
-            raise PortionConfigInvalid(
-                "O insumo e comprado por embalagem ou unidade. Cadastre o peso total por embalagem "
-                "e a unidade desse peso no cadastro do insumo."
-            )
+        try:
+            recipe_quantity = self._source_quantity(source, source_unit, portion_unit, row.portion_weight, row.yield_percent)
+        except PortionConversionError as exc:
+            raise PortionConfigInvalid(str(exc)) from exc
+        if not row.output_item or not row.output_item.unit_id:
+            raise PortionConfigInvalid("O produto porcionado precisa ter unidade de saida cadastrada.")
         technical_instructions = row.technical_instructions or f"Produzir a porcao configurada de {source.name}."
         if row.handling_instructions:
             technical_instructions = f"{technical_instructions}\n\nManuseio: {row.handling_instructions}"
@@ -243,7 +216,7 @@ class InventoryPortionConfigService:
                 tenant_id=self.tenant_id,
                 name=f"Porcionamento - {display_portion_name(row)}"[:180],
                 output_item_id=row.output_item_id,
-                output_unit_id=row.unit_id,
+                output_unit_id=row.output_item.unit_id,
                 yield_quantity=Decimal("1"),
                 version_number=1,
                 instructions=technical_instructions,
@@ -262,11 +235,30 @@ class InventoryPortionConfigService:
             ))
             self.db.flush()
         elif recipe.name.startswith("Porcionamento - "):
-            recipe.instructions = technical_instructions
-            if len(recipe.items) == 1 and recipe.items[0].item_id == source.id:
-                recipe.items[0].unit_id = source_unit.id
-                recipe.items[0].quantity = recipe_quantity
-            self.db.flush()
+            if len(recipe.items) != 1 or recipe.items[0].item_id != source.id:
+                raise PortionConfigConflict("A receita ativa foi alterada. Revise a ficha antes de solicitar nova ordem.")
+            if recipe.output_unit_id != row.output_item.unit_id:
+                raise PortionConfigConflict("A unidade de saida da receita diverge do produto porcionado.")
+            if recipe.items[0].unit_id != source_unit.id or Decimal(recipe.items[0].quantity) != recipe_quantity or recipe.instructions != technical_instructions:
+                # An order may already reference this recipe. Never rewrite its
+                # historical input quantity after a packaging/yield change.
+                previous = recipe
+                recipe = InventoryOperationRecipe(
+                    id=uuid.uuid4().hex, tenant_id=self.tenant_id,
+                    name=previous.name, output_item_id=row.output_item_id,
+                    output_unit_id=row.output_item.unit_id, yield_quantity=Decimal("1"),
+                    version_number=previous.version_number + 1,
+                    instructions=technical_instructions, created_by=self.actor_id,
+                )
+                self.db.add(recipe)
+                self.db.flush()
+                self.db.add(InventoryOperationRecipeItem(
+                    id=uuid.uuid4().hex, tenant_id=self.tenant_id, recipe_id=recipe.id,
+                    item_id=source.id, unit_id=source_unit.id, quantity=recipe_quantity, position=0,
+                ))
+                self.db.flush()
+        else:
+            raise PortionConfigConflict("Existe uma receita ativa para este produto que nao pertence ao porcionamento. Revise a ficha antes de solicitar.")
         from backend.schemas.preparation import PreparationOrderIn
         from backend.services.preparation_service import PreparationService
         order_body = PreparationOrderIn(
@@ -292,7 +284,13 @@ class InventoryPortionConfigService:
             source = self._source(body.source_item_id)
             unit = self._unit(body.unit_id)
             self._validate_source(source)
+            source_unit = self._find_unit(source.unit_id) if source.unit_id else None
+            try:
+                self._source_quantity(source, source_unit, unit, body.portion_weight, body.yield_percent)
+            except PortionConversionError as exc:
+                raise PortionConfigInvalid(str(exc)) from exc
             self._ensure_not_duplicate(body)
+            output_unit = self._portion_count_unit()
 
             config_id = str(uuid.uuid4())
             output = InventoryItem(
@@ -303,7 +301,7 @@ class InventoryPortionConfigService:
                 item_type="finished_good",
                 portionable=False,
                 category_id=source.category_id,
-                unit_id=body.unit_id,
+                unit_id=output_unit.id,
                 default_location_id=source.default_location_id,
                 min_stock=body.min_stock,
                 notes=f"Produto porcionado da materia-prima {source.id}.",
@@ -337,7 +335,19 @@ class InventoryPortionConfigService:
                 raise PortionConfigInvalid("A materia-prima da configuracao nao pode ser trocada; crie uma nova configuracao.")
             if body.unit_id != row.unit_id:
                 raise PortionConfigInvalid("A unidade de uma configuracao existente nao pode ser trocada; desative-a e crie uma nova configuracao para preservar o historico fisico.")
-            self._unit(body.unit_id)
+            if (
+                Decimal(str(body.portion_weight)) != Decimal(str(row.portion_weight))
+                or Decimal(str(body.reference_fraction)) != Decimal(str(row.reference_fraction))
+                or (body.size or None) != (row.size or None)
+            ):
+                raise PortionConfigInvalid("Peso, referencia e tamanho definem a identidade da porcao. Desative a configuracao e crie outra para preservar o estoque historico.")
+            portion_unit = self._unit(body.unit_id)
+            source = self._source(row.source_item_id)
+            source_unit = self._find_unit(source.unit_id) if source.unit_id else None
+            try:
+                self._source_quantity(source, source_unit, portion_unit, body.portion_weight, body.yield_percent)
+            except PortionConversionError as exc:
+                raise PortionConfigInvalid(str(exc)) from exc
             self._ensure_not_duplicate(body, exclude_id=row.id)
             for field, value in payload.items():
                 setattr(row, field, value)
@@ -403,6 +413,36 @@ class InventoryPortionConfigService:
             raise PortionConfigInvalid("A unidade selecionada esta inativa.")
         return row
 
+    def _find_unit(self, unit_id: str) -> InventoryUnit | None:
+        return self.db.query(InventoryUnit).filter(
+            InventoryUnit.id == unit_id, InventoryUnit.tenant_id == self.tenant_id,
+        ).first()
+
+    def _portion_count_unit(self) -> InventoryUnit:
+        """A finished portion is a count; its configured weight is a separate unit."""
+        row = self.db.query(InventoryUnit).filter(
+            InventoryUnit.tenant_id == self.tenant_id,
+            InventoryUnit.code == "portion_count",
+        ).first()
+        if row is not None:
+            if not row.active or row.dimension != "count" or Decimal(str(row.conversion_factor or 0)) != 1:
+                raise PortionConfigInvalid("A unidade de contagem das porcoes precisa estar ativa com fator 1.")
+            return row
+        row = InventoryUnit(
+            id=str(uuid.uuid4()), tenant_id=self.tenant_id, name="Porcoes", symbol="PRQ",
+            code="portion_count", unit_type="unit", dimension="count",
+            conversion_factor=Decimal("1"), has_weight=False, active=True,
+        )
+        self.db.add(row)
+        self.db.flush()
+        return row
+
+    def _source_quantity(self, source, source_unit, portion_unit, portion_weight, yield_percent) -> Decimal:
+        weight_unit = self._find_unit(source.weight_unit_id) if source and source.weight_unit_id else None
+        return source_quantity_for_portion(
+            source, source_unit, portion_unit, portion_weight, yield_percent, weight_unit,
+        )
+
     @staticmethod
     def _validate_source(source: InventoryItem) -> None:
         if source.item_type == "finished_good":
@@ -415,8 +455,11 @@ class InventoryPortionConfigService:
         source.portionable = True
 
     def _ensure_not_duplicate(self, body: InventoryPortionConfigIn, exclude_id: str | None = None) -> None:
+        if not body.active:
+            return
         query = self.db.query(InventoryPortionConfig).filter(
             InventoryPortionConfig.tenant_id == self.tenant_id,
+            InventoryPortionConfig.active.is_(True),
             InventoryPortionConfig.source_item_id == body.source_item_id,
             InventoryPortionConfig.usage == body.usage,
             InventoryPortionConfig.portion_weight == body.portion_weight,

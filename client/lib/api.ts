@@ -2118,6 +2118,10 @@ export interface InventoryUnit {
   symbol: string;
   unit_type: "unit" | "mass" | "volume" | "package";
   has_weight: boolean;
+  code?: string | null;
+  dimension?: "mass" | "volume" | "count" | null;
+  conversion_factor?: string | number | null;
+  version?: number;
   active: boolean;
   created_at?: string | null;
   updated_at?: string | null;
@@ -2320,6 +2324,7 @@ export interface InventoryStockMovement {
 export interface InventoryStockBalance {
   item_id: string;
   item_name: string;
+  item_type?: InventoryItem["item_type"];
   unit_symbol?: string | null;
   current_stock: number;
   min_stock: number;
@@ -2407,6 +2412,9 @@ export interface InventoryPortionBalance {
   output_item_id: string;
   output_item_name: string;
   source_item_name?: string | null;
+  source_stock?: number | null;
+  source_unit_symbol?: string | null;
+  legacy_output_unit?: boolean;
   unit_symbol?: string | null;
   usage: InventoryPortionUsage;
   physical_stock: number;
@@ -2425,6 +2433,7 @@ export interface InventoryPortionReplenishment {
   output_item_id: string;
   output_item_name: string;
   source_item_name?: string | null;
+  source_unit_symbol?: string | null;
   unit_symbol?: string | null;
   usage: InventoryPortionUsage;
   available_stock: number;
@@ -2432,7 +2441,9 @@ export interface InventoryPortionReplenishment {
   min_stock: number;
   target_stock: number;
   suggested_portions: number;
-  estimated_source_quantity: number;
+  estimated_source_quantity: number | null;
+  conversion_error?: string | null;
+  legacy_output_unit?: boolean;
   status: "ok" | "alert";
 }
 

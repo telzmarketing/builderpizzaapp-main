@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, localcontext
 import hashlib
 import json
 import uuid
@@ -229,17 +229,18 @@ class PreparationService:
             weight_unit = foundation._get(InventoryUnit, weight_unit_id, lock=True)
             if (
                 source_unit.dimension == "mass"
+                and base_unit.dimension == "count"
                 and weight_unit.dimension == "mass"
                 and source_unit.conversion_factor
                 and weight_unit.conversion_factor
                 and Decimal(str(weight_quantity)) > 0
             ):
-                quantity_in_weight_unit = convert_decimal(
-                    quantity, source_unit.conversion_factor, weight_unit.conversion_factor
-                )
-                return base_unit.id, normalized_quantity(
-                    Decimal(quantity_in_weight_unit) / Decimal(str(weight_quantity))
-                )
+                with localcontext() as context:
+                    context.prec = 50
+                    return base_unit.id, normalized_quantity(
+                        Decimal(str(quantity)) * Decimal(str(source_unit.conversion_factor))
+                        / Decimal(str(weight_unit.conversion_factor)) / Decimal(str(weight_quantity))
+                    )
         if getattr(source_unit, "unit_type", None) == "mass":
             raise PreparationInvalid(
                 "A unidade de compra do insumo esta sem classificacao tecnica. "

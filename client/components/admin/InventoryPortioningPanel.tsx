@@ -5,9 +5,11 @@ import {
   type InventoryItem,
   type InventoryOverview,
   type InventoryPortionConfig,
+  type InventoryUnit,
 } from "@/lib/api";
 import { formatQuantity } from "@/lib/formatQuantity";
 import { filterAndSort, InventoryTableControls } from "./InventoryTableControls";
+import { useNavigate } from "react-router-dom";
 
 const input =
   "w-full rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream";
@@ -59,7 +61,27 @@ const initial = (): Form => ({
   handling_instructions: "",
 });
 
+function isMassUnit(unit: InventoryUnit | undefined) {
+  return Boolean(unit?.active && unit.dimension === "mass" && unit.conversion_factor != null);
+}
+
+function sourceValidationMessage(item: InventoryItem | undefined, units: InventoryUnit[]) {
+  if (!item) return "Selecione um insumo de origem.";
+  if (!item.active) return "O insumo de origem está inativo.";
+  if (!item.unit_id) return "O insumo de origem precisa de uma unidade-base de estoque.";
+  const baseUnit = units.find((unit) => unit.id === item.unit_id);
+  if (!baseUnit || !baseUnit.active) return "A unidade-base do insumo não está cadastrada ou está inativa.";
+  if (!baseUnit.dimension || baseUnit.conversion_factor == null) return "Classifique a unidade de compra em Base do Estoque: massa para KG/GR ou contagem para embalagem/porção.";
+  if (isMassUnit(baseUnit)) return "";
+  if (baseUnit.dimension === "volume") return "Não é possível converter volume em gramas sem densidade cadastrada.";
+  if (!item.weight_quantity || !item.weight_unit_id) return "Cadastre o peso total por unidade/embalagem do insumo para converter a porção em gramas.";
+  const weightUnit = units.find((unit) => unit.id === item.weight_unit_id);
+  if (!isMassUnit(weightUnit)) return "A unidade do peso do insumo precisa estar classificada como massa em Base do Estoque.";
+  return "";
+}
+
 export default function InventoryPortioningPanel() {
+  const navigate = useNavigate();
   const [overview, setOverview] = useState<InventoryOverview | null>(null),
     [configs, setConfigs] = useState<InventoryPortionConfig[]>([]),
     [form, setForm] = useState<Form>(initial),
@@ -82,7 +104,10 @@ export default function InventoryPortioningPanel() {
       ]);
       setOverview(o);
       setConfigs(c);
-      if (!form.unit_id && o.units[0]) update({ unit_id: o.units[0].id });
+      if (!form.unit_id) {
+        const firstMassUnit = o.units.find(isMassUnit);
+        if (firstMassUnit) update({ unit_id: firstMassUnit.id });
+      }
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "Falha ao carregar porcionamentos.",
@@ -126,8 +151,13 @@ export default function InventoryPortioningPanel() {
     setSaving(true);
     setError("");
     try {
-      if (!form.source_item_id || !form.portion_weight || !form.unit_id)
-        throw new Error("Informe insumo, peso e unidade.");
+      const source = items.find((item) => item.id === form.source_item_id);
+      const sourceError = sourceValidationMessage(source, overview?.units ?? []);
+      if (sourceError) throw new Error(sourceError);
+      const portionUnit = overview?.units.find((unit) => unit.id === form.unit_id);
+      if (!form.portion_weight || !portionUnit) throw new Error("Informe o peso e a unidade da porção.");
+      if (!isMassUnit(portionUnit)) throw new Error("A unidade da porção precisa estar classificada como massa, como GR ou KG.");
+      if (!Number.isFinite(Number(form.portion_weight)) || Number(form.portion_weight) <= 0) throw new Error("Informe um peso de porção maior que zero.");
       const min = Number(form.min_stock),
         target = Number(form.target_stock);
       if (target < min)
@@ -191,6 +221,10 @@ export default function InventoryPortioningPanel() {
   const items = (overview?.items ?? []).filter(
     (i: InventoryItem) => i.active && i.item_type !== "finished_good",
   );
+  const units = overview?.units ?? [];
+  const portionUnits = units.filter(isMassUnit);
+  const selectedSource = items.find((item) => item.id === form.source_item_id);
+  const sourceError = form.source_item_id ? sourceValidationMessage(selectedSource, units) : "";
   return (
     <section className="space-y-5 rounded-lg border border-surface-03 bg-surface-02 p-5">
       <div className="flex items-center justify-between">
@@ -217,10 +251,12 @@ export default function InventoryPortioningPanel() {
             </button>
           )}
           <div className="mt-4 space-y-3">
+            {editing && <p className="rounded-md border border-surface-03 px-3 py-2 text-xs text-stone">Insumo, peso, unidade, referência e tamanho identificam esta porção e não podem ser alterados sem misturar estoques. Para corrigir esses dados, desative a configuração antiga e cadastre uma nova; ordens anteriores permanecem preservadas.</p>}
             <label className="block text-xs text-stone">
               Insumo de origem
               <select
                 className={input}
+                disabled={Boolean(editing)}
                 value={form.source_item_id}
                 onChange={(e) => update({ source_item_id: e.target.value })}
               >
@@ -229,10 +265,12 @@ export default function InventoryPortioningPanel() {
                   <option key={i.id} value={i.id}>
                     {i.name}
                     {i.unit_symbol ? ` (${i.unit_symbol})` : ""}
+                    {!i.unit_id ? " — sem unidade-base" : ""}
                   </option>
                 ))}
               </select>
             </label>
+            {sourceError && <p className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100"><span aria-hidden="true">⚠</span><span>{sourceError} <button type="button" className="font-bold underline" onClick={() => navigate("/painel/gestao/estoque/base")}>Abrir Base / Classificação</button></span></p>}
             <label className="block text-xs text-stone">
               Uso operacional
               <select
@@ -253,6 +291,7 @@ export default function InventoryPortioningPanel() {
                 <input
                   className={input}
                   type="number"
+                  disabled={Boolean(editing)}
                   min="0.000001"
                   step="0.000001"
                   value={form.portion_weight}
@@ -263,10 +302,11 @@ export default function InventoryPortioningPanel() {
                 Unidade
                 <select
                   className={input}
+                  disabled={Boolean(editing)}
                   value={form.unit_id}
                   onChange={(e) => update({ unit_id: e.target.value })}
                 >
-                  {(overview?.units ?? []).map((u) => (
+                  {portionUnits.map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.name} ({u.symbol})
                     </option>
@@ -274,11 +314,14 @@ export default function InventoryPortioningPanel() {
                 </select>
               </label>
             </div>
+            {!portionUnits.length && <p className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-100">Nenhuma unidade de massa classificada está disponível. Classifique GR/KG em Base do Estoque antes de configurar o porcionamento.</p>}
+            {form.unit_id && !isMassUnit(units.find((unit) => unit.id === form.unit_id)) && <p className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-100">A unidade selecionada não é compatível com peso de porção. Escolha uma unidade de massa classificada.</p>}
             <div className="grid grid-cols-2 gap-3">
               <label className="text-xs text-stone">
                 Referência
                 <select
                   className={input}
+                  disabled={Boolean(editing)}
                   value={form.reference_fraction}
                   onChange={(e) =>
                     update({ reference_fraction: e.target.value })
@@ -292,6 +335,7 @@ export default function InventoryPortioningPanel() {
                 Tamanho
                 <input
                   className={input}
+                  disabled={Boolean(editing)}
                   value={form.size}
                   onChange={(e) => update({ size: e.target.value })}
                 />
