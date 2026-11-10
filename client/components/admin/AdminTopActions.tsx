@@ -231,7 +231,7 @@ function AdminTopActionsContent({ hideSearch = false }: { hideSearch?: boolean }
 
   return (
     <>
-    <div className="flex items-center gap-1.5 flex-shrink-0 rounded-xl border border-surface-03 bg-surface-01/70 p-1 shadow-sm">
+    <div className="admin-top-actions flex items-center gap-1.5 flex-shrink-0 rounded-xl border border-surface-03 bg-surface-01/70 p-1 shadow-sm">
       {!hideSearch && (searchOpen ? (
         <form
           onSubmit={handleSearch}
