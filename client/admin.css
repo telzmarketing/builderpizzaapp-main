@@ -336,6 +336,29 @@
   }
 }
 
+/* Notebook widths (typically 1280-1535 CSS px) still have enough room for
+ * the operational shell.  The previous 2xl-only threshold made a notebook at
+ * 100% zoom use the mobile drawer, while the same screen at 80% zoom used the
+ * desktop navigation.  Keep the compact desktop shell from xl upward and
+ * reserve the drawer for genuinely narrow viewports. */
+@media (min-width: 1280px) and (max-width: 1535px) {
+  .admin-shell .admin-top-navigation > button[aria-label="Abrir navegação"] {
+    display: none;
+  }
+
+  .admin-shell .admin-top-navigation > nav[aria-label="Módulos principais"] {
+    display: flex;
+  }
+
+  .admin-shell .context-sidebar {
+    display: flex;
+  }
+
+  .admin-shell .admin-mobile-navigation {
+    display: none;
+  }
+}
+
 .admin-layout-content :where(.min-h-screen, .flex, .flex-col):has([data-admin-sidebar-placeholder]) {
   min-height: 0 !important;
   height: auto !important;

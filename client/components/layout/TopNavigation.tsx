@@ -386,7 +386,7 @@ export default function TopNavigation({
       </header>
 
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-[70] flex flex-col bg-surface-00 2xl:hidden">
+        <div className="admin-mobile-navigation fixed inset-0 z-[70] flex flex-col bg-surface-00 2xl:hidden">
           <div className="flex h-[68px] shrink-0 items-center justify-between border-b border-surface-03 bg-surface-02 px-4">
             <div>
               <p className="text-sm font-black text-cream">Navegacao do painel</p>

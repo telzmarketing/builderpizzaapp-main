@@ -696,7 +696,7 @@ export default function AdminOrders() {
               </div>
             ) : (
               <div className="w-full min-w-0 flex-1 overflow-y-auto px-3 pb-4 pt-3 md:px-4 md:pb-4">
-                <div className="grid min-h-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 xl:gap-2">
+                <div className="grid min-h-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 2xl:gap-2">
                   {KANBAN_COLUMNS.map((column) => {
                     const Icon = column.icon;
                     const columnOrders = groupedOrders.get(column.id) ?? [];
