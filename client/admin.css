@@ -353,7 +353,7 @@
     width: 7rem;
   }
 
-  .admin-shell .admin-top-navigation > nav[aria-label="Módulos principais"] {
+  .admin-shell .admin-top-navigation > nav {
     min-width: 0;
     flex: 1 1 auto;
     gap: 0;
@@ -362,12 +362,12 @@
     scrollbar-width: none;
   }
 
-  .admin-shell .admin-top-navigation > nav[aria-label="Módulos principais"]::-webkit-scrollbar {
+  .admin-shell .admin-top-navigation > nav::-webkit-scrollbar {
     display: none;
   }
 
-  .admin-shell .admin-top-navigation > nav[aria-label="Módulos principais"] > button,
-  .admin-shell .admin-top-navigation > nav[aria-label="Módulos principais"] > div > button {
+  .admin-shell .admin-top-navigation > nav > button,
+  .admin-shell .admin-top-navigation > nav > div > button {
     width: 2.25rem;
     height: 2.25rem;
     justify-content: center;
@@ -386,7 +386,7 @@
     flex: 0 1 auto;
   }
 
-  .admin-shell .admin-top-navigation > nav[aria-label="Módulos principais"] svg {
+  .admin-shell .admin-top-navigation > nav svg {
     width: 14px;
     height: 14px;
   }
@@ -418,11 +418,11 @@
     height: 1.625rem;
   }
 
-  .admin-shell .admin-top-navigation > button[aria-label="Abrir navegação"] {
+  .admin-shell .admin-top-navigation > button:first-child {
     display: none;
   }
 
-  .admin-shell .admin-top-navigation > nav[aria-label="Módulos principais"] {
+  .admin-shell .admin-top-navigation > nav {
     display: flex;
   }
 
