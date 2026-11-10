@@ -243,7 +243,7 @@ export default function TopNavigation({
                     }`}
                   >
                     {Icon && <Icon size={15} />}
-                    <span>{group.label}</span>
+                    <span className="admin-top-navigation-label">{group.label}</span>
                   </button>
                 </div>
               );
@@ -252,6 +252,8 @@ export default function TopNavigation({
               <button
                 key={group.label}
                 type="button"
+                aria-label={group.label}
+                title={group.label}
                 onMouseEnter={() => preloadAdminRoute(target)}
                 onFocus={() => preloadAdminRoute(target)}
                 onClick={() => handleModuleClick(group)}
@@ -262,7 +264,7 @@ export default function TopNavigation({
                 }`}
               >
                 {Icon && <Icon size={15} />}
-                <span>{group.label}</span>
+                <span className="admin-top-navigation-label">{group.label}</span>
               </button>
             );
           })}
