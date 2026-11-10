@@ -303,7 +303,27 @@
 }
 
 .admin-layout-content {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
   background: color-mix(in srgb, var(--bg-alt) 92%, #000 8%);
+}
+
+/* The page container owns the admin shell's vertical scroll. Keep ordinary
+ * page content inside the available inline size; tables, KDS workspaces and
+ * modals retain their own scoped overflow contracts below. */
+.app-page-container {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-layout-content > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* The tenant panel uses the full-screen navigation drawer below 2xl.  Keeping

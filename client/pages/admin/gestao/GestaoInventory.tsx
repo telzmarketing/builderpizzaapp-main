@@ -111,7 +111,7 @@ const emptyOverview: InventoryOverview = {
   balances: [],
 };
 
-const inputClass = "w-full rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream outline-none transition placeholder:text-stone/70 focus:border-gold";
+const inputClass = "min-w-0 w-full rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream outline-none transition placeholder:text-stone/70 focus:border-gold";
 const buttonClass = "inline-flex items-center justify-center gap-2 rounded-lg bg-gold px-3 py-2 text-sm font-black text-black transition hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-60";
 const ghostButtonClass = "inline-flex items-center justify-center gap-2 rounded-lg border border-surface-03 px-3 py-2 text-sm font-bold text-stone transition hover:bg-surface-03 hover:text-cream";
 
@@ -474,9 +474,9 @@ function BaseSection({
   run: (action: () => Promise<unknown>, success: string) => Promise<void>;
 }) {
   return (
-    <div className="grid gap-5 xl:grid-cols-3">
-      <UnitsPanel units={data.units} saving={saving} run={run} />
-      <SimplePanel
+    <div className="grid min-w-0 gap-5 md:grid-cols-2 2xl:grid-cols-3">
+      <div className="min-w-0"><UnitsPanel units={data.units} saving={saving} run={run} /></div>
+      <div className="min-w-0"><SimplePanel
         title="Categorias"
         placeholder="Ex: Laticinios"
         rows={data.categories}
@@ -485,8 +485,8 @@ function BaseSection({
         remove={(id) => inventoryApi.removeCategory(id)}
         saving={saving}
         run={run}
-      />
-      <SimplePanel
+      /></div>
+      <div className="min-w-0"><SimplePanel
         title="Locais"
         placeholder="Ex: Camara fria"
         rows={data.locations}
@@ -495,8 +495,8 @@ function BaseSection({
         remove={(id) => inventoryApi.removeLocation(id)}
         saving={saving}
         run={run}
-      />
-      <InventoryUnitClassificationPanel />
+      /></div>
+      <div className="min-w-0"><InventoryUnitClassificationPanel /></div>
     </div>
   );
 }
@@ -519,7 +519,7 @@ function UnitsPanel({
   ).then(() => { setEditing(null); setForm({ name: "", symbol: "", unit_type: "unit", has_weight: false }); });
 
   return (
-    <div className="rounded-lg border border-surface-03 bg-surface-01 p-4">
+    <div className="min-w-0 rounded-lg border border-surface-03 bg-surface-01 p-4">
       <h3 className="text-sm font-black uppercase tracking-wide text-parchment">{editing ? "Editar unidade" : "Unidades"}</h3>
       {editing && <button type="button" className={ghostButtonClass} onClick={() => { setEditing(null); setForm({ name: "", symbol: "", unit_type: "unit", has_weight: false }); }}>Cancelar edição</button>}
       <div className="mt-4 space-y-3">
@@ -564,11 +564,11 @@ function SimplePanel<T extends { id: string; name: string }>({
   const [search, setSearch] = useState("");
   const save = () => run(() => editingId && update ? update(editingId, name) : create(name), `${title} atualizado.`).then(() => { setName(""); setEditingId(null); });
   return (
-    <div className="rounded-lg border border-surface-03 bg-surface-01 p-4">
+    <div className="min-w-0 rounded-lg border border-surface-03 bg-surface-01 p-4">
       <h3 className="text-sm font-black uppercase tracking-wide text-parchment">{title}</h3>
-        <div className="mt-4 flex gap-2">
-        <input className={inputClass} placeholder={placeholder} value={name} onChange={(e) => setName(e.target.value)} />
-        <button type="button" aria-label={editingId ? `Salvar ${title.toLowerCase()}` : `Adicionar ${title.toLowerCase()}`} disabled={saving || !name} onClick={save} className={buttonClass}><Plus size={15} /> <span className="hidden sm:inline">{editingId ? "Salvar" : "Adicionar"}</span></button>
+      <div className="mt-4 flex min-w-0 items-start gap-2">
+        <input className={`${inputClass} min-w-0 flex-1`} placeholder={placeholder} value={name} onChange={(e) => setName(e.target.value)} />
+        <button type="button" aria-label={editingId ? `Salvar ${title.toLowerCase()}` : `Adicionar ${title.toLowerCase()}`} disabled={saving || !name} onClick={save} className={`${buttonClass} shrink-0`}><Plus size={15} /> <span className="hidden sm:inline">{editingId ? "Salvar" : "Adicionar"}</span></button>
       </div>
       <input className={`${inputClass} mt-3`} placeholder={`Buscar ${title.toLowerCase()}...`} value={search} onChange={(event) => setSearch(event.target.value)} aria-label={`Buscar ${title.toLowerCase()}`} />
       <ListRows rows={rows.filter((row) => row.name.toLocaleLowerCase("pt-BR").includes(search.trim().toLocaleLowerCase("pt-BR"))).sort((a, b) => a.name.localeCompare(b.name, "pt-BR")).map((row) => ({ ...row, edit: update ? () => { setEditingId(row.id); setName(row.name); } : undefined }))} saving={saving} remove={(id) => run(() => remove(id), `${title} removido.`)} />

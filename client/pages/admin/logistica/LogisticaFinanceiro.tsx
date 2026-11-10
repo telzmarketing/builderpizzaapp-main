@@ -282,7 +282,7 @@ export default function LogisticaFinanceiro() {
               <div key={group.id} className="rounded-2xl border border-surface-03 bg-surface-02 overflow-hidden">
                 {/* Driver header */}
                 <div
-                  className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-surface-03/30 transition-colors"
+                  className="flex flex-wrap items-center gap-3 px-5 py-4 cursor-pointer hover:bg-surface-03/30 transition-colors"
                   onClick={() => toggleDriverExpand(group.id)}
                 >
                   <div className="flex-1 min-w-0">
@@ -290,7 +290,7 @@ export default function LogisticaFinanceiro() {
                     <p className="text-stone text-xs">{group.person_phone}</p>
                   </div>
 
-                  <div className="flex items-center gap-4 flex-shrink-0">
+                  <div className="flex min-w-0 flex-wrap items-center gap-4 flex-shrink-0">
                     {groupPendingTotal > 0 && (
                       <span className="text-orange-300 text-sm font-bold">
                         {fmtBRL(groupPendingTotal)} pendente
@@ -317,8 +317,8 @@ export default function LogisticaFinanceiro() {
 
                 {/* Earnings list */}
                 {expanded && (
-                  <div className="border-t border-surface-03">
-                    <table className="w-full text-xs">
+                  <div className="overflow-x-auto border-t border-surface-03">
+                    <table className="min-w-[640px] w-full text-xs">
                       <thead>
                         <tr className="text-stone border-b border-surface-03">
                           <th className="px-5 py-2 text-left w-8">

@@ -354,7 +354,8 @@ export default function MarketingAutomacoes() {
               </div>
             ) : (
               <div className="bg-surface-02 border border-surface-03 rounded-2xl overflow-hidden">
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto">
+                <table className="min-w-[680px] w-full text-sm">
                   <thead>
                     <tr className="text-stone text-xs border-b border-surface-03 bg-surface-03/30">
                       {["Evento", "Disparos", "Clientes únicos", "Último disparo"].map(h => (
@@ -394,6 +395,7 @@ export default function MarketingAutomacoes() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </>

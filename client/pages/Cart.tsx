@@ -51,10 +51,10 @@ function CartItemRow({ item, onRemove, onUpdate }: {
 
   return (
     <div className="bg-surface-02 rounded-2xl p-4 border border-surface-03">
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3">
         <CartProductIcon icons={displayIcons} />
         <div className="flex-1 min-w-0">
-          <h3 className="text-cream font-semibold text-sm leading-tight">{displayName}</h3>
+          <h3 className="text-cream font-semibold text-sm leading-tight break-words">{displayName}</h3>
           <div className="flex flex-wrap gap-1 mt-1">
             <span className="text-xs text-stone">
               {SIZE_LABEL[item.selectedSize] ?? pizzaSizeLabel(item.selectedSize)}
@@ -270,14 +270,14 @@ export default function Cart() {
                 />
                 {promotionGift && (
                   <div className="bg-green-500/10 rounded-2xl p-4 border border-green-500/30">
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
                       <CartProductIcon icons={[promotionGift.icon || "🎁"]} />
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
                           <h3 className="text-cream font-semibold text-sm leading-tight truncate">{promotionGift.name}</h3>
                           <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold text-green-300">Brinde</span>
                         </div>
-                        <p className="text-stone text-xs mt-1">{promotionGift.quantity}x - Promocao {promotionGift.promotion_name}</p>
+                        <p className="break-words text-stone text-xs mt-1">{promotionGift.quantity}x - Promocao {promotionGift.promotion_name}</p>
                         <p className="text-green-400 font-bold text-sm mt-1">R$ 0,00</p>
                       </div>
                     </div>
@@ -288,14 +288,14 @@ export default function Cart() {
           })}
           {couponGift && (
             <div className="bg-green-500/10 rounded-2xl p-4 border border-green-500/30">
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-0 items-center gap-3">
                 <CartProductIcon icons={[couponGift.icon || "🎁"]} />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <h3 className="text-cream font-semibold text-sm leading-tight truncate">{couponGift.name}</h3>
                     <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold text-green-300">Brinde</span>
                   </div>
-                  <p className="text-stone text-xs mt-1">{couponGift.quantity}x - Cupom {couponGift.coupon_code}</p>
+                  <p className="break-words text-stone text-xs mt-1">{couponGift.quantity}x - Cupom {couponGift.coupon_code}</p>
                   <p className="text-green-400 font-bold text-sm mt-1">R$ 0,00</p>
                 </div>
               </div>
@@ -331,9 +331,9 @@ export default function Cart() {
             Cupom de desconto
           </p>
           {couponApplied ? (
-            <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2">
               <Check size={16} className="text-green-400 flex-shrink-0" />
-              <span className="text-green-400 text-sm flex-1">{couponMsg}</span>
+              <span className="min-w-0 flex-1 break-words text-green-400 text-sm">{couponMsg}</span>
               <button onClick={handleRemoveCoupon} className="text-stone hover:text-red-400 transition-colors">
                 <X size={14} />
               </button>
@@ -343,7 +343,7 @@ export default function Cart() {
               {promotionBlocksCoupons && (
                 <p className="text-amber-300 text-xs mb-2">Produto em promocao neste carrinho bloqueia outros cupons.</p>
               )}
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <input
                   type="text"
                   value={couponCode}
@@ -351,7 +351,7 @@ export default function Cart() {
                   onKeyDown={(e) => e.key === "Enter" && handleApplyCoupon()}
                   placeholder="Digite o código"
                   disabled={promotionBlocksCoupons}
-                  className="flex-1 bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream placeholder-stone text-sm focus:outline-none focus:border-gold font-mono uppercase"
+                  className="min-w-0 flex-1 bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream placeholder-stone text-sm focus:outline-none focus:border-gold font-mono uppercase"
                 />
                 <button
                   onClick={handleApplyCoupon}
@@ -369,28 +369,28 @@ export default function Cart() {
         </div>
 
         <div className="bg-surface-02 rounded-xl p-4 mt-4 space-y-3 border border-surface-03">
-          <div className="flex justify-between text-parchment text-sm">
-            <span>Subtotal dos itens:</span>
+          <div className="flex min-w-0 flex-wrap justify-between gap-x-3 gap-y-1 text-parchment text-sm">
+            <span className="min-w-0 break-words">Subtotal dos itens:</span>
             <span>R$ {cartSubtotal.toFixed(2)}</span>
           </div>
-          <div className="flex justify-between text-parchment text-sm">
-            <span>Taxa de entrega:</span>
+          <div className="flex min-w-0 flex-wrap justify-between gap-x-3 gap-y-1 text-parchment text-sm">
+            <span className="min-w-0 break-words">Taxa de entrega:</span>
             <span>{couponFreeShipping || promotionFreeShipping ? "Gratis" : "Calculada no checkout"}</span>
           </div>
           {promotionFreeShipping && (
-            <div className="flex justify-between text-sm">
-              <span className="text-green-400">Frete gratis da promocao:</span>
+            <div className="flex min-w-0 flex-wrap justify-between gap-x-3 gap-y-1 text-sm">
+              <span className="min-w-0 break-words text-green-400">Frete gratis da promocao:</span>
               <span className="text-green-400">Aplicado</span>
             </div>
           )}
           {couponDiscount > 0 && (
-            <div className="flex justify-between text-sm">
-              <span className="text-green-400">Desconto do cupom:</span>
+            <div className="flex min-w-0 flex-wrap justify-between gap-x-3 gap-y-1 text-sm">
+              <span className="min-w-0 break-words text-green-400">Desconto do cupom:</span>
               <span className="text-green-400">- R$ {couponDiscount.toFixed(2)}</span>
             </div>
           )}
-          <div className="border-t border-surface-03 pt-3 flex justify-between">
-            <span className="text-cream font-bold">Total antes do frete:</span>
+          <div className="border-t border-surface-03 pt-3 flex min-w-0 flex-wrap justify-between gap-x-3 gap-y-1">
+            <span className="min-w-0 break-words text-cream font-bold">Total antes do frete:</span>
             <span className="text-gold font-bold text-lg">R$ {finalTotal.toFixed(2)}</span>
           </div>
         </div>

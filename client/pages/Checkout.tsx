@@ -1074,8 +1074,8 @@ export default function Checkout() {
                           <MapPin size={14} className={`mt-0.5 flex-shrink-0 ${selectedAddressId === addr.id ? "text-gold" : "text-stone"}`} />
                           <div className="flex-1 min-w-0">
                             {addr.label && <p className="text-gold text-xs font-semibold leading-none mb-0.5">{addr.label}</p>}
-                            <p className="text-cream text-xs">{addr.street}{addr.number ? `, ${addr.number}` : ""}</p>
-                            <p className="text-stone text-[11px] truncate">
+                            <p className="text-cream text-xs break-words">{addr.street}{addr.number ? `, ${addr.number}` : ""}</p>
+                            <p className="text-stone text-[11px] break-words">
                               {[addr.neighborhood, addr.city, addr.zip_code].filter(Boolean).join(" · ")}
                             </p>
                           </div>
@@ -1124,12 +1124,12 @@ export default function Checkout() {
           }`}>
             {shippingLoading ? <Loader2 size={16} className="text-stone animate-spin mt-0.5 flex-shrink-0" /> : !shippingResult.available ? <AlertCircle size={16} className="text-red-400 mt-0.5 flex-shrink-0" /> : <Check size={16} className="text-green-400 mt-0.5 flex-shrink-0" />}
             <div className="flex-1">
-              <div className="flex items-center justify-between">
-                <p className={`text-sm font-medium ${!shippingResult.available ? "text-red-400" : shippingResult.free ? "text-green-400" : "text-cream"}`}>
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                <p className={`min-w-0 break-words text-sm font-medium ${!shippingResult.available ? "text-red-400" : shippingResult.free ? "text-green-400" : "text-cream"}`}>
                   {!shippingResult.available ? shippingResult.message || "Regiao nao atendida" : shippingResult.free ? "Frete gratis" : `R$ ${shippingResult.shipping_price.toFixed(2)}`}
                 </p>
                 {shippingResult.available && shippingResult.estimated_time > 0 && (
-                  <div className="flex items-center gap-1 text-stone text-xs">
+                  <div className="flex shrink-0 items-center gap-1 text-stone text-xs">
                     <Clock size={12} />
                     <span>{shippingResult.estimated_time} min</span>
                   </div>
@@ -1295,7 +1295,7 @@ export default function Checkout() {
               const iconSrc = item.flavors[0]?.icon ?? item.productData.icon;
               const hasImage = isAssetUrl(iconSrc);
               return (
-                <div key={item.cartItemId} className="bg-surface-02 rounded-xl p-4 flex items-center gap-4">
+                <div key={item.cartItemId} className="bg-surface-02 rounded-xl p-4 flex min-w-0 items-center gap-4">
                   <div className="w-12 h-12 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center text-xl overflow-hidden">
                     {hasImage
                       ? <img src={resolveAssetUrl(iconSrc)} alt={displayName} className="w-full h-full object-cover" />
@@ -1303,7 +1303,7 @@ export default function Checkout() {
                     }
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-cream font-semibold text-sm truncate">{displayName}</p>
+                    <p className="text-cream font-semibold text-sm break-words">{displayName}</p>
                     <p className="text-stone text-xs">{item.quantity}x - {pizzaSizeLabel(item.selectedSize)}</p>
                     {item.selectedOptions.length > 0 && <p className="text-stone text-[11px] mt-0.5">{item.selectedOptions.map((option) => `${option.groupName}: ${option.label}${option.quantity && option.quantity > 1 ? ` (${option.quantity}x)` : ""}`).join(" · ")}</p>}
                     {item.promotionApplied && item.promotionName && (
@@ -1323,7 +1323,7 @@ export default function Checkout() {
                   }
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <p className="text-cream font-semibold text-sm truncate">{couponGift.name}</p>
                     <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold text-green-300">Brinde</span>
                   </div>
@@ -1341,7 +1341,7 @@ export default function Checkout() {
                   }
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <p className="text-cream font-semibold text-sm truncate">{gift.name}</p>
                     <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold text-green-300">Brinde</span>
                   </div>
@@ -1356,8 +1356,8 @@ export default function Checkout() {
               <Line label="Taxa de entrega:" value={deliveryMode === "delivery" && !shippingAvailable ? "A confirmar" : deliveryFeeFinal === 0 ? "Gratis" : `R$ ${deliveryFee.toFixed(2)}`} />
               {promotionFreeShipping && <Line label="Frete gratis da promocao:" value="Aplicado" good />}
               {couponDiscount > 0 && <Line label="Desconto cupom:" value={`-R$ ${couponDiscount.toFixed(2)}`} good />}
-              <div className="border-t border-surface-03 pt-3 flex justify-between">
-                <span className="text-cream font-bold">Total:</span>
+              <div className="border-t border-surface-03 pt-3 flex min-w-0 flex-wrap justify-between gap-x-3 gap-y-1">
+                <span className="min-w-0 break-words text-cream font-bold">Total:</span>
                 <span className="text-gold font-bold text-lg">R$ {Math.max(0, total).toFixed(2)}</span>
               </div>
             </div>
@@ -1696,7 +1696,7 @@ function Field({
 }) {
   return (
     <div>
-      <div className={`flex items-center gap-3 bg-surface-02 rounded-xl px-4 py-3 border transition-colors ${
+      <div className={`flex min-w-0 items-center gap-3 bg-surface-02 rounded-xl px-4 py-3 border transition-colors ${
         error ? "border-red-500/70" : "border-surface-03 focus-within:border-gold"
       }`}>
         <Icon size={18} className="text-stone flex-shrink-0" />
@@ -1706,7 +1706,7 @@ function Field({
           value={value}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
-          className="flex-1 bg-transparent text-cream placeholder-stone/70 outline-none text-sm disabled:opacity-60"
+          className="min-w-0 flex-1 bg-transparent text-cream placeholder-stone/70 outline-none text-sm disabled:opacity-60"
         />
       </div>
       {error && <p className="text-red-400 text-xs mt-1 ml-1">{error}</p>}
@@ -1716,8 +1716,8 @@ function Field({
 
 function Line({ label, value, good }: { label: string; value: string; good?: boolean }) {
   return (
-    <div className={`flex justify-between text-sm ${good ? "text-green-400" : "text-parchment"}`}>
-      <span>{label}</span>
+    <div className={`flex min-w-0 flex-wrap justify-between gap-x-3 gap-y-1 text-sm ${good ? "text-green-400" : "text-parchment"}`}>
+      <span className="min-w-0 break-words">{label}</span>
       <span>{value}</span>
     </div>
   );

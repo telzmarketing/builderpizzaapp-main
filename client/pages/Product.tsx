@@ -854,7 +854,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     <div className={`${embedded ? "min-h-0" : "min-h-screen"} bg-gradient-to-br from-surface-01 to-surface-00`}>
 
       {/* Header */}
-      <div className="bg-brand-dark px-4 py-3 flex justify-between items-center sticky top-0 z-30">
+      <div className="bg-brand-dark px-4 py-3 flex min-w-0 justify-between items-center sticky top-0 z-30">
         <button type="button" onClick={() => embedded ? onBack?.() : navigate(-1)} aria-label={embedded ? "Voltar ao catálogo" : "Voltar"} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
@@ -900,8 +900,8 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
             <BestSellerSeal show={(product as any).show_best_seller_badge} />
           </button>
           <h1 className="text-cream text-2xl font-bold mt-4 text-center">{product.name}</h1>
-          <div className="flex items-start gap-4 w-full mt-4">
-            <p className="text-stone text-sm leading-relaxed flex-1">{product.description}</p>
+          <div className="flex min-w-0 w-full flex-wrap items-start gap-4 mt-4">
+            <p className="min-w-0 flex-1 break-words text-stone text-sm leading-relaxed">{product.description}</p>
             <div className="flex items-center gap-3 bg-surface-02 rounded-full px-4 py-2 flex-shrink-0 border border-surface-03">
               <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="text-parchment hover:text-cream transition-colors">
                 <Minus size={16} />
@@ -1082,8 +1082,8 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
 
         {isPizza && !isFixedFlavorCombination && (
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-cream font-bold">
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-2 mb-3">
+              <h3 className="min-w-0 break-words text-cream font-bold">
                 {division === 1 ? "Sabor da Pizza" : `Escolha os ${division} Sabores`}
               </h3>
               {cartError && (
@@ -1130,7 +1130,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                           )
                           : <span>{flavor?.icon ?? "?"}</span>}
                       </div>
-                      <div className="flex-1 text-left">
+                      <div className="min-w-0 flex-1 text-left">
                         <p className="text-stone text-xs">{slotLabel}</p>
                         <p className={`text-sm font-semibold ${flavor ? "text-cream" : "text-stone/70"}`}>
                           {flavor?.name ?? "Toque para escolher o sabor"}
@@ -1202,8 +1202,8 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
 
             {effectiveDivision > 1 && activeFlavors.some((f) => f !== null) && (
               <div className="mt-3 p-3 rounded-xl bg-surface-02/60 border border-surface-03">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-stone">
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
+                  <span className="min-w-0 break-words text-stone">
                     {allFilled ? `${effectiveDivision === 2 ? "Meio a Meio" : "3 Sabores"}` : "Preço parcial"}
                   </span>
                   <span className="text-gold-light font-bold">R$ {flavorPrice.toFixed(2)}</span>
@@ -1368,8 +1368,8 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
       )}
 
       <div className={`${embedded ? "sticky bottom-0 z-30" : "fixed bottom-0 left-0 right-0"} bg-surface-00 border-t border-surface-03 px-4 py-4 shadow-[0_-18px_40px_rgba(0,0,0,0.45)]`}>
-        <div className="flex items-center justify-between mb-3">
-          <div>
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-4 gap-y-2 mb-3">
+          <div className="min-w-0">
             <p className="text-stone text-xs">Total ({quantity}x)</p>
             <div className="flex items-end gap-2">
               <p className="text-gold text-2xl font-bold">R$ {totalPrice.toFixed(2)}</p>
@@ -1384,7 +1384,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
               <p className="text-amber-300 text-[11px] font-semibold mt-0.5">{priceQuote.promotion_block_reason}.</p>
             )}
           </div>
-          <div className="text-right">
+          <div className="min-w-0 text-right">
             {isPizza && !isFixedFlavorCombination && effectiveDivision > 1 && allFilled && (
               <p className="text-stone text-xs">
                 {effectiveDivision === 2 ? "Meio a Meio" : "3 Sabores"} · {selectedSize}

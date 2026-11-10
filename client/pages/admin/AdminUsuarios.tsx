@@ -353,7 +353,7 @@ function PermissionMatrix({ roleId, modules, permissions }: {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-stone text-sm">Marque as permissões que este perfil deve ter em cada módulo.</p>
         <button onClick={handleSave} disabled={saving}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gold text-cream font-semibold text-sm disabled:opacity-50">
@@ -614,7 +614,8 @@ export default function AdminUsuarios() {
                     <div className="px-4 py-3 border-b border-surface-03 text-stone text-xs">
                       {filteredUsers.length} usuário(s) encontrado(s)
                     </div>
-                    <table className="w-full text-sm">
+                    <div className="overflow-x-auto">
+                    <table className="min-w-[720px] w-full text-sm">
                       <thead>
                         <tr className="border-b border-surface-03 bg-surface-03/40">
                           <th className="text-left px-4 py-3 text-stone font-medium">Usuário</th>
@@ -697,6 +698,7 @@ export default function AdminUsuarios() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 </div>
               )}
@@ -778,7 +780,8 @@ export default function AdminUsuarios() {
                     <div className="px-4 py-3 border-b border-surface-03 text-stone text-xs">
                       {auditTotal} registro(s) no total
                     </div>
-                    <table className="w-full text-sm">
+                    <div className="overflow-x-auto">
+                    <table className="min-w-[720px] w-full text-sm">
                       <thead>
                         <tr className="border-b border-surface-03 bg-surface-03/40">
                           <th className="text-left px-4 py-3 text-stone font-medium">Data/Hora</th>
@@ -811,6 +814,7 @@ export default function AdminUsuarios() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                   {auditTotal > 50 && (
                     <div className="flex items-center justify-between text-sm text-stone">

@@ -557,7 +557,8 @@ export default function MarketingUpsell() {
                     ))}
                   </div>
                   <div className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
-                    <table className="w-full text-sm">
+                    <div className="overflow-x-auto">
+                    <table className="min-w-[640px] w-full text-sm">
                       <thead>
                         <tr className="border-b border-surface-03 text-stone text-xs">
                           <th className="text-left px-4 py-3">Upsell</th>
@@ -589,6 +590,7 @@ export default function MarketingUpsell() {
                         )}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 </div>
               ) : (

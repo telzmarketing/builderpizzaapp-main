@@ -50,17 +50,17 @@ export default function PlatformAdminLayout() {
 
   return (
     <div className="admin-shell text-cream">
-      <div className="flex h-[100dvh] min-h-screen overflow-hidden bg-surface-00">
+      <div className="flex h-[100dvh] min-h-screen min-w-0 overflow-hidden bg-surface-00">
         {mobileMenuOpen && (
           <button
             type="button"
             aria-label="Fechar navegacao"
-            className="fixed inset-0 z-40 bg-black/70 md:hidden"
+            className="fixed inset-0 z-40 bg-black/70 lg:hidden"
             onClick={() => setMobileMenuOpen(false)}
           />
         )}
 
-        <aside className={`fixed inset-y-0 left-0 z-50 flex w-[18rem] max-w-[86vw] flex-col border-r border-surface-03 bg-surface-02 transition-transform md:static md:z-auto md:w-64 md:translate-x-0 ${
+        <aside className={`fixed inset-y-0 left-0 z-50 flex w-[18rem] max-w-[86vw] min-w-0 flex-col border-r border-surface-03 bg-surface-02 transition-transform lg:static lg:z-auto lg:w-64 lg:translate-x-0 ${
           mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         }`}>
           <div className="flex h-16 shrink-0 items-center justify-between border-b border-surface-03 px-4">
@@ -73,7 +73,7 @@ export default function PlatformAdminLayout() {
             <button
               type="button"
               onClick={() => setMobileMenuOpen(false)}
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-surface-03 text-stone md:hidden"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-surface-03 text-stone lg:hidden"
               aria-label="Fechar menu"
             >
               <X size={18} />
@@ -129,12 +129,12 @@ export default function PlatformAdminLayout() {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-surface-03 bg-surface-02/95 px-4 backdrop-blur-xl md:px-6">
+          <header className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-surface-03 bg-surface-02/95 px-4 py-2 backdrop-blur-xl md:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(true)}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-surface-03 text-stone md:hidden"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-surface-03 text-stone lg:hidden"
                 aria-label="Abrir navegacao"
               >
                 <Menu size={19} />
@@ -146,7 +146,7 @@ export default function PlatformAdminLayout() {
                 <h1 className="truncate text-base font-black text-cream md:text-lg">{meta.title}</h1>
               </div>
             </div>
-            <div className="flex min-w-0 items-center gap-3">
+            <div className="flex min-w-0 shrink-0 items-center gap-3">
               <div className="hidden min-w-0 text-right sm:block">
                 <p className="truncate text-sm font-bold text-cream">{admin.name || "Administrador"}</p>
                 <p className="truncate text-xs text-stone">{admin.email}</p>
@@ -161,8 +161,8 @@ export default function PlatformAdminLayout() {
             </div>
           </header>
 
-          <main className="min-h-0 flex-1 overflow-y-auto bg-surface-01">
-            <div className="mx-auto min-h-full max-w-[100rem] space-y-6 p-4 md:p-6">
+          <main className="min-h-0 min-w-0 flex-1 overflow-x-clip overflow-y-auto bg-surface-01">
+            <div className="mx-auto min-h-full min-w-0 max-w-[100rem] space-y-6 p-4 md:p-6">
               <div>
                 <p className="text-sm text-stone">{meta.subtitle}</p>
               </div>

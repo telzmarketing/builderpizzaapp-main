@@ -582,23 +582,23 @@ export default function AdminOrders() {
           )}
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-visible">
-            <div className="sticky top-0 z-20 flex w-full flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-surface-03 bg-surface-01/95 px-4 py-3 backdrop-blur md:px-6">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <div className="flex h-10 min-w-[14rem] shrink-0 items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-02 px-4">
+            <div className="sticky top-0 z-20 flex w-full flex-shrink-0 flex-wrap items-stretch justify-between gap-3 border-b border-surface-03 bg-surface-01/95 px-4 py-3 backdrop-blur md:px-6 2xl:flex-nowrap 2xl:items-center">
+              <div className="flex w-full min-w-0 flex-wrap items-center gap-2 2xl:w-auto 2xl:flex-1">
+              <div className="flex h-10 min-w-0 w-full flex-1 items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-02 px-4 sm:basis-[14rem]">
                 <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-stone">
                   <Users size={15} className="text-green-400" />
                   Visitantes online
                 </span>
                 <span className="text-sm font-black text-cream">{onlineStats?.visitors ?? "—"}</span>
               </div>
-              <div className="flex h-10 min-w-[17rem] shrink-0 items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-02 px-4">
+              <div className="flex h-10 min-w-0 w-full flex-1 items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-02 px-4 sm:basis-[17rem]">
                 <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-stone">
                   <UserCheck size={15} className="text-blue-400" />
                   Clientes cadastrados online
                 </span>
                 <span className="text-sm font-black text-cream">{onlineStats?.registeredCustomers ?? "—"}</span>
               </div>
-              <span role={onlineStatsError ? "alert" : "status"} className={`px-1 text-xs ${onlineStatsError ? "text-red-300" : "text-stone"}`}>
+              <span role={onlineStatsError ? "alert" : "status"} className={`min-w-0 w-full px-1 text-xs sm:flex-1 ${onlineStatsError ? "text-red-300" : "text-stone"}`}>
                 {onlineStatsError
                   ? `${onlineStatsError}${onlineStatsUpdatedAt ? ` Última atualização: ${onlineStatsUpdatedAt.toLocaleTimeString("pt-BR")}.` : ""}`
                   : onlineStatsUpdatedAt
@@ -606,14 +606,14 @@ export default function AdminOrders() {
                     : "Carregando métricas de presença..."}
               </span>
               </div>
-              <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
+              <div className="flex w-full min-w-0 flex-wrap items-center gap-2 2xl:w-auto 2xl:justify-end">
                 {canCreateManualOrder(adminPermissions) && <button type="button" onClick={() => window.matchMedia("(max-width: 767px)").matches ? navigate("/operacoes/novo-pedido") : setManualOrderOpen(true)} className="flex min-h-12 items-center gap-2 rounded-xl bg-gold px-5 py-3 font-black text-black"><Plus size={20} /> Fazer Pedido</button>}
                 <OperationsContactPanel />
                 <AdminTopActions force />
               </div>
             </div>
             <div className="relative z-10 flex w-full flex-shrink-0 flex-wrap items-center gap-2 border-b border-surface-03 bg-surface-01/95 px-4 py-4 md:px-6">
-              <div className="flex h-11 shrink-0 items-center overflow-hidden rounded-xl border border-surface-03 bg-surface-02">
+              <div className="flex h-11 w-full shrink-0 items-center overflow-hidden rounded-xl border border-surface-03 bg-surface-02 sm:w-auto">
                 <button
                   onClick={() => setSelectedDate((value) => shiftDateInput(value, -1))}
                   title="Dia anterior"
