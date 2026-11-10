@@ -230,6 +230,7 @@ export default function TopNavigation({
                   <button
                     type="button"
                     aria-label="Abrir KDS Analítico"
+                    title={group.label}
                     onMouseEnter={() => preloadAdminRoute("/painel/kds/analitico")}
                     onFocus={() => preloadAdminRoute("/painel/kds/analitico")}
                     onClick={() => {
