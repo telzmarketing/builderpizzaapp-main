@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildPreparationAllocationDrafts,
   emptyPreparationRecipe,
+  isOperationalPreparationOrder,
   preparationAllocationPayload,
   validatePreparationAllocationDrafts,
 } from "./PreparationOperationsPanel";
@@ -46,6 +47,14 @@ const lots: FoundationLot[] = [{
 }];
 
 describe("PreparationOperationsPanel structured allocations", () => {
+  it("keeps only active preparation orders in the operational list", () => {
+    expect(isOperationalPreparationOrder({ status: "waiting" })).toBe(true);
+    expect(isOperationalPreparationOrder({ status: "in_progress" })).toBe(true);
+    expect(isOperationalPreparationOrder({ status: "cancelled" })).toBe(false);
+    expect(isOperationalPreparationOrder({ status: "completed" })).toBe(false);
+    expect(isOperationalPreparationOrder({ status: "historical" })).toBe(false);
+  });
+
   it("keeps the technical sheet available as an empty pending sheet", () => {
     const empty = emptyPreparationRecipe({
       id: "order-empty",

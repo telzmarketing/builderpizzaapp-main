@@ -225,7 +225,7 @@ function InventoryBase({ section }: { section: Exclude<Section, "settings" | "fo
           {section === "base" && <BaseSection data={data} saving={saving} run={run} />}
           {section === "suppliers" && <SuppliersSection data={data} saving={saving} run={run} />}
           {section === "purchases" && <PurchasesSection data={data} saving={saving} run={run} />}
-          {section === "replenishment" && <ReplenishmentSection data={data} saving={saving} onCreatePurchase={() => run(() => inventoryApi.createReplenishmentRequest(), "Solicitação de compras gerada. Nenhum saldo foi alterado.")} />}
+          {section === "replenishment" && <ReplenishmentSection data={data} saving={saving} onCreatePurchase={(itemIds) => run(() => inventoryApi.createReplenishmentRequest(itemIds), "Solicitação de compras gerada. Nenhum saldo foi alterado.")} />}
           {section === "entries" && <EntriesSection data={data} saving={saving} run={run} />}
         </>
       )}
@@ -236,9 +236,10 @@ function InventoryBase({ section }: { section: Exclude<Section, "settings" | "fo
   );
 }
 
-function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: InventoryOverview; saving: boolean; onCreatePurchase: () => Promise<void> }) {
+function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: InventoryOverview; saving: boolean; onCreatePurchase: (itemIds: string[]) => Promise<void> }) {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"name" | "current_stock" | "min_stock" | "shortage">("name");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const needs = useMemo(
     () => data.items
       .filter((item) => item.active && item.item_type !== "finished_good" && item.current_stock !== undefined && item.current_stock < item.min_stock)
@@ -248,16 +249,25 @@ function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: Invent
   );
   const visibleNeeds = useMemo(() => filterAndSort(needs, search, sort, { name: (item) => item.name, current_stock: (item) => item.current_stock ?? 0, min_stock: (item) => item.min_stock, shortage: (item) => item.shortage }), [needs, search, sort]);
 
+  useEffect(() => {
+    setSelectedIds((current) => {
+      const validIds = new Set(needs.map((item) => item.id));
+      const next = new Set([...current].filter((id) => validIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [needs]);
+
   const latestCostFor = (itemId: string) => data.purchases
     .flatMap((purchase) => purchase.items)
     .filter((line) => line.item_id === itemId)
     .sort((a, b) => (b.total_cost ?? b.quantity * b.unit_cost) - (a.total_cost ?? a.quantity * a.unit_cost))[0]?.unit_cost ?? 0;
 
-  const estimated = needs.reduce((total, item) => {
+  const selectedNeeds = needs.filter((item) => selectedIds.has(item.id));
+  const estimated = selectedNeeds.reduce((total, item) => {
     return total + item.shortage * latestCostFor(item.id);
   }, 0);
 
-  const requestPurchase = () => onCreatePurchase();
+  const requestPurchase = () => onCreatePurchase(selectedNeeds.map((item) => item.id));
 
   return (
     <div className="space-y-4">
@@ -276,15 +286,17 @@ function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: Invent
           <p className="font-black text-cream">Solicitação de compras</p>
           <p className="mt-1 text-xs text-stone">Cria um rascunho com todos os itens abaixo do mínimo. O estoque não é alterado.</p>
         </div>
-        <button type="button" disabled={saving || !needs.length} onClick={() => void requestPurchase()} className={buttonClass}>
+        <button type="button" disabled={saving || !selectedNeeds.length} onClick={() => void requestPurchase()} className={buttonClass}>
           {saving ? <Loader2 size={15} className="animate-spin" /> : <ShoppingCart size={15} />} Gerar solicitação
         </button>
       </div>
+      <p className="text-sm font-bold text-stone">{selectedNeeds.length} item(ns) selecionado(s)</p>
       <div className="overflow-hidden rounded-lg border border-surface-03">
         <InventoryTableControls search={search} onSearch={setSearch} sort={sort} onSort={(value) => setSort(value as typeof sort)} options={[{ value: "name", label: "Insumo (A-Z)" }, { value: "current_stock", label: "Estoque atual" }, { value: "min_stock", label: "Mínimo" }, { value: "shortage", label: "Necessidade" }]} />
-        <TableHeader columns={["Insumo", "Estoque atual", "Mínimo", "Necessidade", "Unidade"]} />
+        <TableHeader columns={["Selecionar", "Insumo", "Estoque atual", "Mínimo", "Necessidade", "Unidade"]} />
         {visibleNeeds.map((item) => (
-          <div key={item.id} className="grid grid-cols-[1.5fr_1fr_1fr_1fr_.8fr] gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
+          <div key={item.id} className="grid grid-cols-[2.2rem_1.5fr_1fr_1fr_1fr_.8fr] items-center gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
+            <label className="flex items-center justify-center"><input type="checkbox" aria-label={`Selecionar ${item.name}`} checked={selectedIds.has(item.id)} onChange={() => setSelectedIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /></label>
             <span className="font-bold text-cream">{item.name}<small className="block text-stone">{item.sku || item.category_name || "Sem categoria"}</small></span>
             <span className="text-red-200">{quantity(item.current_stock)}</span>
             <span className="text-stone">{quantity(item.min_stock)}</span>
@@ -708,12 +720,19 @@ function PurchasesSection({
       </div>
       <div className="overflow-hidden rounded-lg border border-surface-03">
         <InventoryTableControls search={search} onSearch={setSearch} sort={sort} onSort={(value) => setSort(value as typeof sort)} options={[{ value: "reference", label: "Compra (A-Z)" }, { value: "total_amount", label: "Valor total" }]} />
-        <TableHeader columns={["Compra", "Fornecedor", "Itens", "Total", ""]} />
+        <TableHeader columns={["Compra", "Fornecedor", "Itens da compra", "Total", "Ações"]} />
         {visiblePurchases.map((item) => (
-          <div key={item.id} className="grid grid-cols-[1fr_1fr_1.2fr_.8fr_auto] gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
-            <span className="font-bold text-cream">{item.invoice_number || item.id}<small className="block text-stone">{item.status === "confirmed" ? "Confirmada" : "Rascunho"}</small></span>
+          <div key={item.id} className="grid gap-4 border-t border-surface-03 bg-surface-01 px-4 py-4 text-sm lg:grid-cols-[1fr_1fr_2.2fr_.8fr_auto]">
+            <span className="font-bold text-cream">{item.invoice_number || item.id}<small className="block text-stone">{item.status === "confirmed" ? "Confirmada" : item.status === "requested" ? "Solicitada" : "Rascunho"}</small><small className="block text-stone">Data: {item.created_at ? new Intl.DateTimeFormat("pt-BR").format(new Date(item.created_at)) : "-"}</small></span>
             <span className="text-stone">{item.supplier_name || "-"}</span>
-            <span className="text-stone">{item.items.map((row) => row.item_name || row.item_id).join(", ") || "-"}</span>
+            <div className="space-y-2">
+              {item.items.length ? item.items.map((row) => {
+                const detail = data.items.find((candidate) => candidate.id === row.item_id);
+                const kind = detail?.item_type === "finished_good" ? "Porção" : "Insumo";
+                const unit = detail?.unit_symbol || detail?.unit_name || "unid.";
+                return <div key={row.id || row.item_id} className="grid grid-cols-[minmax(0,1.5fr)_auto_auto_auto] items-center gap-3 rounded border border-surface-03 bg-surface-02 px-3 py-2 text-xs"><span className="min-w-0"><b className="block truncate text-cream">{row.item_name || detail?.name || row.item_id}</b><small className="text-stone">{kind}</small></span><span className="text-stone">{quantity(row.quantity)} {unit}</span><span className="text-stone">{currency(row.unit_cost)}/un.</span><span className="font-bold text-cream">{currency(row.total_cost ?? row.quantity * row.unit_cost)}</span></div>;
+              }) : <span className="text-stone">Nenhum item informado.</span>}
+            </div>
             <span className="text-stone">{currency(item.total_amount)}</span>
             <span className="flex items-center gap-2">
               {item.status !== "confirmed" && (

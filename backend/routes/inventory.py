@@ -22,6 +22,7 @@ from backend.schemas.inventory import (
     InventoryOverviewOut,
     InventoryPurchaseIn,
     InventoryPurchaseOut,
+    InventoryReplenishmentRequestIn,
     InventoryRecipeVersionIn,
     InventoryRecipeVersionOut,
     InventoryStockBalanceOut,
@@ -217,9 +218,9 @@ def create_purchase(body: InventoryPurchaseIn, db: Session = Depends(get_db), _a
 
 
 @router.post("/purchase-requests/replenishment", response_model=InventoryPurchaseOut, status_code=201)
-def create_replenishment_request(db: Session = Depends(get_db), _actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "create")), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+def create_replenishment_request(body: InventoryReplenishmentRequestIn | None = None, db: Session = Depends(get_db), _actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "create")), tenant_context: TenantContext | None = Depends(panel_operation_context)):
     try:
-        return service(db, tenant_context, _actor).create_replenishment_request()
+        return service(db, tenant_context, _actor).create_replenishment_request(body.item_ids if body is not None else None)
     except DomainError as exc:
         return err(exc)
 

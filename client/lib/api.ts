@@ -6165,8 +6165,8 @@ export const inventoryApi = {
     request<Record<string, unknown>>("POST", `/gestao/inventory/items/${encodeURIComponent(itemId)}/adjustments`, body, { "Idempotency-Key": key }),
   createPurchase: (data: Omit<InventoryPurchase, "id" | "tenant_id" | "supplier_name" | "total_amount" | "created_at" | "updated_at">) =>
     post<InventoryPurchase>("/gestao/inventory/purchases", data),
-  createReplenishmentRequest: () =>
-    post<InventoryPurchase>("/gestao/inventory/purchase-requests/replenishment", {}),
+  createReplenishmentRequest: (itemIds?: string[]) =>
+    post<InventoryPurchase>("/gestao/inventory/purchase-requests/replenishment", itemIds?.length ? { item_ids: itemIds } : {}),
   updatePurchase: (id: string, data: Omit<InventoryPurchase, "id" | "tenant_id" | "supplier_name" | "total_amount" | "created_at" | "updated_at">) =>
     put<InventoryPurchase>(`/gestao/inventory/purchases/${id}`, data),
   removePurchase: (id: string) => del<void>(`/gestao/inventory/purchases/${id}`),

@@ -45,7 +45,7 @@ export function PreparationLabelPrintDialog({ executionId, open, onOpenChange }:
     {preview && <><p className="font-bold">{preview.execution.product_name || "Preparação"}</p><p>Quantidade: {preview.execution.quantity} · Lote: {preview.execution.lot_code || "Não informado"}</p><p className="text-sm text-stone">{preview.printer.name} · {preview.template.name}</p><label>Cópias<input type="number" min={1} max={1000} value={copies} disabled={busy} onChange={(event) => setCopies(Math.max(1, Math.min(1000, Number(event.target.value) || 1)))} className="w-full rounded bg-surface-01 p-2"/></label><label>Motivo para reimprimir<textarea maxLength={300} value={reason} disabled={busy} onChange={(event) => setReason(event.target.value)} className="w-full rounded bg-surface-01 p-2"/></label></>}
     {preview && <iframe title="Prévia da etiqueta de preparo" sandbox="" srcDoc={buildPreparationLabelPrintHtml(preview)} className="h-52 w-full rounded border bg-white" />}
     {done && <p role="status" className="text-emerald-300">Impressão registrada. Confirme a fila no sistema operacional.</p>}
-    <DialogFooter><button disabled={busy} onClick={() => onOpenChange(false)}>Fechar</button><button disabled={!preview || busy} onClick={() => void print(false)} className="rounded bg-emerald-600 p-2">Imprimir</button><button disabled={!preview || busy || !reason.trim()} onClick={() => void print(true)} className="rounded border p-2">Reimprimir</button></DialogFooter>
+    <DialogFooter><button disabled={busy} onClick={() => onOpenChange(false)}>Fechar</button><button disabled={!preview || busy} onClick={() => void print(false)} className="rounded bg-emerald-600 p-2">Confirmar impressão</button><button disabled={!preview || busy || !reason.trim()} onClick={() => void print(true)} className="rounded border p-2">Confirmar reimpressão</button></DialogFooter>
   </DialogContent></Dialog>;
 }
 
@@ -221,7 +221,7 @@ export default function LabelPrintDialog({ orderId, orderCode, open, onOpenChang
       <DialogFooter>
         <button type="button" onClick={() => onOpenChange(false)} disabled={printing} className="min-h-11 rounded-lg border border-surface-03 px-5 font-bold disabled:opacity-50">Cancelar</button>
         <button type="button" onClick={() => void print()} disabled={!preview || !preview.restaurant.logo_url || previewing || printing || printers.length === 0 || templates.length === 0} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 font-black text-white disabled:opacity-40">
-          {printing ? <Loader2 className="animate-spin"/> : <Printer/>}{printing ? "Registrando..." : isReprint ? "Reimprimir etiquetas" : "Imprimir etiquetas"}
+          {printing ? <Loader2 className="animate-spin"/> : <Printer/>}{printing ? "Registrando..." : isReprint ? "Confirmar reimpressão" : "Confirmar impressão"}
         </button>
       </DialogFooter>
     </DialogContent>

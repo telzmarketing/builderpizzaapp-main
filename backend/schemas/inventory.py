@@ -128,6 +128,12 @@ class InventoryPurchaseIn(BaseModel):
     items: list[InventoryPurchaseItemIn] = Field(default_factory=list)
 
 
+class InventoryReplenishmentRequestIn(BaseModel):
+    """Optional selection for an automatic minimum-stock purchase request."""
+
+    item_ids: list[str] | None = Field(default=None, min_length=1)
+
+
 class InventoryPurchaseItemOut(BaseModel):
     id: str
     purchase_id: str

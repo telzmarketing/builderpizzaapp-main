@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, ChefHat, ClipboardList, Loader2, Play, RefreshCw, Square, Trash2, TriangleAlert } from "lucide-react";
-import { inventoryApi, inventoryFoundationApi, preparationApi, type FoundationLot, type InventoryOverview, type PreparationInputAllocation, type PreparationOrder, type PreparationRecipe, type PreparationRecipeDefinition } from "@/lib/api";
+import { inventoryApi, inventoryFoundationApi, preparationApi, type FoundationLot, type InventoryOverview, type InventoryPortionConfig, type PreparationInputAllocation, type PreparationOrder, type PreparationRecipe, type PreparationRecipeDefinition } from "@/lib/api";
 import { PreparationLabelPrintDialog } from "@/components/kds/LabelPrintDialog";
 import PcpWeeklyPanel from "@/components/admin/PcpWeeklyPanel";
 import { formatQuantity } from "@/lib/formatQuantity";
+import { formatPortionIngredient, formatPortionTitle, formatRequestedPortions, resolvePreparationPortionConfig } from "@/lib/portionDisplay";
 
 const box = "preparation-card rounded-xl border border-surface-03 bg-surface-02 p-4 shadow-lg shadow-black/10";
 const input = "w-full rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream outline-none focus:border-gold";
@@ -26,6 +27,21 @@ function stateLabel(state: string) {
 function exact(value: string | number | null | undefined) {
   const number = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(number) ? number.toLocaleString("pt-BR", { useGrouping: false, maximumFractionDigits: 6 }) : "0";
+}
+
+const OPERATIONAL_ORDER_STATUSES = new Set([
+  "draft",
+  "approved",
+  "scheduled",
+  "waiting",
+  "in_progress",
+  "partially_completed",
+  "paused",
+  "blocked",
+]);
+
+export function isOperationalPreparationOrder(order: Pick<PreparationOrder, "status">) {
+  return OPERATIONAL_ORDER_STATUSES.has(String(order.status).trim().toLowerCase());
 }
 
 export interface PreparationAllocationDraft {
@@ -91,6 +107,7 @@ export function emptyPreparationRecipe(order: PreparationOrder): PreparationReci
 
 function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder; onRefresh: () => Promise<void>; onExecution: (id: string) => void }) {
   const [recipe, setRecipe] = useState<PreparationRecipe | null>(null);
+  const [portionConfig, setPortionConfig] = useState<InventoryPortionConfig | null>(null);
   const [inventory, setInventory] = useState<InventoryOverview | null>(null);
   const [lots, setLots] = useState<FoundationLot[]>([]);
   const [allocationDrafts, setAllocationDrafts] = useState<PreparationAllocationDraft[]>([]);
@@ -105,6 +122,16 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
   const [sheetLoading, setSheetLoading] = useState(false);
   const [portionConfirmation, setPortionConfirmation] = useState<"yes" | "no" | null>(null);
   const [actualQuantity, setActualQuantity] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+    void inventoryApi.portionConfigs(true).then((configs) => {
+      if (!mounted) return;
+      const match = configs.find((config) => order.output_item_name?.includes(config.source_item_name || ""));
+      if (match) setPortionConfig(match);
+    }).catch(() => undefined);
+    return () => { mounted = false; };
+  }, [order.output_item_name]);
 
   async function run(action: () => Promise<unknown>, success: string) {
     setBusy(true); setError(""); setMessage("");
@@ -136,6 +163,8 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
         }
       }
       setRecipe(nextRecipe);
+      const configs = await inventoryApi.portionConfigs(true).catch(() => [] as InventoryPortionConfig[]);
+      setPortionConfig(resolvePreparationPortionConfig(nextRecipe, configs) || null);
       if (includeStock && nextRecipe.executable) {
         const [inventoryResult, lotsResult] = await Promise.allSettled([
           inventoryApi.overview(),
@@ -158,6 +187,7 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
     setSheetMode(mode);
     setPortionConfirmation(mode === "completion" ? "yes" : null);
     setRecipe(null);
+    setPortionConfig(null);
     setError("");
     // O modal abre imediatamente. Nenhuma rota de estoque pode impedir a
     // consulta da ficha técnica ou a confirmação da quantidade.
@@ -222,8 +252,8 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
     <article className={`${box} preparation-order-card`}>
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <div className="flex items-center gap-2"><ChefHat size={17} className="text-gold" /><h3 className="font-black text-cream">{order.output_item_name || order.recipe_name || "Porcionamento"}</h3></div>
-          <p className="mt-1 text-xs text-stone">Meta {exact(order.target_quantity)} {order.output_unit_symbol || "porcoes"} · produzido {exact(order.produced_quantity)} · perdas {exact(order.lost_quantity)} · descartado {exact(order.discarded_quantity)}</p>
+          <div className="flex items-center gap-2"><ChefHat size={17} className="text-gold" /><h3 className="font-black text-cream">{formatPortionTitle(portionConfig, order.output_item_name || order.recipe_name || "Porcionamento")}</h3></div>
+          <p className="mt-1 text-xs text-stone">Meta {formatRequestedPortions(order.target_quantity)} · produzido {exact(order.produced_quantity)} · perdas {exact(order.lost_quantity)} · descartado {exact(order.discarded_quantity)}</p>
           <p className="mt-1 text-xs font-bold text-gold">{stateLabel(order.status)} · versão {order.version}</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -243,14 +273,16 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
         {sheetLoading && <div className="mt-4 flex items-center gap-2 rounded-lg border border-surface-03 bg-surface-01 p-4 text-stone"><Loader2 size={17} className="animate-spin" /> Carregando ficha técnica...</div>}
         {!sheetLoading && !recipe && error && <p role="alert" className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-200">{error}</p>}
         {!sheetLoading && recipe && <>
-        <p className="mt-2 text-stone">{recipe.output_item_name || order.output_item_name || "Produto porcionado"} · quantidade solicitada: <b className="text-cream">{exact(order.target_quantity)} {recipe.output_unit_symbol || order.output_unit_symbol || "porcoes"}</b></p>
-        {recipe.instructions && <p className="mt-3 whitespace-pre-line rounded-lg bg-surface-01 p-3 text-stone">{recipe.instructions}</p>}
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">{(recipe.ingredients ?? []).map((item, index) => <div key={`${item.inventory_item_id}-${item.unit_id}-${index}`} className="rounded bg-surface-01 px-3 py-2 text-stone">{item.inventory_item_name || "Insumo"}: <b className="text-cream">{exact(item.quantity)} {item.unit_symbol || ""}</b> por porção</div>)}</div>
+        <p className="mt-2 text-stone">{formatPortionTitle(portionConfig, recipe.output_item_name || order.output_item_name || "Produto porcionado")} · quantidade solicitada: <b className="text-cream">{formatRequestedPortions(order.target_quantity)}</b></p>
+        {sheetMode === "technical" && <>
+          {recipe.instructions && <p className="mt-3 whitespace-pre-line rounded-lg bg-surface-01 p-3 text-stone">{recipe.instructions}</p>}
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">{(recipe.ingredients ?? []).map((item, index) => <div key={`${item.inventory_item_id}-${item.unit_id}-${index}`} className="rounded bg-surface-01 px-3 py-2 text-stone">{portionConfig?.source_item_id === item.inventory_item_id ? (portionConfig.source_item_name || item.inventory_item_name || "Insumo") : (item.inventory_item_name || "Insumo")}: <b className="text-cream">{formatPortionIngredient(portionConfig?.source_item_id === item.inventory_item_id ? portionConfig : null, item.quantity, item.unit_symbol)}</b> por porção</div>)}</div>
+        </>}
           {sheetMode === "completion" && portionConfirmation && <div className="mt-4 rounded-lg border border-gold/50 bg-gold/10 p-3"><p className="font-bold text-cream">Foi porcionada a quantidade solicitada?</p><div className="mt-2 flex gap-2"><button type="button" className={button} disabled={busy} onClick={() => void run(() => finalizePortioning(order.target_quantity), "Porcionamento efetuado.")}>Sim</button><button type="button" className={ghost} disabled={busy} onClick={() => setPortionConfirmation("no")}>Não</button></div>{portionConfirmation === "no" && <div className="mt-3"><label className="text-xs text-stone">Informe a quantidade porcionada<input className={input} inputMode="decimal" value={actualQuantity} onChange={(event) => setActualQuantity(event.target.value)} /></label><button type="button" className={`${button} mt-2`} disabled={busy || !actualQuantity} onClick={() => { if (confirm(`Quantidade informada: ${exact(actualQuantity)}. Está correta?`)) void run(() => finalizePortioning(actualQuantity), "Porcionamento efetuado."); }}>Confirmar quantidade</button></div>}</div>}
-        <p className={recipe.executable ? "font-bold text-emerald-300" : "font-bold text-amber-300"}>{recipe.executable ? "Ficha executavel" : "Ficha pendente"}</p>
-        {recipe.instructions && <p className="mt-2 text-stone">{recipe.instructions}</p>}
-        {(recipe.warnings ?? []).map((warning) => <p key={`${warning.code}-${warning.message}`} className="mt-2 flex gap-2 text-amber-200"><TriangleAlert size={15} /> {warning.message}</p>)}
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">{(recipe.ingredients ?? []).map((item, index) => <div key={`${item.inventory_item_id}-${item.unit_id}-${index}`} className="rounded bg-surface-02 px-2 py-1 text-xs text-stone">{item.inventory_item_name || itemName(item.inventory_item_id) || "Insumo sem identificação"}: <b className="text-cream">{formatQuantity(item.quantity)} {item.unit_symbol || ""}</b></div>)}</div>
+        {sheetMode === "technical" && <>
+          <p className={recipe.executable ? "mt-4 font-bold text-emerald-300" : "mt-4 font-bold text-amber-300"}>{recipe.executable ? "Ficha executável carregada" : "Ficha pendente"}</p>
+          {(recipe.warnings ?? []).map((warning) => <p key={`${warning.code}-${warning.message}`} className="mt-2 flex gap-2 text-amber-200"><TriangleAlert size={15} /> {warning.message}</p>)}
+        </>}
         </>}
       </div></div>}
 
@@ -304,7 +336,7 @@ export default function PreparationOperationsPanel({ showKdsLink = true }: { sho
   };
   useEffect(() => { void load(); }, []);
 
-  const activeOrders = useMemo(() => orders.filter((order) => !["completed", "cancelled"].includes(order.status)), [orders]);
+  const activeOrders = useMemo(() => orders.filter(isOperationalPreparationOrder), [orders]);
   const knownRecipes = useMemo(() => operationalRecipes, [operationalRecipes]);
   async function createOrder() {
     setSaving(true); setMessage(""); setError("");
@@ -318,13 +350,13 @@ export default function PreparationOperationsPanel({ showKdsLink = true }: { sho
       <div className="flex flex-wrap gap-2"><button type="button" className={view === "operator" ? button : ghost} onClick={() => setView("operator")}>Operacao</button><button type="button" className={view === "planning" ? button : ghost} onClick={() => setView("planning")}>Planejamento</button><button type="button" className={ghost} onClick={() => void load()}><RefreshCw size={15} /> Atualizar</button></div>
     </div>
     {loading && <div className="flex min-h-32 items-center justify-center text-stone"><Loader2 size={18} className="mr-2 animate-spin" /> Carregando ordens...</div>}
-    {executionId && <button type="button" className={button} onClick={() => setLabelsOpen(true)}>Emitir etiquetas</button>}
+    {executionId && <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3"><p className="text-sm font-bold text-emerald-200">Porcionamento confirmado. Revise a prévia antes de imprimir.</p><button type="button" className={`${button} mt-2`} onClick={() => setLabelsOpen(true)}>Imprimir etiquetas</button></div>}
     <PreparationLabelPrintDialog executionId={executionId} open={labelsOpen} onOpenChange={setLabelsOpen} />
-    {!loading && view === "operator" && <div className="space-y-3">{activeOrders.length === 0 ? <p className="rounded-lg border border-dashed border-surface-03 p-6 text-center text-sm text-stone">Nenhuma ordem de preparo pendente.</p> : activeOrders.map((order) => <OrderCard key={order.id} order={order} onRefresh={load} onExecution={(id) => { setExecutionId(id); setLabelsOpen(true); }} />)}</div>}
+    {!loading && view === "operator" && <div className="space-y-3">{activeOrders.length === 0 ? <p className="rounded-lg border border-dashed border-surface-03 p-6 text-center text-sm text-stone">Nenhuma ordem de preparo pendente.</p> : activeOrders.map((order) => <OrderCard key={order.id} order={order} onRefresh={load} onExecution={(id) => { setExecutionId(id); setLabelsOpen(false); }} />)}</div>}
     {!loading && view === "planning" && <div className="space-y-4">
       <PcpWeeklyPanel />
       <div className={box}><h3 className="font-black text-cream">Nova ordem por ficha cadastrada</h3>{knownRecipes.length ? <div className="mt-3 grid gap-3 md:grid-cols-3"><label className="text-sm">Ficha técnica<select className={input} value={recipeId} onChange={(event) => setRecipeId(event.target.value)}><option value="">Selecionar ficha</option>{knownRecipes.map((recipe) => <option key={recipe.id} value={recipe.id}>{recipe.name}</option>)}</select></label><label className="text-sm">Quantidade planejada<input className={input} inputMode="decimal" value={target} onChange={(event) => setTarget(event.target.value)} /></label><label className="text-sm">Data e horário<input className={input} type="datetime-local" value={plannedFor} onChange={(event) => setPlannedFor(event.target.value)} /></label><button type="button" className={`${button} md:col-span-3`} disabled={saving || !recipeId || !target} onClick={() => void createOrder()}>Criar ordem de preparo</button></div> : <p className="mt-3 text-sm text-stone">Nenhuma ficha operacional foi disponibilizada. Cadastre e valide a ficha antes de programar um preparo.</p>}</div>
-      {orders.length === 0 ? <p className="rounded-lg border border-dashed border-surface-03 p-6 text-center text-sm text-stone">Nenhuma ordem cadastrada.</p> : orders.map((order) => <OrderCard key={order.id} order={order} onRefresh={load} onExecution={(id) => { setExecutionId(id); setLabelsOpen(true); }} />)}
+      {activeOrders.length === 0 ? <p className="rounded-lg border border-dashed border-surface-03 p-6 text-center text-sm text-stone">Nenhuma ordem ativa cadastrada.</p> : activeOrders.map((order) => <OrderCard key={order.id} order={order} onRefresh={load} onExecution={(id) => { setExecutionId(id); setLabelsOpen(false); }} />)}
     </div>}
     {message && <p className="text-sm font-semibold text-emerald-300">{message}</p>}
     {error && <p className="flex gap-2 text-sm font-semibold text-red-300"><AlertTriangle size={16} /> {error}</p>}

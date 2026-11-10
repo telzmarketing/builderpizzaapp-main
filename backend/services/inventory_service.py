@@ -303,23 +303,36 @@ class InventoryService:
             self._publish_purchase_confirmed(purchase)
         return self._serialize_purchase(purchase)
 
-    def create_replenishment_request(self) -> dict:
-        """Create/reuse a non-confirmed purchase request for low stock."""
+    def create_replenishment_request(self, item_ids: list[str] | None = None) -> dict:
+        """Create a minimum-stock request for all or explicitly selected items."""
         from datetime import datetime, timezone
         balances = self._stock_balance_map()
         items = (self._db.query(InventoryItem)
                  .filter(InventoryItem.tenant_id == self._tenant_id, InventoryItem.active.is_(True), InventoryItem.item_type != "finished_good")
                  .order_by(InventoryItem.name).all())
-        low = [item for item in items if balances.get(item.id, ZERO) < decimal_value(item.min_stock)]
+        requested_ids = set(item_ids) if item_ids is not None else None
+        if requested_ids is not None:
+            if not requested_ids:
+                raise InventoryInvalidReference("Selecione ao menos um item para gerar a solicitacao.")
+            visible_ids = {item.id for item in items}
+            if requested_ids - visible_ids:
+                raise InventoryNotFound("Item")
+            candidates = [item for item in items if item.id in requested_ids]
+            low = [item for item in candidates if balances.get(item.id, ZERO) < decimal_value(item.min_stock)]
+            if len(low) != len(candidates):
+                raise InventoryInvalidReference("Todos os itens selecionados devem estar abaixo do estoque minimo.")
+        else:
+            low = [item for item in items if balances.get(item.id, ZERO) < decimal_value(item.min_stock)]
         if not low:
             raise InventoryInvalidReference("Nenhum produto ou insumo esta abaixo do estoque minimo.")
-        existing = (self._db.query(InventoryPurchase)
-                    .filter(InventoryPurchase.tenant_id == self._tenant_id,
-                            InventoryPurchase.source == "min_stock",
-                            InventoryPurchase.status == "requested")
-                    .order_by(InventoryPurchase.created_at.desc()).first())
-        if existing:
-            return self._serialize_purchase(existing)
+        if requested_ids is None:
+            existing = (self._db.query(InventoryPurchase)
+                        .filter(InventoryPurchase.tenant_id == self._tenant_id,
+                                InventoryPurchase.source == "min_stock",
+                                InventoryPurchase.status == "requested")
+                        .order_by(InventoryPurchase.created_at.desc()).first())
+            if existing:
+                return self._serialize_purchase(existing)
         purchase = InventoryPurchase(
             id=f"inv-pur-{uuid.uuid4().hex[:12]}", tenant_id=self._tenant_id,
             status="requested", source="min_stock", requested_at=datetime.now(timezone.utc),

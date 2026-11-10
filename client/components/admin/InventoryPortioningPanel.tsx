@@ -8,6 +8,7 @@ import {
   type InventoryUnit,
 } from "@/lib/api";
 import { formatQuantity } from "@/lib/formatQuantity";
+import { formatPortionTitle } from "@/lib/portionDisplay";
 import { filterAndSort, InventoryTableControls } from "./InventoryTableControls";
 import { useNavigate } from "react-router-dom";
 
@@ -395,7 +396,7 @@ export default function InventoryPortioningPanel() {
               key={c.id}
               className="grid min-w-[900px] grid-cols-[1.5fr_1.2fr_.8fr_.8fr_1.4fr_auto] items-center gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm"
             >
-              <span className="font-bold text-cream">{c.output_item_name}</span>
+              <span className="font-bold text-cream">{formatPortionTitle(c, c.output_item_name)}</span>
               <span className="text-stone">{c.source_item_name}</span>
               <span className="text-stone">
                 {formatExactQuantity(c.portion_weight)} {c.unit_symbol || ""}
