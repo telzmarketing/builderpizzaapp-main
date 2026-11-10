@@ -227,6 +227,19 @@ class OrderStatusUpdate(BaseModel):
     status: OrderStatus
 
 
+class TestOrderPurgeIn(BaseModel):
+    order_id: str = Field(min_length=1, max_length=100)
+    confirmation: Literal["PURGE_TEST_ORDER"]
+    reason: str = Field(min_length=10, max_length=500)
+
+
+class TestOrderPurgeOut(BaseModel):
+    status: Literal["purged", "already_purged"]
+    order_id: str
+    deleted_payment: bool
+    deleted_order_items: int
+
+
 class OrderWhatsAppNotificationSettingsIn(BaseModel):
     enabled: bool = False
     recipient_admin_ids: list[str] = Field(default_factory=list)

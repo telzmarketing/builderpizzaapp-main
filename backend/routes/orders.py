@@ -24,7 +24,7 @@ from backend.models.order import Order, OrderStatus
 from backend.models.admin import AdminUser
 from backend.models.product import Product
 from backend.models.rbac import Role
-from backend.schemas.order import CheckoutIn, ManualOrderIn, OrderStatusUpdate, OrderWhatsAppNotificationSettingsIn
+from backend.schemas.order import CheckoutIn, ManualOrderIn, OrderStatusUpdate, OrderWhatsAppNotificationSettingsIn, TestOrderPurgeIn, TestOrderPurgeOut
 from backend.schemas.checkout_quote import CheckoutQuoteOut
 from backend.services.payment_service import PaymentService
 from backend.services.operational_payment import cash_change_amount
@@ -33,6 +33,7 @@ from backend.services.order_whatsapp_notification_service import OrderWhatsAppNo
 from backend.services.idempotency_service import IdempotencyService
 from backend.models.idempotency import IdempotencyKey
 from backend.services.partner_identification_service import PartnerIdentificationService
+from backend.services.order_test_purge_service import OrderTestPurgeService
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 admin_orders_router = APIRouter(prefix="/admin/orders", tags=["admin-orders"])
@@ -645,6 +646,36 @@ def delete_order(
             archived_by=admin.id,
             reason="Removido operacionalmente pelo administrador",
         )
+    except DomainError as exc:
+        return err(exc)
+
+
+@admin_orders_router.post("/{order_id}/purge-test", response_model=TestOrderPurgeOut)
+def purge_test_order(
+    order_id: str,
+    body: TestOrderPurgeIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("pedidos", "delete")),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=200),
+):
+    if body.order_id != order_id:
+        return err_msg("O order_id do corpo deve ser igual ao da URL.", code="OrderIdMismatch", status_code=422)
+    try:
+        result = OrderTestPurgeService(
+            db,
+            tenant_id=actor.tenant_id,
+            actor_id=actor.user_id,
+            actor_name=actor.user_name,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        ).purge(
+            order_id=order_id,
+            confirmation=body.confirmation,
+            reason=body.reason,
+            idempotency_key=idempotency_key,
+        )
+        return result
     except DomainError as exc:
         return err(exc)
 

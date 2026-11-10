@@ -37,6 +37,23 @@ class OrderCancelled(DomainError):
         super().__init__(f"Pedido '{order_id}' está cancelado e não pode ser alterado.")
 
 
+class TestOrderPurgeBlocked(DomainError):
+    __test__ = False
+    http_status = 409
+
+    def __init__(self, order_id: str, blockers: list[str]):
+        self.blockers = tuple(blockers)
+        super().__init__(
+            f"A exclusão definitiva do pedido de teste '{order_id}' foi bloqueada.",
+            code="TestOrderPurgeBlocked",
+        )
+
+    def to_dict(self) -> dict:
+        payload = super().to_dict()
+        payload["blockers"] = list(self.blockers)
+        return payload
+
+
 class InvalidStatusTransition(DomainError):
     def __init__(self, entity: str, from_status: str, to_status: str, allowed: list[str]):
         allowed_str = ", ".join(allowed) if allowed else "nenhum"

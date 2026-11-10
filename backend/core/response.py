@@ -65,14 +65,21 @@ def no_content() -> JSONResponse:
 
 def err(exc: DomainError) -> JSONResponse:
     """Convert a DomainError into a standardized error response."""
+    details = exc.to_dict()
+    error = {
+        "code": details["error"],
+        "message": details["detail"],
+    }
+    # Preserve structured domain diagnostics (for example, fail-closed purge
+    # blockers) without changing the standard envelope for other errors.
+    for key, value in details.items():
+        if key not in {"error", "detail"}:
+            error[key] = value
     return JSONResponse(
         status_code=exc.http_status,
         content={
             "success": False,
-            "error": {
-                "code":    exc.code,
-                "message": exc.message,
-            },
+            "error": error,
         },
     )
 
