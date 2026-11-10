@@ -73,7 +73,7 @@ CHECKS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "finance_transactions_invalid_amounts",
-        """
+        f"""
         SELECT id, tenant_id, amount, paid_amount, interest_amount,
                fine_amount, discount_amount, fee_amount, net_amount
         FROM finance_transactions
@@ -159,7 +159,7 @@ CHECKS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "finance_settlements_invalid_amounts",
-        """
+        f"""
         SELECT id, tenant_id, transaction_id, principal_amount,
                interest_amount, fine_amount, discount_amount,
                fee_amount, net_amount
@@ -231,7 +231,7 @@ CHECKS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "finance_obligations_invalid_amounts",
-        """
+        f"""
         SELECT id, tenant_id, total_amount, product_amount,
                freight_amount, discount_amount, tax_amount
         FROM finance_obligations
@@ -278,7 +278,7 @@ CHECKS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "finance_obligation_installments_invalid_amounts",
-        """
+        f"""
         SELECT id, tenant_id, obligation_id, installment_number,
                amount, paid_amount
         FROM finance_obligation_installments

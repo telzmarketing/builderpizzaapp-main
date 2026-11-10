@@ -323,6 +323,11 @@ class FinanceService:
 
     def reconcile_obligation(self, obligation_id: str) -> dict:
         row = self._get_obligation(obligation_id)
+        # An unallocated source obligation has no payment evidence. In
+        # particular, all([]) must not infer cancellation (or settlement).
+        # Preserve explicitly recorded states and their audit timestamps.
+        if not row.installments:
+            return self._serialize_obligation(row)
         for item in row.installments:
             tx = item.transaction
             if tx is not None:
@@ -404,8 +409,13 @@ class FinanceService:
         data["created_by_admin_id"] = admin_id
         data["updated_by_admin_id"] = admin_id
         row = FinanceTransaction(id=f"fin-trx-{uuid.uuid4().hex[:12]}", tenant_id=self._tenant_id, **data)
-        self._db.add(row)
-        self._db.commit()
+        try:
+            self._add_initial_settlement(row, admin_id)
+            self._db.add(row)
+            self._db.commit()
+        except Exception:
+            self._db.rollback()
+            raise
         self._db.refresh(row)
         return self._serialize_transaction(row)
 
@@ -417,11 +427,43 @@ class FinanceService:
             raise FinanceInvalidReference("Lancamento com historico de liquidacao nao pode ser alterado.")
         data = self._transaction_data(payload)
         data["updated_by_admin_id"] = admin_id
-        for key, value in data.items():
-            setattr(row, key, value)
-        self._db.commit()
+        try:
+            for key, value in data.items():
+                setattr(row, key, value)
+            self._add_initial_settlement(row, admin_id)
+            self._db.commit()
+        except Exception:
+            self._db.rollback()
+            raise
         self._db.refresh(row)
         return self._serialize_transaction(row)
+
+    def _add_initial_settlement(self, row: FinanceTransaction, admin_id: str | None) -> None:
+        """Persist an initial payment with its title, without an intermediate commit.
+
+        Create/update keep accepting paid and partial payloads. Updates with
+        any settlement history are rejected before reaching this helper.
+        """
+        if row.status not in {"partial", "paid"}:
+            return
+        row.settlements.append(FinanceSettlement(
+            id=f"fin-set-{uuid.uuid4().hex[:12]}",
+            tenant_id=self._tenant_id,
+            account_id=row.account_id,
+            settled_at=row.paid_at,
+            principal_amount=row.paid_amount,
+            interest_amount=row.interest_amount,
+            fine_amount=row.fine_amount,
+            discount_amount=row.discount_amount,
+            fee_amount=row.fee_amount,
+            net_amount=row.net_amount,
+            payment_method=row.payment_method,
+            payment_reference=row.payment_reference,
+            created_by_admin_id=admin_id,
+            origin_type="manual",
+            origin_id=row.id,
+            notes=row.notes,
+        ))
 
     def delete_transaction(self, transaction_id: str) -> None:
         row = self._get_transaction(transaction_id, for_update=True)
@@ -826,28 +868,42 @@ class FinanceService:
             raise FinanceInvalidReference("A parcela atual nao pode ser maior que o total de parcelas.")
         if data["status"] == "paid" and not data.get("paid_at"):
             data["paid_at"] = datetime.now(timezone.utc)
-        for key in ("amount", "interest_amount", "fine_amount", "discount_amount", "fee_amount", "paid_amount", "net_amount"):
-            data[key] = float(self._money(data.get(key), key))
+        money_fields = ("amount", "interest_amount", "fine_amount", "discount_amount", "fee_amount", "paid_amount", "net_amount")
+        for key in money_fields:
+            data[key] = self._money(data.get(key), key)
         if data["amount"] <= 0:
             raise FinanceInvalidReference("O valor do lancamento precisa ser maior que zero.")
-        adjusted_total = self._adjusted_total_from_data(data)
-        if not math.isfinite(adjusted_total) or adjusted_total <= 0:
+        adjusted_total = data["amount"] + data["interest_amount"] + data["fine_amount"] - data["discount_amount"]
+        if not adjusted_total.is_finite() or adjusted_total <= 0:
             raise FinanceInvalidReference("O total ajustado precisa ser finito e maior que zero.")
         if data["status"] == "paid" and not data.get("paid_amount"):
+            # Keep the published paid-with-zero/default shorthand, but do not
+            # turn a positive sub-cent payment into a full payment by rounding.
+            if payload.paid_amount > 0:
+                raise FinanceInvalidReference("O valor pago precisa ser maior que zero apos arredondamento.")
             data["paid_amount"] = adjusted_total
-        if data["status"] == "paid":
-            data["net_amount"] = data.get("net_amount") or self._net_amount(data["entry_type"], data["paid_amount"], data["fee_amount"])
+        if data["status"] == "paid" and data["paid_amount"] != adjusted_total:
+            raise FinanceInvalidReference("O valor pago precisa corresponder ao total ajustado para quitar o lancamento.")
         if data["status"] == "partial":
             if data["paid_amount"] <= 0 or data["paid_amount"] >= adjusted_total:
                 raise FinanceInvalidReference("Lancamento parcial precisa ter valor baixado menor que o total ajustado.")
-            data["net_amount"] = data.get("net_amount") or self._net_amount(data["entry_type"], data["paid_amount"], data["fee_amount"])
             data["paid_at"] = data.get("paid_at") or datetime.now(timezone.utc)
-        if data["status"] == "paid" and data["paid_amount"] > adjusted_total:
-            raise FinanceInvalidReference("O valor pago nao pode ser maior que o total ajustado.")
+        if data["status"] in {"partial", "paid"}:
+            net_amount = (
+                max(Decimal("0.00"), data["paid_amount"] - data["fee_amount"])
+                if data["entry_type"] == "income" else data["paid_amount"] + data["fee_amount"]
+            )
+            if data["net_amount"] and data["net_amount"] != net_amount:
+                raise FinanceInvalidReference("O valor liquido precisa corresponder ao valor pago e a taxa.")
+            data["net_amount"] = net_amount
         if data["status"] == "pending":
             data["paid_at"] = None
             data["paid_amount"] = 0.0
             data["net_amount"] = 0.0
+        # Published DTOs and legacy Float columns remain unchanged. Monetary
+        # validation and arithmetic above use Decimal with HALF_UP cents.
+        for key in money_fields:
+            data[key] = float(data[key])
         return data
 
     def _module_settings(self) -> dict:
@@ -1123,9 +1179,7 @@ class FinanceService:
         return 0.0
 
     def _open_amount(self, row: FinanceTransaction) -> float:
-        if row.status == "paid":
-            return 0.0
-        return round(max(0.0, self._adjusted_total(row) - float(row.paid_amount or 0.0)), 2)
+        return float(max(Decimal("0.00"), self._money(self._adjusted_total(row)) - self._money(row.paid_amount)))
 
     def _serialize_account(self, row: FinanceAccount, movement_balance: float | None = None) -> dict:
         if movement_balance is None:
