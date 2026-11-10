@@ -12,8 +12,8 @@ import backend.models
 for module in iter_modules(backend.models.__path__):
     import_module(f"backend.models.{module.name}")
 
-from backend.models.inventory import InventoryItem, InventoryPurchaseItem
-from backend.schemas.inventory import InventoryReplenishmentRequestIn
+from backend.models.inventory import InventoryItem, InventoryPurchase, InventoryPurchaseItem
+from backend.schemas.inventory import InventoryPurchaseOut, InventoryReplenishmentRequestIn
 from backend.services.inventory_service import InventoryInvalidReference, InventoryNotFound, InventoryService
 
 
@@ -33,14 +33,22 @@ class _Query:
     def first(self):
         return self.rows[0] if self.rows else None
 
+    def desc(self):
+        return self
+
 
 class _Db:
     def __init__(self, items):
         self.items = items
         self.added = []
+        self.purchases = []
 
     def query(self, model):
-        return _Query(self.items if model is InventoryItem else [])
+        if model is InventoryItem:
+            return _Query(self.items)
+        if model is InventoryPurchase:
+            return _Query(self.purchases)
+        return _Query([])
 
     def add(self, row):
         self.added.append(row)
@@ -77,6 +85,29 @@ def test_replenishment_accepts_selected_tenant_items_and_keeps_calculation():
     purchase_item = next(row for row in db.added if isinstance(row, InventoryPurchaseItem))
     assert purchase_item.quantity == 3
     assert purchase_item.unit_cost == 0
+    purchase = next(row for row in db.added if row.__class__.__name__ == "InventoryPurchase")
+    assert purchase.title.startswith("Compra ")
+    assert purchase.title.endswith("-001")
+
+
+def test_purchase_title_sequence_is_tenant_day_scoped_and_invoice_is_separate():
+    from datetime import date
+
+    db = _Db([])
+    previous = InventoryPurchase(
+        id="previous", tenant_id="tenant-a", title="Compra 01-01-2000-001",
+        purchase_date=date.today(), daily_sequence=7, invoice_number="NF-123",
+    )
+    db.purchases = [previous]
+    service = InventoryService(db, "tenant-a")
+
+    purchase_date, sequence, title = service._next_purchase_identity()
+
+    assert purchase_date == date.today()
+    assert sequence == 8
+    assert title == f"Compra {purchase_date:%d-%m-%Y}-008"
+    assert previous.invoice_number == "NF-123"
+    assert "title" in InventoryPurchaseOut.model_fields
 
 
 def test_replenishment_without_body_keeps_all_below_minimum_compatibility():

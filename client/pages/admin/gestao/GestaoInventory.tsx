@@ -121,6 +121,10 @@ function currency(value: number) {
 
 const quantity = (value: number | string | null | undefined) => formatQuantity(value, "0");
 
+function purchaseDisplayName(purchase: InventoryPurchase) {
+  return purchase.title?.trim() || purchase.name?.trim() || purchase.id;
+}
+
 export default function GestaoInventory() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -692,7 +696,7 @@ function PurchasesSection({
     }),
     "Compra confirmada. O Financeiro criara a conta a pagar se a automacao estiver habilitada.",
   );
-  const visiblePurchases = useMemo(() => filterAndSort(data.purchases, search, sort, { reference: (item) => `${item.invoice_number || ""} ${item.supplier_name || ""} ${item.id}`, total_amount: (item) => item.total_amount ?? 0 }), [data.purchases, search, sort]);
+  const visiblePurchases = useMemo(() => filterAndSort(data.purchases, search, sort, { reference: (item) => `${purchaseDisplayName(item)} ${item.invoice_number || ""} ${item.supplier_name || ""} ${item.id}`, total_amount: (item) => item.total_amount ?? 0 }), [data.purchases, search, sort]);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]">
@@ -723,7 +727,12 @@ function PurchasesSection({
         <TableHeader columns={["Compra", "Fornecedor", "Itens da compra", "Total", "Ações"]} />
         {visiblePurchases.map((item) => (
           <div key={item.id} className="grid gap-4 border-t border-surface-03 bg-surface-01 px-4 py-4 text-sm lg:grid-cols-[1fr_1fr_2.2fr_.8fr_auto]">
-            <span className="font-bold text-cream">{item.invoice_number || item.id}<small className="block text-stone">{item.status === "confirmed" ? "Confirmada" : item.status === "requested" ? "Solicitada" : "Rascunho"}</small><small className="block text-stone">Data: {item.created_at ? new Intl.DateTimeFormat("pt-BR").format(new Date(item.created_at)) : "-"}</small></span>
+            <span className="font-bold text-cream">
+              {purchaseDisplayName(item)}
+              {item.invoice_number && <small className="block font-normal text-stone">Nota fiscal/pedido: {item.invoice_number}</small>}
+              <small className="block font-normal text-stone">{item.status === "confirmed" ? "Confirmada" : item.status === "requested" ? "Solicitada" : "Rascunho"}</small>
+              <small className="block font-normal text-stone">Data: {item.created_at ? new Intl.DateTimeFormat("pt-BR").format(new Date(item.created_at)) : "-"}</small>
+            </span>
             <span className="text-stone">{item.supplier_name || "-"}</span>
             <div className="space-y-2">
               {item.items.length ? item.items.map((row) => {

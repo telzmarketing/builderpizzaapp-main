@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.exceptions import DomainError
@@ -290,9 +292,13 @@ class InventoryService:
         items = data.pop("items", [])
         if data.get("supplier_id"):
             self._ensure(InventorySupplier, data["supplier_id"], "Fornecedor")
+        purchase_date, daily_sequence, title = self._next_purchase_identity()
         purchase = InventoryPurchase(
             id=f"inv-pur-{uuid.uuid4().hex[:12]}",
             tenant_id=self._tenant_id,
+            title=title,
+            purchase_date=purchase_date,
+            daily_sequence=daily_sequence,
             **data,
         )
         self._db.add(purchase)
@@ -333,8 +339,10 @@ class InventoryService:
                         .order_by(InventoryPurchase.created_at.desc()).first())
             if existing:
                 return self._serialize_purchase(existing)
+        purchase_date, daily_sequence, title = self._next_purchase_identity()
         purchase = InventoryPurchase(
             id=f"inv-pur-{uuid.uuid4().hex[:12]}", tenant_id=self._tenant_id,
+            title=title, purchase_date=purchase_date, daily_sequence=daily_sequence,
             status="requested", source="min_stock", requested_at=datetime.now(timezone.utc),
             requested_by_admin_id=self._actor_id if not self._actor_id.startswith("system:") else None,
             notes="Solicitacao gerada automaticamente por estoque abaixo do minimo.",
@@ -759,6 +767,37 @@ class InventoryService:
     def _get_purchase(self, purchase_id: str) -> InventoryPurchase:
         return self._get(InventoryPurchase, purchase_id, "Compra")
 
+    def _next_purchase_identity(self) -> tuple[date, int, str]:
+        """Allocate the tenant/day sequence inside the current transaction.
+
+        PostgreSQL advisory transaction locks serialize allocators for the same
+        tenant and date. The unique index added by the migration remains the
+        database-level invariant. SQLite/test doubles use the same max+1
+        algorithm without the PostgreSQL-only lock.
+        """
+        purchase_date = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+        bind = self._db.get_bind() if hasattr(self._db, "get_bind") else None
+        dialect = getattr(getattr(bind, "dialect", None), "name", None)
+        if dialect == "postgresql":
+            lock_key = f"inventory-purchase:{self._tenant_id}:{purchase_date.isoformat()}"
+            self._db.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
+                {"lock_key": lock_key},
+            )
+
+        last = (
+            self._db.query(InventoryPurchase)
+            .filter(
+                InventoryPurchase.tenant_id == self._tenant_id,
+                InventoryPurchase.purchase_date == purchase_date,
+            )
+            .order_by(InventoryPurchase.daily_sequence.desc())
+            .first()
+        )
+        daily_sequence = int(last.daily_sequence or 0) + 1 if last else 1
+        title = f"Compra {purchase_date:%d-%m-%Y}-{daily_sequence:03d}"
+        return purchase_date, daily_sequence, title
+
     def _validate_item_refs(self, data: dict) -> None:
         if data.get("category_id"):
             self._ensure(InventoryCategory, data["category_id"], "Categoria")
@@ -1104,6 +1143,7 @@ class InventoryService:
             "supplier_id": purchase.supplier_id,
             "supplier_name": purchase.supplier.name if purchase.supplier else None,
             "status": purchase.status,
+            "title": purchase.title,
             "invoice_number": purchase.invoice_number,
             "expected_date": purchase.expected_date,
             "notes": purchase.notes,

@@ -150,6 +150,7 @@ class InventoryPurchaseOut(BaseModel):
     supplier_id: str | None = None
     supplier_name: str | None = None
     status: str
+    title: str
     invoice_number: str | None = None
     expected_date: date | None = None
     notes: str | None = None

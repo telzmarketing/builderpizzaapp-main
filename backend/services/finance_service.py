@@ -706,7 +706,7 @@ class FinanceService:
             cost_center="estoque",
             entry_type="expense",
             status="pending",
-            description=f"Compra de estoque {purchase.invoice_number or purchase.id}",
+            description=f"Compra de estoque {purchase.title or purchase.invoice_number or purchase.id}",
             amount=amount,
             competence_date=due_date,
             due_date=due_date,

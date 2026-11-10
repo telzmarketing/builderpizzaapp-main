@@ -115,9 +115,15 @@ class InventoryPurchase(Base):
 
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_inventory_purchases_tenant"), nullable=True)
-    __table_args__ = (Index("uq_inventory_purchases_tenant_id_id", "tenant_id", "id", unique=True),)
+    __table_args__ = (
+        Index("uq_inventory_purchases_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_inventory_purchases_tenant_date_sequence", "tenant_id", "purchase_date", "daily_sequence", unique=True),
+    )
     supplier_id = Column(String, ForeignKey("inventory_suppliers.id", ondelete="SET NULL"), nullable=True, index=True)
     status = Column(String(30), nullable=False, default="draft")
+    title = Column(String(32), nullable=False)
+    purchase_date = Column(Date, nullable=False)
+    daily_sequence = Column(Integer, nullable=False)
     invoice_number = Column(String(80), nullable=True)
     expected_date = Column(Date, nullable=True)
     notes = Column(Text, nullable=True)

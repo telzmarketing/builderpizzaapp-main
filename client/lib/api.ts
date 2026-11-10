@@ -2200,6 +2200,10 @@ export interface InventoryPurchaseItem {
 export interface InventoryPurchase {
   id: string;
   tenant_id?: string;
+  /** Human-readable purchase title returned by newer inventory contracts. */
+  title?: string | null;
+  /** Backward-compatible alias for integrations that expose the title as name. */
+  name?: string | null;
   supplier_id?: string | null;
   supplier_name?: string | null;
   status: "draft" | "requested" | "confirmed";
