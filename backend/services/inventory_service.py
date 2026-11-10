@@ -46,6 +46,50 @@ ZERO = Decimal("0")
 QUANTITY_SCALE = Decimal("0.000001")
 
 
+def _legacy_unit_technical_classification(unit_type: str, symbol: str) -> tuple[str, Decimal] | None:
+    """Translate the legacy unit selector into the technical conversion fields.
+
+    The legacy form predates ``dimension``/``conversion_factor`` and still
+    sends only ``unit_type``.  Only well-known symbols receive a dimensional
+    factor; an unknown mass or volume unit remains pending instead of getting
+    an invented conversion.
+    """
+    normalized_type = (unit_type or "unit").strip().lower()
+    normalized_symbol = (symbol or "").strip().upper()
+
+    if normalized_type in {"unit", "package"}:
+        return "count", Decimal("1")
+    if normalized_type == "mass":
+        factors = {
+            "KG": Decimal("1"),
+            "KILO": Decimal("1"),
+            "QUILO": Decimal("1"),
+            "G": Decimal("0.001"),
+            "GR": Decimal("0.001"),
+            "GRAM": Decimal("0.001"),
+            "GRAMA": Decimal("0.001"),
+            "GRAMAS": Decimal("0.001"),
+            "MG": Decimal("0.000001"),
+            "MILIGRAMA": Decimal("0.000001"),
+            "MILIGRAMAS": Decimal("0.000001"),
+        }
+        factor = factors.get(normalized_symbol)
+        return ("mass", factor) if factor is not None else None
+    if normalized_type == "volume":
+        factors = {
+            "L": Decimal("1"),
+            "LT": Decimal("1"),
+            "LITRO": Decimal("1"),
+            "LITROS": Decimal("1"),
+            "ML": Decimal("0.001"),
+            "MILILITRO": Decimal("0.001"),
+            "MILILITROS": Decimal("0.001"),
+        }
+        factor = factors.get(normalized_symbol)
+        return ("volume", factor) if factor is not None else None
+    return None
+
+
 def decimal_value(value) -> Decimal:
     return Decimal(str(value)) if value is not None else ZERO
 
@@ -126,13 +170,22 @@ class InventoryService:
         return self._list(InventoryUnit)
 
     def create_unit(self, payload: InventoryUnitIn) -> InventoryUnit:
-        return self._create(InventoryUnit, payload.model_dump(), "unit")
+        data = payload.model_dump()
+        classification = _legacy_unit_technical_classification(payload.unit_type, payload.symbol)
+        if classification is not None:
+            data["dimension"], data["conversion_factor"] = classification
+        return self._create(InventoryUnit, data, "unit")
 
     def update_unit(self, item_id: str, payload: InventoryUnitIn) -> InventoryUnit:
         row = self._get(InventoryUnit, item_id, "Unidade")
         if row.dimension is not None and (row.symbol != payload.symbol or row.unit_type != payload.unit_type):
             raise InventoryInvalidReference("Unidade classificada deve ser revisada pelo cadastro de conversoes.")
-        return self._update(self._get(InventoryUnit, item_id, "Unidade"), payload.model_dump())
+        data = payload.model_dump()
+        if row.dimension is None and row.conversion_factor is None:
+            classification = _legacy_unit_technical_classification(payload.unit_type, payload.symbol)
+            if classification is not None:
+                data["dimension"], data["conversion_factor"] = classification
+        return self._update(row, data)
 
     def delete_unit(self, item_id: str) -> None:
         self._deactivate(self._get(InventoryUnit, item_id, "Unidade"))
