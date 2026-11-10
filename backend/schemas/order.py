@@ -233,6 +233,12 @@ class TestOrderPurgeIn(BaseModel):
     reason: str = Field(min_length=10, max_length=500)
 
 
+class ConfirmedSimulationPurgeIn(BaseModel):
+    order_id: str = Field(min_length=1, max_length=100)
+    confirmation: Literal["PURGE_CONFIRMED_SIMULATION"]
+    reason: str = Field(min_length=10, max_length=500)
+
+
 class TestOrderPurgeOut(BaseModel):
     status: Literal["purged", "already_purged"]
     order_id: str

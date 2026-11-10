@@ -23,7 +23,10 @@ class OrderTestPurgeService:
     """Fail-closed, tenant-scoped physical purge for explicitly confirmed tests."""
 
     OPERATION = "orders.purge_test"
+    CONFIRMATION = "PURGE_TEST_ORDER"
+    AUDIT_ACTION = "purge_test_order"
     ALLOWED_ORDER_REFERENCES = frozenset({"order_items", "payments"})
+    ALLOW_MANUAL_TEST_EXTERNAL_METADATA = False
 
     def __init__(self, db: Session, *, tenant_id: str, actor_id: str, actor_name: str,
                  ip_address: str | None = None, user_agent: str | None = None):
@@ -35,7 +38,7 @@ class OrderTestPurgeService:
         self.user_agent = user_agent
 
     def purge(self, *, order_id: str, confirmation: str, reason: str, idempotency_key: str) -> dict[str, Any]:
-        if confirmation != "PURGE_TEST_ORDER":
+        if confirmation != self.CONFIRMATION:
             raise TestOrderPurgeBlocked(order_id, ["confirmation_token_invalid"])
 
         payload = {"order_id": order_id, "confirmation": confirmation, "reason": reason.strip()}
@@ -104,7 +107,7 @@ class OrderTestPurgeService:
             tenant_id=self.tenant_id,
             user_id=self.actor_id,
             user_name=self.actor_name,
-            action="purge_test_order",
+            action=self.AUDIT_ACTION,
             module_key="pedidos",
             entity_type="order",
             entity_id=order_id,
@@ -148,7 +151,7 @@ class OrderTestPurgeService:
                 blockers.append("payment_not_manual")
             if provider not in {"", "manual", "mock"} or gateway not in {"", "manual", "mock"}:
                 blockers.append("payment_external_provider")
-            if any(getattr(payment, field, None) for field in (
+            if not self.ALLOW_MANUAL_TEST_EXTERNAL_METADATA and any(getattr(payment, field, None) for field in (
                 "provider_payment_id", "mercado_pago_payment_id", "transaction_id", "external_reference",
             )):
                 blockers.append("payment_external_reference")
@@ -227,3 +230,15 @@ class OrderTestPurgeService:
             params["tenant_id"] = self.tenant_id
         statement = text(f'SELECT 1 FROM "{table_name}" WHERE {where} LIMIT 1')
         return self.db.execute(statement, params).first() is not None
+
+
+class ConfirmedSimulationPurgeService(OrderTestPurgeService):
+    """Explicit simulation purge; never weakens the regular purge contract."""
+
+    OPERATION = "orders.purge_confirmed_simulation"
+    CONFIRMATION = "PURGE_CONFIRMED_SIMULATION"
+    AUDIT_ACTION = "purge_confirmed_simulation"
+    ALLOW_MANUAL_TEST_EXTERNAL_METADATA = True
+
+    def purge(self, *, order_id: str, confirmation: str, reason: str, idempotency_key: str) -> dict[str, Any]:
+        return super().purge(order_id=order_id, confirmation=confirmation, reason=reason, idempotency_key=idempotency_key)
