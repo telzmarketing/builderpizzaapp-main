@@ -105,6 +105,79 @@ class KdsProductionService:
             entity_type="production_attempt", entity_id=attempt.id,
             old_value=old_state, new_value=f"{attempt.state}: {reason}"))
 
+    def cancel_for_order(self, order_id: str, *, actor_id: str | None = None, reason: str = "") -> bool:
+        """Cancel untouched KDS work while preserving its audit history.
+
+        Cancellation is intentionally fail-closed: if any related unit/attempt
+        has execution evidence or stock consumption, no KDS row is changed.
+        Assignment and stock-check timestamps are workflow history, not proof
+        of execution, so they remain preserved while the state is cancelled.
+        """
+        units = self.db.query(ProductionUnit).filter(
+            ProductionUnit.tenant_id == self.tenant_id,
+            ProductionUnit.order_id == order_id,
+        ).with_for_update().all()
+        if not units:
+            return True
+
+        unit_ids = [unit.id for unit in units]
+        attempts = self.db.query(ProductionAttempt).filter(
+            ProductionAttempt.tenant_id == self.tenant_id,
+            ProductionAttempt.production_unit_id.in_(unit_ids),
+        ).order_by(ProductionAttempt.production_unit_id, ProductionAttempt.attempt_number).with_for_update().all()
+        attempt_ids = [attempt.id for attempt in attempts]
+
+        execution_fields = (
+            "started_at",
+            "assembly_finished_at",
+            "oven_started_at",
+            "oven_finished_at",
+            "checked_at",
+            "completed_at",
+        )
+        if any(getattr(unit, "dispatch_completed_at", None) is not None for unit in units):
+            return False
+        if any(any(getattr(attempt, field, None) is not None for field in execution_fields) for attempt in attempts):
+            return False
+        if attempt_ids and self.db.query(ProductionAttemptConsumption.id).filter(
+            ProductionAttemptConsumption.tenant_id == self.tenant_id,
+            ProductionAttemptConsumption.attempt_id.in_(attempt_ids),
+        ).first() is not None:
+            return False
+
+        audit_reason = reason or "Pedido cancelado antes da execucao da producao."
+        for attempt in attempts:
+            old_state = attempt.state
+            if old_state != "cancelled":
+                attempt.state = "cancelled"
+                attempt.version = (attempt.version or 0) + 1
+                self._audit(attempt, actor_id, old_state, audit_reason)
+            unit = attempt.unit
+            if unit.state != "cancelled":
+                unit_old_state = unit.state
+                unit.state = "cancelled"
+                unit.version = (unit.version or 0) + 1
+                self.db.add(AdminAuditLog(
+                    id=str(uuid.uuid4()), tenant_id=self.tenant_id, user_id=actor_id,
+                    action="status_change", module_key="cozinha",
+                    entity_type="production_unit", entity_id=unit.id,
+                    old_value=unit_old_state, new_value=f"cancelled: {audit_reason}",
+                ))
+
+        for unit in units:
+            if not attempts or not any(attempt.production_unit_id == unit.id for attempt in attempts):
+                if unit.state != "cancelled":
+                    old_state = unit.state
+                    unit.state = "cancelled"
+                    unit.version = (unit.version or 0) + 1
+                    self.db.add(AdminAuditLog(
+                        id=str(uuid.uuid4()), tenant_id=self.tenant_id, user_id=actor_id,
+                        action="status_change", module_key="cozinha",
+                        entity_type="production_unit", entity_id=unit.id,
+                        old_value=old_state, new_value=f"cancelled: {audit_reason}",
+                    ))
+        return True
+
     def _order_for_attempt(self, attempt):
         order = self.db.query(Order).filter_by(tenant_id=self.tenant_id, id=attempt.unit.order_id).populate_existing().with_for_update().first()
         if not order or str(getattr(order.status, "value", order.status)) != "preparing":

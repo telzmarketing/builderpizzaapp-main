@@ -1480,6 +1480,20 @@ class OrderService:
         order.cancelled_by = cancelled_by
         order.cancellation_reason = reason or None
         order.cancelled_at = now
+        from backend.services.kds_production_service import KdsProductionService
+        kds_context = self._tenant_context or TenantContext(
+            tenant_id=order.tenant_id,
+            source=TenantSource.JOB,
+        )
+        KdsProductionService(self._db, kds_context).cancel_for_order(
+            order.id,
+            actor_id=(
+                cancelled_by
+                if cancelled_by not in {"system", "admin", "customer"}
+                else None
+            ),
+            reason=reason,
+        )
         self._db.flush()
         self._db.commit()
         self._db.refresh(order)
