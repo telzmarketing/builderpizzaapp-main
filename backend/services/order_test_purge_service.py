@@ -386,6 +386,16 @@ class ConfirmedSimulationPurgeService(OrderTestPurgeService):
     ALLOW_MANUAL_TEST_EXTERNAL_METADATA = True
     SAFE_PRODUCTION_UNIT_STATES = frozenset({"cancelled"})
     ALLOW_CANCELLED_PRODUCTION_ATTEMPTS = True
+    # A stock request is preserved as historical evidence during safe KDS
+    # reconciliation; only workflow timestamps prove real execution here.
+    PRODUCTION_ATTEMPT_EXECUTION_FIELDS = (
+        "started_at",
+        "assembly_finished_at",
+        "oven_started_at",
+        "oven_finished_at",
+        "checked_at",
+        "completed_at",
+    )
 
     def _find_blockers(self, order: Order) -> list[str]:
         """Reconcile untouched KDS work before the final purge checks.

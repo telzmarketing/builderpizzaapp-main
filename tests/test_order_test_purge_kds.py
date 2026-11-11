@@ -119,6 +119,46 @@ def test_confirmed_simulation_allows_cancelled_attempt_without_execution_evidenc
         assert service._find_production_unit_blockers("order-test") == []
 
 
+def test_confirmed_simulation_allows_cancelled_attempt_with_stock_request_only():
+    db = MagicMock()
+    attempt = SimpleNamespace(
+        id="attempt-1",
+        state="cancelled",
+        started_at=None,
+        stock_requested_at="stock-requested",
+        assembly_finished_at=None,
+        oven_started_at=None,
+        oven_finished_at=None,
+        checked_at=None,
+        completed_at=None,
+    )
+    queries = _confirmed_attempt_queries(attempt=attempt)
+    db.query.side_effect = queries
+    service = _confirmed_service(db)
+    with patch.object(service, "_find_production_unit_child_blockers", return_value=[]):
+        assert service._find_production_unit_blockers("order-test") == []
+
+
+def test_confirmed_simulation_still_blocks_cancelled_attempt_with_real_execution():
+    db = MagicMock()
+    attempt = SimpleNamespace(
+        id="attempt-1",
+        state="cancelled",
+        started_at="started",
+        stock_requested_at="stock-requested",
+        assembly_finished_at=None,
+        oven_started_at=None,
+        oven_finished_at=None,
+        checked_at=None,
+        completed_at=None,
+    )
+    queries = _confirmed_attempt_queries(attempt=attempt)
+    db.query.side_effect = queries
+    service = _confirmed_service(db)
+    with patch.object(service, "_find_production_unit_child_blockers", return_value=[]):
+        assert "production_attempts" in service._find_production_unit_blockers("order-test")
+
+
 def test_confirmed_simulation_blocks_active_attempt():
     db = MagicMock()
     attempt = SimpleNamespace(
