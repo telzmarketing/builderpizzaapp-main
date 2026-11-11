@@ -39,10 +39,12 @@ def test_purge_deletes_only_allowed_rows_and_audits_atomically():
     locked = MagicMock()
     payment_query = MagicMock()
     items_query = MagicMock()
-    db.query.side_effect = [locked, payment_query, items_query]
+    units_query = MagicMock()
+    db.query.side_effect = [locked, payment_query, items_query, units_query]
     locked.filter.return_value.with_for_update.return_value.first.return_value = order
     payment_query.filter.return_value.first.return_value = payment
     items_query.filter.return_value.count.return_value = 2
+    units_query.filter.return_value.with_for_update.return_value.all.return_value = []
 
     with patch(
         "backend.services.order_test_purge_service.AdminAuditLog",
@@ -108,11 +110,13 @@ def test_purge_rolls_back_when_atomic_delete_commit_fails():
     db = _session_for_locked_order(order)
     payment_query = MagicMock()
     items_query = MagicMock()
+    units_query = MagicMock()
     locked = db.query.return_value
-    db.query.side_effect = [locked, payment_query, items_query]
+    db.query.side_effect = [locked, payment_query, items_query, units_query]
     locked.filter.return_value.with_for_update.return_value.first.return_value = order
     payment_query.filter.return_value.with_for_update.return_value.first.return_value = None
     items_query.filter.return_value.count.return_value = 0
+    units_query.filter.return_value.with_for_update.return_value.all.return_value = []
     db.commit.side_effect = SQLAlchemyError("write failed")
     service = OrderTestPurgeService(
         db, tenant_id="tenant-a", actor_id="admin-a", actor_name="Admin",

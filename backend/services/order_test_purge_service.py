@@ -15,6 +15,12 @@ from backend.models.fiscal import FiscalDocument
 from backend.models.kds_audit import DeliveryAudit as KdsDeliveryAudit
 from backend.models.order import Order, OrderItem
 from backend.models.payment import Payment, PaymentEvent, PaymentMethod
+from backend.models.kds_production import (
+    KdsAssignment,
+    ProductionAttempt,
+    ProductionAttemptConsumption,
+    ProductionUnit,
+)
 from backend.models.rbac import AdminAuditLog
 from backend.services.idempotency_service import IdempotencyService
 
@@ -25,7 +31,8 @@ class OrderTestPurgeService:
     OPERATION = "orders.purge_test"
     CONFIRMATION = "PURGE_TEST_ORDER"
     AUDIT_ACTION = "purge_test_order"
-    ALLOWED_ORDER_REFERENCES = frozenset({"order_items", "payments"})
+    ALLOWED_ORDER_REFERENCES = frozenset({"order_items", "payments", "production_units"})
+    SAFE_PRODUCTION_UNIT_STATES = frozenset({"unassigned", "cancelled"})
     ALLOW_MANUAL_TEST_EXTERNAL_METADATA = False
 
     def __init__(self, db: Session, *, tenant_id: str, actor_id: str, actor_name: str,
@@ -97,8 +104,23 @@ class OrderTestPurgeService:
             OrderItem.order_id == order_id,
         ).count()
 
+        production_units = self.db.query(ProductionUnit).filter(
+            ProductionUnit.tenant_id == self.tenant_id,
+            ProductionUnit.order_id == order_id,
+        ).with_for_update().all()
+
         # The ORM relationship has delete-orphan for items/flavors. Payment is
-        # explicitly deleted because its FK is not CASCADE.
+        # explicitly deleted because its FK is not CASCADE. Production units
+        # must be removed before order items because their FK is RESTRICT.
+        for unit in production_units:
+            self.db.delete(unit)
+        try:
+            # Force the KDS rows out first. This makes the deletion order
+            # explicit while keeping the whole operation in one transaction.
+            self.db.flush()
+        except SQLAlchemyError:
+            self.db.rollback()
+            raise
         if payment is not None:
             self.db.delete(payment)
         self.db.delete(order)
@@ -140,6 +162,7 @@ class OrderTestPurgeService:
 
     def _find_blockers_checked(self, order: Order) -> list[str]:
         blockers: list[str] = []
+        blockers.extend(self._find_production_unit_blockers(order.id))
         payment = self.db.query(Payment).filter(
             Payment.tenant_id == self.tenant_id, Payment.order_id == order.id,
         ).first()
@@ -217,6 +240,103 @@ class OrderTestPurgeService:
             blockers.append("dependency_verification_unavailable")
 
         return list(dict.fromkeys(blockers))
+
+    def _find_production_unit_blockers(self, order_id: str) -> list[str]:
+        """Validate the explicit KDS boundary before allowing an order purge.
+
+        Production units are removable only when they are still unassigned or
+        cancelled and have no attempts, consumption, assignments, audit, or
+        other child record. Any verification failure blocks the operation.
+        """
+        try:
+            units = self.db.query(ProductionUnit).filter(
+                ProductionUnit.tenant_id == self.tenant_id,
+                ProductionUnit.order_id == order_id,
+            ).with_for_update().all()
+            if not units:
+                return []
+
+            blockers: list[str] = []
+            unit_ids = [unit.id for unit in units]
+            unsafe = [
+                unit for unit in units
+                if str(unit.state or "").strip().lower() not in self.SAFE_PRODUCTION_UNIT_STATES
+            ]
+            if unsafe:
+                blockers.append("production_units_unsafe_state")
+
+            if self.db.query(ProductionAttempt).filter(
+                ProductionAttempt.tenant_id == self.tenant_id,
+                ProductionAttempt.production_unit_id.in_(unit_ids),
+            ).first() is not None:
+                blockers.append("production_attempts")
+
+            # These checks are intentionally independent of attempts. They
+            # protect against legacy/orphaned rows and keep the purge fail-closed.
+            if self.db.query(ProductionAttemptConsumption).filter(
+                ProductionAttemptConsumption.tenant_id == self.tenant_id,
+                ProductionAttemptConsumption.attempt_id.in_(
+                    self._production_attempt_ids(unit_ids) or ["__none__"]
+                ),
+            ).first() is not None:
+                blockers.append("production_attempt_consumptions")
+
+            if self.db.query(KdsAssignment).filter(
+                KdsAssignment.tenant_id == self.tenant_id,
+                KdsAssignment.attempt_id.in_(
+                    self._production_attempt_ids(unit_ids) or ["__none__"]
+                ),
+            ).first() is not None:
+                blockers.append("kds_assignments")
+
+            blockers.extend(self._find_production_unit_child_blockers(unit_ids))
+            return list(dict.fromkeys(blockers))
+        except Exception:
+            return ["production_dependency_verification_failed"]
+
+    def _production_attempt_ids(self, unit_ids: list[str]) -> list[str]:
+        rows = self.db.query(ProductionAttempt.id).filter(
+            ProductionAttempt.tenant_id == self.tenant_id,
+            ProductionAttempt.production_unit_id.in_(unit_ids),
+        ).all()
+        return [row[0] if isinstance(row, tuple) else row.id for row in rows]
+
+    def _find_production_unit_child_blockers(self, unit_ids: list[str]) -> list[str]:
+        """Discover future/vision children by FK metadata, never by guessing."""
+        blockers: list[str] = []
+        inspector = inspect(self.db.get_bind())
+        protected = {
+            "production_attempts",
+            "production_attempt_consumptions",
+            "kds_assignments",
+            "production_units",
+        }
+        for table_name in inspector.get_table_names(schema="public"):
+            if table_name in protected:
+                continue
+            for fk in inspector.get_foreign_keys(table_name, schema="public"):
+                referred = fk.get("referred_table")
+                columns = fk.get("constrained_columns") or []
+                if referred not in {"production_units", "production_attempts"}:
+                    continue
+                reference_column = "production_unit_id" if "production_unit_id" in columns else "production_attempt_id"
+                if reference_column not in columns:
+                    continue
+                if self._table_has_any_reference(table_name, reference_column, unit_ids):
+                    blockers.append(f"production_unit_dependency:{table_name}")
+        return blockers
+
+    def _table_has_any_reference(self, table_name: str, column: str, values: list[str]) -> bool:
+        inspector = inspect(self.db.get_bind())
+        columns = {item["name"] for item in inspector.get_columns(table_name, schema="public")}
+        if column not in columns:
+            return True
+        params: dict[str, Any] = {"values": values, "tenant_id": self.tenant_id}
+        where = f'"{column}" = ANY(:values)'
+        if "tenant_id" in columns:
+            where += ' AND "tenant_id" = :tenant_id'
+        statement = text(f'SELECT 1 FROM "{table_name}" WHERE {where} LIMIT 1')
+        return self.db.execute(statement, params).first() is not None
 
     def _table_has_row(self, table_name: str, order_id: str) -> bool:
         inspector = inspect(self.db.get_bind())
