@@ -3,10 +3,16 @@ from unittest.mock import MagicMock, patch
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend.services.order_test_purge_service import ConfirmedSimulationPurgeService
+from backend.services.order_test_purge_service import ConfirmedSimulationPurgeService, OrderTestPurgeService
 
 
 def _service(db):
+    return OrderTestPurgeService(
+        db, tenant_id="tenant-a", actor_id="admin-a", actor_name="Admin"
+    )
+
+
+def _confirmed_service(db):
     return ConfirmedSimulationPurgeService(
         db, tenant_id="tenant-a", actor_id="admin-a", actor_name="Admin"
     )
@@ -77,6 +83,83 @@ def test_active_production_unit_state_is_a_structured_blocker():
     with patch.object(service, "_find_production_unit_child_blockers", return_value=[]):
         blockers = service._find_production_unit_blockers("order-test")
     assert "production_units_unsafe_state" in blockers
+
+
+def _confirmed_attempt_queries(*, attempt, consumption=None):
+    unit_query = MagicMock()
+    attempt_query = MagicMock()
+    consumption_query = MagicMock()
+    assignment_query = MagicMock()
+    unit_query.filter.return_value.with_for_update.return_value.all.return_value = [
+        SimpleNamespace(id="unit-1", state="cancelled")
+    ]
+    attempt_query.filter.return_value.all.return_value = [attempt]
+    consumption_query.filter.return_value.first.return_value = consumption
+    assignment_query.filter.return_value.first.return_value = None
+    return [unit_query, attempt_query, consumption_query, assignment_query]
+
+
+def test_confirmed_simulation_allows_cancelled_attempt_without_execution_evidence():
+    db = MagicMock()
+    attempt = SimpleNamespace(
+        id="attempt-1",
+        state="cancelled",
+        started_at=None,
+        stock_requested_at=None,
+        assembly_finished_at=None,
+        oven_started_at=None,
+        oven_finished_at=None,
+        checked_at=None,
+        completed_at=None,
+    )
+    queries = _confirmed_attempt_queries(attempt=attempt)
+    db.query.side_effect = queries
+    service = _confirmed_service(db)
+    with patch.object(service, "_find_production_unit_child_blockers", return_value=[]):
+        assert service._find_production_unit_blockers("order-test") == []
+
+
+def test_confirmed_simulation_blocks_active_attempt():
+    db = MagicMock()
+    attempt = SimpleNamespace(
+        id="attempt-1",
+        state="assembling",
+        started_at=None,
+        stock_requested_at=None,
+        assembly_finished_at=None,
+        oven_started_at=None,
+        oven_finished_at=None,
+        checked_at=None,
+        completed_at=None,
+    )
+    queries = _confirmed_attempt_queries(attempt=attempt)
+    db.query.side_effect = queries
+    service = _confirmed_service(db)
+    with patch.object(service, "_find_production_unit_child_blockers", return_value=[]):
+        assert "production_attempts" in service._find_production_unit_blockers("order-test")
+
+
+def test_confirmed_simulation_blocks_cancelled_attempt_with_consumption():
+    db = MagicMock()
+    attempt = SimpleNamespace(
+        id="attempt-1",
+        state="cancelled",
+        started_at=None,
+        stock_requested_at=None,
+        assembly_finished_at=None,
+        oven_started_at=None,
+        oven_finished_at=None,
+        checked_at=None,
+        completed_at=None,
+    )
+    queries = _confirmed_attempt_queries(
+        attempt=attempt,
+        consumption=SimpleNamespace(id="consumption-1"),
+    )
+    db.query.side_effect = queries
+    service = _confirmed_service(db)
+    with patch.object(service, "_find_production_unit_child_blockers", return_value=[]):
+        assert "production_attempt_consumptions" in service._find_production_unit_blockers("order-test")
 
 
 def test_kds_unit_is_deleted_before_order_commit_and_rollback_is_atomic():

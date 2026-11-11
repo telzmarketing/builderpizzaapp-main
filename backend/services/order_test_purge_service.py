@@ -34,6 +34,16 @@ class OrderTestPurgeService:
     ALLOWED_ORDER_REFERENCES = frozenset({"order_items", "payments", "production_units"})
     SAFE_PRODUCTION_UNIT_STATES = frozenset({"unassigned", "cancelled"})
     ALLOW_MANUAL_TEST_EXTERNAL_METADATA = False
+    ALLOW_CANCELLED_PRODUCTION_ATTEMPTS = False
+    PRODUCTION_ATTEMPT_EXECUTION_FIELDS = (
+        "started_at",
+        "stock_requested_at",
+        "assembly_finished_at",
+        "oven_started_at",
+        "oven_finished_at",
+        "checked_at",
+        "completed_at",
+    )
 
     def __init__(self, db: Session, *, tenant_id: str, actor_id: str, actor_name: str,
                  ip_address: str | None = None, user_agent: str | None = None):
@@ -258,6 +268,7 @@ class OrderTestPurgeService:
 
             blockers: list[str] = []
             unit_ids = [unit.id for unit in units]
+            attempt_ids: list[str] | None = None
             unsafe = [
                 unit for unit in units
                 if str(unit.state or "").strip().lower() not in self.SAFE_PRODUCTION_UNIT_STATES
@@ -265,18 +276,30 @@ class OrderTestPurgeService:
             if unsafe:
                 blockers.append("production_units_unsafe_state")
 
-            if self.db.query(ProductionAttempt).filter(
+            attempt_query = self.db.query(ProductionAttempt).filter(
                 ProductionAttempt.tenant_id == self.tenant_id,
                 ProductionAttempt.production_unit_id.in_(unit_ids),
-            ).first() is not None:
+            )
+            if self.ALLOW_CANCELLED_PRODUCTION_ATTEMPTS:
+                attempts = attempt_query.all()
+                attempt_ids = [attempt.id for attempt in attempts]
+                unsafe_attempt = any(
+                    str(attempt.state or "").strip().lower() != "cancelled"
+                    or any(getattr(attempt, field, None) is not None for field in self.PRODUCTION_ATTEMPT_EXECUTION_FIELDS)
+                    for attempt in attempts
+                )
+                if unsafe_attempt:
+                    blockers.append("production_attempts")
+            elif attempt_query.first() is not None:
                 blockers.append("production_attempts")
 
             # These checks are intentionally independent of attempts. They
             # protect against legacy/orphaned rows and keep the purge fail-closed.
+            attempt_ids = attempt_ids or self._production_attempt_ids(unit_ids)
             if self.db.query(ProductionAttemptConsumption).filter(
                 ProductionAttemptConsumption.tenant_id == self.tenant_id,
                 ProductionAttemptConsumption.attempt_id.in_(
-                    self._production_attempt_ids(unit_ids) or ["__none__"]
+                    attempt_ids or ["__none__"]
                 ),
             ).first() is not None:
                 blockers.append("production_attempt_consumptions")
@@ -284,7 +307,7 @@ class OrderTestPurgeService:
             if self.db.query(KdsAssignment).filter(
                 KdsAssignment.tenant_id == self.tenant_id,
                 KdsAssignment.attempt_id.in_(
-                    self._production_attempt_ids(unit_ids) or ["__none__"]
+                    attempt_ids or ["__none__"]
                 ),
             ).first() is not None:
                 blockers.append("kds_assignments")
@@ -359,6 +382,8 @@ class ConfirmedSimulationPurgeService(OrderTestPurgeService):
     CONFIRMATION = "PURGE_CONFIRMED_SIMULATION"
     AUDIT_ACTION = "purge_confirmed_simulation"
     ALLOW_MANUAL_TEST_EXTERNAL_METADATA = True
+    SAFE_PRODUCTION_UNIT_STATES = frozenset({"cancelled"})
+    ALLOW_CANCELLED_PRODUCTION_ATTEMPTS = True
 
     def purge(self, *, order_id: str, confirmation: str, reason: str, idempotency_key: str) -> dict[str, Any]:
         return super().purge(order_id=order_id, confirmation=confirmation, reason=reason, idempotency_key=idempotency_key)
