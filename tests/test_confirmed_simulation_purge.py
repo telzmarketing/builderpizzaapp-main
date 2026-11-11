@@ -101,3 +101,45 @@ def test_regular_purge_policy_is_unchanged_and_simulation_policy_is_explicit():
     assert "/admin/orders/{order_id}/purge-test" in paths
     assert "/admin/orders/{order_id}/purge-confirmed-simulation" in paths
     assert ConfirmedSimulationPurgeService.AUDIT_ACTION == "purge_confirmed_simulation"
+
+
+def test_confirmed_simulation_reconciles_kds_before_final_blocker_validation():
+    service = _service()
+    order = SimpleNamespace(id="order-test")
+    calls = []
+
+    with patch(
+        "backend.services.order_test_purge_service.KdsProductionService.cancel_for_order",
+        side_effect=lambda *args, **kwargs: calls.append((args, kwargs)) or True,
+    ), patch.object(
+        OrderTestPurgeService,
+        "_find_blockers",
+        return_value=["unrelated_dependency"],
+    ):
+        blockers = service._find_blockers(order)
+
+    assert blockers == ["unrelated_dependency"]
+    assert calls == [(
+        ("order-test",),
+        {
+            "actor_id": "admin-a",
+            "reason": "Reconciliação segura antes da exclusão da simulação.",
+        },
+    )]
+
+
+def test_confirmed_simulation_preserves_blocker_when_kds_reconciliation_fails():
+    service = _service()
+    order = SimpleNamespace(id="order-test")
+
+    with patch(
+        "backend.services.order_test_purge_service.KdsProductionService.cancel_for_order",
+        return_value=False,
+    ), patch.object(
+        OrderTestPurgeService,
+        "_find_blockers",
+        return_value=["production_attempts"],
+    ):
+        blockers = service._find_blockers(order)
+
+    assert blockers == ["production_attempts", "production_reconciliation_failed"]

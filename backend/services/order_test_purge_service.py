@@ -9,6 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import OrderNotFound, TestOrderPurgeBlocked
+from backend.core.tenant_context import TenantContext, TenantSource
 from backend.models.delivery import Delivery, DeliveryItemConfirmation
 from backend.models.finance import FinanceObligation, FinanceSettlement, FinanceTransaction
 from backend.models.fiscal import FiscalDocument
@@ -23,6 +24,7 @@ from backend.models.kds_production import (
 )
 from backend.models.rbac import AdminAuditLog
 from backend.services.idempotency_service import IdempotencyService
+from backend.services.kds_production_service import KdsProductionService
 
 
 class OrderTestPurgeService:
@@ -384,6 +386,31 @@ class ConfirmedSimulationPurgeService(OrderTestPurgeService):
     ALLOW_MANUAL_TEST_EXTERNAL_METADATA = True
     SAFE_PRODUCTION_UNIT_STATES = frozenset({"cancelled"})
     ALLOW_CANCELLED_PRODUCTION_ATTEMPTS = True
+
+    def _find_blockers(self, order: Order) -> list[str]:
+        """Reconcile untouched KDS work before the final purge checks.
+
+        This hook is exclusive to confirmed simulations.  The regular purge
+        keeps its existing policy and never changes production state here.
+        KDS remains fail-closed: a failed reconciliation is retained as a
+        blocker and the parent validation still inspects every dependency.
+        """
+        try:
+            reconciled = KdsProductionService(
+                self.db,
+                TenantContext(tenant_id=self.tenant_id, source=TenantSource.JOB),
+            ).cancel_for_order(
+                order.id,
+                actor_id=self.actor_id,
+                reason="Reconciliação segura antes da exclusão da simulação.",
+            )
+        except Exception:
+            reconciled = False
+
+        blockers = super()._find_blockers(order)
+        if not reconciled and "production_reconciliation_failed" not in blockers:
+            blockers.append("production_reconciliation_failed")
+        return blockers
 
     def purge(self, *, order_id: str, confirmation: str, reason: str, idempotency_key: str) -> dict[str, Any]:
         return super().purge(order_id=order_id, confirmation=confirmation, reason=reason, idempotency_key=idempotency_key)
