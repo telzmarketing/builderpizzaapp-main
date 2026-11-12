@@ -31,6 +31,7 @@ from backend.schemas.finance import (
     FinancePaymentOverviewOut,
     FinanceDeliveryOverviewOut,
     FinanceCashFlowOut,
+    FinanceForecastOut,
     FinanceObligationFromFiscalIn,
     FinanceObligationOut,
     FinanceSettlementIn,
@@ -71,6 +72,19 @@ def cash_flow(
 ):
     try:
         return service(db, tenant_context).cash_flow(date_from, date_to)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.get("/forecast", response_model=FinanceForecastOut)
+def forecast(
+    months: int = Query(default=6, ge=1, le=12),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+    tenant_context: TenantContext | None = Depends(panel_operation_context),
+):
+    try:
+        return service(db, tenant_context).forecast(months)
     except DomainError as exc:
         return err(exc)
 

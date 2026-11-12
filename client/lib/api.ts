@@ -2663,6 +2663,25 @@ export interface FinanceBudget {
   lines: FinanceBudgetLine[];
 }
 
+export interface FinanceForecastPeriod {
+  period_start: string;
+  period_end: string;
+  opening_balance: number;
+  projected_income: number;
+  projected_expense: number;
+  projected_result: number;
+  closing_balance: number;
+  source_count: number;
+}
+
+export interface FinanceForecast {
+  date_from: string;
+  date_to: string;
+  months: number;
+  methodology: string;
+  periods: FinanceForecastPeriod[];
+}
+
 export interface FinanceBankStatementLineInput {
   external_id: string;
   transaction_date: string;
@@ -6427,6 +6446,7 @@ export const financeApi = {
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return get<FinanceCashFlow>(`/gestao/finance/cash-flow${suffix}`);
   },
+  forecast: (months = 6) => get<FinanceForecast>(`/gestao/finance/forecast?months=${months}`),
   listBudgets: () => get<FinanceBudget[]>("/gestao/finance/budgets"),
   createBudget: (data: FinanceBudgetInput) => post<FinanceBudget>("/gestao/finance/budgets", data),
   listBankStatements: () => get<FinanceBankStatement[]>("/gestao/finance/bank-statements"),

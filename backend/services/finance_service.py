@@ -234,6 +234,70 @@ class FinanceService:
             "lines": sorted(lines, key=lambda line: (line["movement_date"], line["id"]), reverse=True),
         }
 
+    def forecast(self, months: int = 6) -> dict:
+        if months < 1 or months > 12:
+            raise FinanceInvalidReference("A previsao deve ter entre 1 e 12 meses.")
+        today = date.today()
+        start = today.replace(day=1)
+        end_month = start.month - 1 + months
+        end = date(start.year + end_month // 12, end_month % 12 + 1, 1)
+        end = end.replace(day=1) - timedelta(days=1)
+        transactions = (
+            self._db.query(FinanceTransaction)
+            .filter(FinanceTransaction.tenant_id == self._tenant_id, FinanceTransaction.status != "cancelled")
+            .all()
+        )
+        accounts = self._db.query(FinanceAccount).filter(
+            FinanceAccount.tenant_id == self._tenant_id, FinanceAccount.active == True  # noqa: E712
+        ).all()
+        opening = sum(float(account.opening_balance or 0) for account in accounts)
+        events: list[tuple[date, str, float]] = []
+        for row in transactions:
+            if row.status in {"pending", "partial"}:
+                movement_date = row.due_date or row.competence_date
+                amount = self._open_amount(row)
+            else:
+                movement_date = row.competence_date
+                amount = self._cash_effect(row)
+            if movement_date and movement_date < start:
+                if row.entry_type == "income":
+                    opening += amount
+                else:
+                    opening -= amount
+            elif movement_date and start <= movement_date <= end and amount > 0:
+                events.append((movement_date, row.entry_type, round(amount, 2)))
+        periods = []
+        balance = round(opening, 2)
+        for index in range(months):
+            month_offset = start.month - 1 + index
+            period_start = date(start.year + month_offset // 12, month_offset % 12 + 1, 1)
+            next_month = period_start.month
+            next_year = period_start.year + (next_month // 12)
+            next_month = next_month % 12 + 1
+            period_end = date(next_year, next_month, 1) - timedelta(days=1)
+            selected = [event for event in events if period_start <= event[0] <= period_end]
+            income = round(sum(amount for _, entry_type, amount in selected if entry_type == "income"), 2)
+            expense = round(sum(amount for _, entry_type, amount in selected if entry_type == "expense"), 2)
+            result = round(income - expense, 2)
+            periods.append({
+                "period_start": period_start,
+                "period_end": period_end,
+                "opening_balance": balance,
+                "projected_income": income,
+                "projected_expense": expense,
+                "projected_result": result,
+                "closing_balance": round(balance + result, 2),
+                "source_count": len(selected),
+            })
+            balance = round(balance + result, 2)
+        return {
+            "date_from": start,
+            "date_to": end,
+            "months": months,
+            "methodology": "Pagamentos em aberto usam vencimento; valores liquidados usam competencia. Nenhuma receita ou despesa e inferida.",
+            "periods": periods,
+        }
+
     def list_budgets(self) -> list[dict]:
         rows = (
             self._db.query(FinanceBudget)

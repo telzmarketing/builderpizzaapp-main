@@ -44,6 +44,7 @@ import {
   type FinanceCashFlow,
   type FinanceBudget,
   type FinanceBudgetInput,
+  type FinanceForecast,
   type FinanceAccountInput,
   type FinanceCategory,
   type FinanceCategoryInput,
@@ -101,7 +102,7 @@ const financeModuleGroups: Array<{ id: string; title: string; modules: FinanceMo
     { id: "delivery", title: "Aplicativos de Delivery", description: "Valores agrupados por canal. Comissões, lotes de repasse e conciliação por aplicativo ainda não estão disponíveis.", status: "Cobertura parcial", icon: ShoppingBag },
     { id: "couriers", title: "Gestão Financeira de Entregadores", description: "Diárias, adiantamentos e acertos integrados ao caixa ainda não estão disponíveis neste Financeiro. Consulte a operação existente em Logística.", status: "Não disponível", icon: Route },
     { id: "cashflow", title: "Fluxo de Caixa", description: "Fluxo mensal com saldo inicial, realizado, projetado e extrato cronológico dos lançamentos.", status: "Base disponível", icon: LineChart },
-    { id: "planning", title: "Planejamento Financeiro", description: "Projeções, metas, cenários e simulações ainda não estão disponíveis. Não há previsão de saldo calculada nesta tela.", status: "Não disponível", icon: CalendarCheck2 },
+    { id: "planning", title: "Planejamento Financeiro", description: "Previsão mensal baseada exclusivamente em lançamentos existentes, vencimentos e saldos cadastrados.", status: "Base disponível", icon: CalendarCheck2 },
     { id: "intelligence", title: "Inteligência Financeira", description: "Recomendações automáticas, detecção de anomalias e análises por IA ainda não estão disponíveis neste painel.", status: "Não disponível", icon: BrainCircuit },
   ] },
   { id: "administration", title: "Administração", modules: [
@@ -243,6 +244,8 @@ function FinancePanel() {
   const [deliveryLoading, setDeliveryLoading] = useState(false);
   const [cashFlow, setCashFlow] = useState<FinanceCashFlow | null>(null);
   const [cashFlowLoading, setCashFlowLoading] = useState(false);
+  const [forecast, setForecast] = useState<FinanceForecast | null>(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
   const [budgets, setBudgets] = useState<FinanceBudget[]>([]);
   const [budgetLoading, setBudgetLoading] = useState(false);
   const [budgetSaving, setBudgetSaving] = useState(false);
@@ -293,6 +296,15 @@ function FinancePanel() {
       .then(setCashFlow)
       .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar o fluxo de caixa."))
       .finally(() => setCashFlowLoading(false));
+  }, [activeModule]);
+
+  useEffect(() => {
+    if (activeModule !== "planning") return;
+    setForecastLoading(true);
+    financeApi.forecast(6)
+      .then(setForecast)
+      .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar a previsao financeira."))
+      .finally(() => setForecastLoading(false));
   }, [activeModule]);
 
   useEffect(() => {
@@ -707,12 +719,24 @@ function FinancePanel() {
             </div>
           </div>
 
-          {activeModule !== "overview" && activeModule !== "registries" && activeModule !== "banks" && !isTransactionArea && (
+          {activeModule !== "overview" && activeModule !== "registries" && activeModule !== "banks" && activeModule !== "planning" && !isTransactionArea && (
             <div className={`${panelClass} min-h-64 flex flex-col items-center justify-center text-center`}>
               <div className="rounded-2xl border border-surface-03 bg-surface-01 p-4 text-gold"><CurrentIcon size={28} aria-hidden="true" /></div>
               <h4 className="mt-4 text-xl font-black text-cream">{currentModule.title}</h4>
               <p className="mt-2 max-w-xl text-sm leading-relaxed text-stone">{currentModule.description}</p>
               <span className={`mt-4 rounded-full border px-3 py-1.5 text-[10px] font-black uppercase tracking-wide ${financeModuleStatuses[currentModule.status].className}`}>{currentModule.status}</span>
+            </div>
+          )}
+
+          {activeModule === "planning" && (
+            <div className="space-y-5">
+              <div className={panelClass}>
+                <CardHeading icon={CalendarCheck2} title="Previsão de saldo" description="A projeção usa somente lançamentos já registrados: pendentes e parciais usam o vencimento; liquidados usam a competência. Nenhum valor é inventado." />
+              </div>
+              {forecastLoading ? <div className="flex min-h-40 items-center justify-center rounded-2xl border border-surface-03 bg-surface-02 text-stone"><Loader2 size={22} className="mr-2 animate-spin text-gold" />Carregando previsão...</div> : forecast && <div className={`${panelClass} overflow-x-auto`}>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h4 className="font-black text-cream">Próximos {forecast.months} meses</h4><p className="mt-1 text-xs text-stone">{forecast.methodology}</p></div><span className="rounded-full border border-surface-03 bg-surface-01 px-3 py-1 text-xs font-bold text-stone">Saldo inicial {currency(forecast.periods[0]?.opening_balance || 0)}</span></div>
+                <table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Período</th><th className="px-3 py-3 text-right">Entradas</th><th className="px-3 py-3 text-right">Saídas</th><th className="px-3 py-3 text-right">Resultado</th><th className="px-3 py-3 text-right">Saldo final</th><th className="px-3 py-3 text-right">Fontes</th></tr></thead><tbody>{forecast.periods.map((period) => <tr key={period.period_start} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{period.period_start} a {period.period_end}</td><td className="px-3 py-3 text-right text-emerald-300">{currency(period.projected_income)}</td><td className="px-3 py-3 text-right text-amber-300">{currency(period.projected_expense)}</td><td className={`px-3 py-3 text-right font-bold ${period.projected_result >= 0 ? "text-emerald-300" : "text-red-300"}`}>{currency(period.projected_result)}</td><td className="px-3 py-3 text-right font-black text-cream">{currency(period.closing_balance)}</td><td className="px-3 py-3 text-right text-stone">{period.source_count}</td></tr>)}</tbody></table>
+              </div>}
             </div>
           )}
 

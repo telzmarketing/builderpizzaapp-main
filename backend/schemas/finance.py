@@ -331,6 +331,25 @@ class FinanceCashFlowOut(BaseModel):
     lines: list[FinanceCashFlowLineOut]
 
 
+class FinanceForecastPeriodOut(BaseModel):
+    period_start: date
+    period_end: date
+    opening_balance: float
+    projected_income: float
+    projected_expense: float
+    projected_result: float
+    closing_balance: float
+    source_count: int
+
+
+class FinanceForecastOut(BaseModel):
+    date_from: date
+    date_to: date
+    months: int
+    methodology: str
+    periods: list[FinanceForecastPeriodOut]
+
+
 class FinanceBudgetLineIn(BaseModel):
     category_id: str | None = None
     cost_center: str | None = Field(default=None, max_length=120)
