@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { isDomainOnlyConfigurationRoute } from "./AdminConfiguracoes";
+import { getDedicatedConfigurationTab } from "./AdminConfiguracoes";
 
-describe("AdminConfiguracoes domain route", () => {
-  it("limits the submodule tabs to Domain and HTTPS", () => {
-    expect(isDomainOnlyConfigurationRoute("/painel/dominio")).toBe(true);
+describe("AdminConfiguracoes route tabs", () => {
+  it.each([
+    ["/painel/comprovantes-pedidos", "comprovantes"],
+    ["/painel/etiquetas-expedicao", "etiquetas-expedicao"],
+    ["/painel/etiquetas-insumos", "etiquetas-insumos"],
+    ["/painel/dominio", "dominio-https"],
+    ["/painel/painel-tv-config", "painel-tv"],
+    ["/painel/som", "som"],
+    ["/painel/identificacao-parceiros", "identificacao-parceiros"],
+  ])("limits %s to its own submodule tab", (pathname, expectedTab) => {
+    expect(getDedicatedConfigurationTab(pathname)).toBe(expectedTab);
   });
 
-  it("keeps the shared tabs for the other configuration routes", () => {
-    expect(isDomainOnlyConfigurationRoute("/painel/comprovantes-pedidos")).toBe(false);
+  it("keeps all submodule tabs for the aggregate configuration route", () => {
+    expect(getDedicatedConfigurationTab("/painel/configuracoes")).toBeNull();
   });
 });
