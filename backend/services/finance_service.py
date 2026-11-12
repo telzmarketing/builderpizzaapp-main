@@ -25,6 +25,7 @@ from backend.models.fiscal import FiscalDocument
 from backend.models.cmv import OrderCmvSnapshot
 from backend.models.order import Order
 from backend.models.payment import Payment
+from backend.models.delivery import DeliveryEarning, DeliveryPerson
 from backend.schemas.finance import (
     FinanceAccountIn, FinanceCategoryIn, FinanceCounterpartyIn,
     FinanceBankMatchIn, FinanceBankReconciliationReasonIn, FinanceBankStatementImportIn, FinanceObligationFromFiscalIn,
@@ -144,6 +145,40 @@ class FinanceService:
             "total_count": sum(item["count"] for item in summaries),
             "total_gross_amount": round(sum(item["gross_amount"] for item in summaries), 2),
             "total_linked_fee_amount": round(sum(item["linked_fee_amount"] for item in summaries), 2),
+        }
+
+    def delivery_finance_overview(self) -> dict:
+        rows = (
+            self._db.query(
+                DeliveryEarning.delivery_person_id,
+                DeliveryPerson.name,
+                DeliveryEarning.status,
+                func.count(DeliveryEarning.id),
+                func.coalesce(func.sum(DeliveryEarning.amount), 0),
+            )
+            .join(DeliveryPerson, DeliveryPerson.id == DeliveryEarning.delivery_person_id)
+            .filter(DeliveryEarning.tenant_id == self._tenant_id)
+            .group_by(DeliveryEarning.delivery_person_id, DeliveryPerson.name, DeliveryEarning.status)
+            .order_by(DeliveryPerson.name, DeliveryEarning.status)
+            .all()
+        )
+        summaries = [
+            {
+                "delivery_person_id": person_id,
+                "delivery_person_name": name,
+                "status": status,
+                "count": int(count or 0),
+                "amount": round(float(amount or 0), 2),
+            }
+            for person_id, name, status, count, amount in rows
+        ]
+        by_status = {status: round(sum(item["amount"] for item in summaries if item["status"] == status), 2) for status in ("pending", "paid", "cancelled")}
+        return {
+            "summaries": summaries,
+            "total_count": sum(item["count"] for item in summaries),
+            "pending_amount": by_status["pending"],
+            "paid_amount": by_status["paid"],
+            "cancelled_amount": by_status["cancelled"],
         }
 
     def summary(self) -> dict:

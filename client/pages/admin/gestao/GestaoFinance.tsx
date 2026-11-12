@@ -40,6 +40,7 @@ import {
   type FinanceBankStatementImportInput,
   type FinanceBankReconciliationLine,
   type FinancePaymentOverview,
+  type FinanceDeliveryOverview,
   type FinanceAccountInput,
   type FinanceCategory,
   type FinanceCategoryInput,
@@ -235,6 +236,8 @@ function FinancePanel() {
   const [reconciliationLines, setReconciliationLines] = useState<FinanceBankReconciliationLine[]>([]);
   const [paymentOverview, setPaymentOverview] = useState<FinancePaymentOverview | null>(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
+  const [deliveryOverview, setDeliveryOverview] = useState<FinanceDeliveryOverview | null>(null);
+  const [deliveryLoading, setDeliveryLoading] = useState(false);
   const bankFileRef = useRef<HTMLInputElement>(null);
   const [settlementDrafts, setSettlementDrafts] = useState<Record<string, FinanceSettlementInput>>({});
   const [transactionQuery, setTransactionQuery] = useState("");
@@ -256,6 +259,15 @@ function FinancePanel() {
 
   useEffect(() => {
     headingRef.current?.focus({ preventScroll: true });
+  }, [activeModule]);
+
+  useEffect(() => {
+    if (activeModule !== "delivery" && activeModule !== "couriers") return;
+    setDeliveryLoading(true);
+    financeApi.deliveryOverview()
+      .then(setDeliveryOverview)
+      .catch((err) => setBankError(err instanceof Error ? err.message : "Nao foi possivel carregar os repasses dos entregadores."))
+      .finally(() => setDeliveryLoading(false));
   }, [activeModule]);
 
   const newTransaction = (entryType?: FinanceEntryType) => {
@@ -879,6 +891,32 @@ function FinancePanel() {
                       {paymentOverview.summaries.length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhum pagamento registrado.</p> : <table className="w-full min-w-[720px] text-left text-sm">
                         <thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Método</th><th className="px-3 py-3">Gateway</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Quantidade</th><th className="px-3 py-3 text-right">Bruto</th><th className="px-3 py-3 text-right">Tarifa vinculada</th></tr></thead>
                         <tbody>{paymentOverview.summaries.map((summary) => <tr key={`${summary.method}-${summary.gateway}-${summary.provider}-${summary.status}`} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{summary.method}</td><td className="px-3 py-3 text-stone">{summary.gateway} · {summary.provider}</td><td className="px-3 py-3 text-stone">{summary.status}</td><td className="px-3 py-3 text-stone">{summary.count}</td><td className="px-3 py-3 text-right font-bold text-cream">{currency(summary.gross_amount)}</td><td className="px-3 py-3 text-right font-bold text-amber-200">{currency(summary.linked_fee_amount)}</td></tr>)}</tbody>
+                      </table>}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {(activeModule === "delivery" || activeModule === "couriers") && (
+            <div className="space-y-5">
+              {deliveryLoading ? (
+                <div className="flex min-h-40 items-center justify-center rounded-2xl border border-surface-03 bg-surface-02 text-stone"><Loader2 size={22} className="mr-2 animate-spin text-gold" />Carregando repasses...</div>
+              ) : deliveryOverview && (
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <Metric title="Repasses" value={String(deliveryOverview.total_count)} subtitle="Ganhos registrados" icon={Route} tone="success" />
+                    <Metric title="Pendentes" value={currency(deliveryOverview.pending_amount)} subtitle="Aguardando pagamento" icon={CalendarCheck2} tone="warn" />
+                    <Metric title="Pagos" value={currency(deliveryOverview.paid_amount)} subtitle="Repasses confirmados" icon={CheckCircle2} tone="success" />
+                    <Metric title="Cancelados" value={currency(deliveryOverview.cancelled_amount)} subtitle="Sem efeito no caixa" icon={AlertTriangle} tone="warn" />
+                  </div>
+                  <div className={panelClass}>
+                    <CardHeading icon={Route} title="Gestão financeira de entregadores" description="Ganhos provenientes da operação logística, agrupados por entregador e status. O pagamento continua usando o fluxo oficial de repasses." />
+                    <div className="mt-4 overflow-x-auto">
+                      {deliveryOverview.summaries.length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhum ganho de entregador registrado.</p> : <table className="w-full min-w-[620px] text-left text-sm">
+                        <thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Entregador</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Quantidade</th><th className="px-3 py-3 text-right">Valor</th></tr></thead>
+                        <tbody>{deliveryOverview.summaries.map((summary) => <tr key={`${summary.delivery_person_id}-${summary.status}`} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{summary.delivery_person_name}</td><td className="px-3 py-3 text-stone">{summary.status}</td><td className="px-3 py-3 text-stone">{summary.count}</td><td className="px-3 py-3 text-right font-black text-cream">{currency(summary.amount)}</td></tr>)}</tbody>
                       </table>}
                     </div>
                   </div>

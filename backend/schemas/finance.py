@@ -278,6 +278,22 @@ class FinancePaymentOverviewOut(BaseModel):
     total_linked_fee_amount: float
 
 
+class FinanceDeliveryEarningSummaryOut(BaseModel):
+    delivery_person_id: str
+    delivery_person_name: str
+    status: str
+    count: int
+    amount: float
+
+
+class FinanceDeliveryOverviewOut(BaseModel):
+    summaries: list[FinanceDeliveryEarningSummaryOut]
+    total_count: int
+    pending_amount: float
+    paid_amount: float
+    cancelled_amount: float
+
+
 class FinanceObligationInstallmentIn(BaseModel):
     installment_number: int = Field(ge=1)
     amount: Decimal = Field(gt=0, max_digits=20, decimal_places=2)

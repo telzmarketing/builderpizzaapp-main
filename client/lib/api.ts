@@ -2580,6 +2580,22 @@ export interface FinancePaymentOverview {
   total_linked_fee_amount: number;
 }
 
+export interface FinanceDeliveryEarningSummary {
+  delivery_person_id: string;
+  delivery_person_name: string;
+  status: string;
+  count: number;
+  amount: number;
+}
+
+export interface FinanceDeliveryOverview {
+  summaries: FinanceDeliveryEarningSummary[];
+  total_count: number;
+  pending_amount: number;
+  paid_amount: number;
+  cancelled_amount: number;
+}
+
 export interface FinanceBankStatementLineInput {
   external_id: string;
   transaction_date: string;
@@ -6326,6 +6342,7 @@ export const cmvApi = {
 export const financeApi = {
   overview: () => get<FinanceOverview>("/gestao/finance/overview"),
   paymentOverview: () => get<FinancePaymentOverview>("/gestao/finance/payments/overview"),
+  deliveryOverview: () => get<FinanceDeliveryOverview>("/gestao/finance/delivery/overview"),
   listBankStatements: () => get<FinanceBankStatement[]>("/gestao/finance/bank-statements"),
   listBankStatementLines: (id: string) => get<FinanceBankStatementLine[]>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/lines`),
   listBankReconciliation: (id: string) => get<FinanceBankReconciliationLine[]>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/reconciliation`),
