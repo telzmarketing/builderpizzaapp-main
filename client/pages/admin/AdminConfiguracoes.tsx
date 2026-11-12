@@ -25,6 +25,10 @@ import { kdsLabelsApi, type KdsLabelTemplate, type KdsLabelTemplateInput } from 
 
 type Tab = "comprovantes" | "etiquetas-expedicao" | "etiquetas-insumos" | "painel-tv" | "som" | "dominio-https" | "identificacao-parceiros";
 
+export function isDomainOnlyConfigurationRoute(pathname: string): boolean {
+  return pathname === "/painel/dominio";
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function Field({
@@ -151,6 +155,7 @@ function SuppliesLabelSettingsPanel() {
 export default function AdminConfiguracoes() {
   const { pathname } = useLocation();
   const { siteContent } = useApp();
+  const isDomainRoute = isDomainOnlyConfigurationRoute(pathname);
   const routeTab: Tab = pathname === "/painel/etiquetas-expedicao"
     ? "etiquetas-expedicao"
     : pathname === "/painel/etiquetas-insumos"
@@ -213,6 +218,10 @@ export default function AdminConfiguracoes() {
 
           {/* Tabs */}
           <div className="px-4 sm:px-8 pt-4 flex flex-wrap gap-2">
+            {isDomainRoute ? (
+              <button type="button" onClick={() => setActiveTab("dominio-https")} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "dominio-https" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}><Globe size={14} /> Dominio e HTTPS</button>
+            ) : (
+              <>
             <button type="button" onClick={() => setActiveTab("dominio-https")} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "dominio-https" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}><Globe size={14} /> Dominio e HTTPS</button>
             <button
               onClick={() => setActiveTab("comprovantes")}
@@ -253,6 +262,8 @@ export default function AdminConfiguracoes() {
               <Tags size={14} />
               Identificação de Parceiros
             </button>
+              </>
+            )}
           </div>
 
           <div className="p-8 space-y-8 max-w-5xl">
