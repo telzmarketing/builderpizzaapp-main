@@ -2596,6 +2596,33 @@ export interface FinanceDeliveryOverview {
   cancelled_amount: number;
 }
 
+export interface FinanceCashFlowLine {
+  id: string;
+  movement_date: string;
+  description: string;
+  entry_type: FinanceEntryType;
+  status: FinanceTransactionStatus;
+  account_name?: string | null;
+  category_name?: string | null;
+  projected_amount: number;
+  realized_amount: number;
+}
+
+export interface FinanceCashFlow {
+  date_from: string;
+  date_to: string;
+  opening_balance: number;
+  realized_income: number;
+  realized_expense: number;
+  realized_result: number;
+  projected_income: number;
+  projected_expense: number;
+  projected_result: number;
+  closing_realized_balance: number;
+  closing_projected_balance: number;
+  lines: FinanceCashFlowLine[];
+}
+
 export interface FinanceBankStatementLineInput {
   external_id: string;
   transaction_date: string;
@@ -6343,6 +6370,13 @@ export const financeApi = {
   overview: () => get<FinanceOverview>("/gestao/finance/overview"),
   paymentOverview: () => get<FinancePaymentOverview>("/gestao/finance/payments/overview"),
   deliveryOverview: () => get<FinanceDeliveryOverview>("/gestao/finance/delivery/overview"),
+  cashFlow: (params?: { date_from?: string; date_to?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.date_from) query.set("date_from", params.date_from);
+    if (params?.date_to) query.set("date_to", params.date_to);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return get<FinanceCashFlow>(`/gestao/finance/cash-flow${suffix}`);
+  },
   listBankStatements: () => get<FinanceBankStatement[]>("/gestao/finance/bank-statements"),
   listBankStatementLines: (id: string) => get<FinanceBankStatementLine[]>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/lines`),
   listBankReconciliation: (id: string) => get<FinanceBankReconciliationLine[]>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/reconciliation`),

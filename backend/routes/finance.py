@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Header
+from datetime import date
+
+from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
@@ -26,6 +28,7 @@ from backend.schemas.finance import (
     FinanceOverviewOut,
     FinancePaymentOverviewOut,
     FinanceDeliveryOverviewOut,
+    FinanceCashFlowOut,
     FinanceObligationFromFiscalIn,
     FinanceObligationOut,
     FinanceSettlementIn,
@@ -54,6 +57,20 @@ def payment_overview(db: Session = Depends(get_db), _admin: AdminUser = Depends(
 @router.get("/delivery/overview", response_model=FinanceDeliveryOverviewOut)
 def delivery_finance_overview(db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
     return service(db, tenant_context).delivery_finance_overview()
+
+
+@router.get("/cash-flow", response_model=FinanceCashFlowOut)
+def cash_flow(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+    tenant_context: TenantContext | None = Depends(panel_operation_context),
+):
+    try:
+        return service(db, tenant_context).cash_flow(date_from, date_to)
+    except DomainError as exc:
+        return err(exc)
 
 
 @router.get("/accounts", response_model=list[FinanceAccountOut])

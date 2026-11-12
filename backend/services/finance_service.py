@@ -181,6 +181,59 @@ class FinanceService:
             "cancelled_amount": by_status["cancelled"],
         }
 
+    def cash_flow(self, date_from: date | None = None, date_to: date | None = None) -> dict:
+        today = date.today()
+        start = date_from or today.replace(day=1)
+        end = date_to or today
+        if start > end:
+            raise FinanceInvalidReference("O período do fluxo de caixa é inválido.")
+        accounts = self.list_accounts()
+        transactions = self.list_transactions()
+        lines = []
+        for transaction in transactions:
+            movement_date = transaction.get("competence_date")
+            if isinstance(movement_date, str):
+                movement_date = date.fromisoformat(movement_date)
+            if movement_date is None or movement_date < start or movement_date > end:
+                continue
+            amount = float(transaction.get("amount") or 0)
+            realized = self._cash_effect_from_values(transaction)
+            if transaction.get("entry_type") == "expense":
+                realized = -realized
+            projected = amount if transaction.get("status") in {"pending", "partial", "paid"} else 0.0
+            if transaction.get("entry_type") == "expense":
+                projected = -projected
+            lines.append({
+                "id": transaction["id"],
+                "movement_date": movement_date,
+                "description": transaction["description"],
+                "entry_type": transaction["entry_type"],
+                "status": transaction["status"],
+                "account_name": transaction.get("account_name"),
+                "category_name": transaction.get("category_name"),
+                "projected_amount": round(projected, 2),
+                "realized_amount": round(realized, 2),
+            })
+        opening = round(sum(float(account.get("opening_balance") or 0) for account in accounts), 2)
+        realized_income = round(sum(line["realized_amount"] for line in lines if line["entry_type"] == "income"), 2)
+        realized_expense = round(-sum(line["realized_amount"] for line in lines if line["entry_type"] == "expense"), 2)
+        projected_income = round(sum(line["projected_amount"] for line in lines if line["entry_type"] == "income"), 2)
+        projected_expense = round(-sum(line["projected_amount"] for line in lines if line["entry_type"] == "expense"), 2)
+        return {
+            "date_from": start,
+            "date_to": end,
+            "opening_balance": opening,
+            "realized_income": realized_income,
+            "realized_expense": realized_expense,
+            "realized_result": round(realized_income - realized_expense, 2),
+            "projected_income": projected_income,
+            "projected_expense": projected_expense,
+            "projected_result": round(projected_income - projected_expense, 2),
+            "closing_realized_balance": round(opening + realized_income - realized_expense, 2),
+            "closing_projected_balance": round(opening + projected_income - projected_expense, 2),
+            "lines": sorted(lines, key=lambda line: (line["movement_date"], line["id"]), reverse=True),
+        }
+
     def summary(self) -> dict:
         transactions = (
             self._db.query(FinanceTransaction)
@@ -1540,6 +1593,18 @@ class FinanceService:
             return value
         if row.status in {"partial", "paid"}:
             return self._net_amount(row.entry_type, float(row.paid_amount or 0.0), float(row.fee_amount or 0.0))
+        return 0.0
+
+    def _cash_effect_from_values(self, transaction: dict) -> float:
+        value = float(transaction.get("net_amount") or 0.0)
+        if value > 0:
+            return value
+        if transaction.get("status") in {"partial", "paid"}:
+            return self._net_amount(
+                str(transaction.get("entry_type") or "expense"),
+                float(transaction.get("paid_amount") or 0.0),
+                float(transaction.get("fee_amount") or 0.0),
+            )
         return 0.0
 
     def _open_amount(self, row: FinanceTransaction) -> float:

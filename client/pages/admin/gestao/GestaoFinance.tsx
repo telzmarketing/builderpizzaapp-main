@@ -41,6 +41,7 @@ import {
   type FinanceBankReconciliationLine,
   type FinancePaymentOverview,
   type FinanceDeliveryOverview,
+  type FinanceCashFlow,
   type FinanceAccountInput,
   type FinanceCategory,
   type FinanceCategoryInput,
@@ -97,7 +98,7 @@ const financeModuleGroups: Array<{ id: string; title: string; modules: FinanceMo
     { id: "cards", title: "Cartões e Pix", description: "Forma de pagamento, referência e tarifa podem ser informadas na baixa. Agenda de repasses e conciliação por adquirente ainda não estão disponíveis.", status: "Cobertura parcial", icon: CreditCard },
     { id: "delivery", title: "Aplicativos de Delivery", description: "Valores agrupados por canal. Comissões, lotes de repasse e conciliação por aplicativo ainda não estão disponíveis.", status: "Cobertura parcial", icon: ShoppingBag },
     { id: "couriers", title: "Gestão Financeira de Entregadores", description: "Diárias, adiantamentos e acertos integrados ao caixa ainda não estão disponíveis neste Financeiro. Consulte a operação existente em Logística.", status: "Não disponível", icon: Route },
-    { id: "cashflow", title: "Fluxo de Caixa", description: "Resultado de caixa realizado informado pelo resumo. Fluxo diário, extrato cronológico e projeções de saldo ainda não estão disponíveis.", status: "Cobertura parcial", icon: LineChart },
+    { id: "cashflow", title: "Fluxo de Caixa", description: "Fluxo mensal com saldo inicial, realizado, projetado e extrato cronológico dos lançamentos.", status: "Base disponível", icon: LineChart },
     { id: "planning", title: "Planejamento Financeiro", description: "Projeções, metas, cenários e simulações ainda não estão disponíveis. Não há previsão de saldo calculada nesta tela.", status: "Não disponível", icon: CalendarCheck2 },
     { id: "intelligence", title: "Inteligência Financeira", description: "Recomendações automáticas, detecção de anomalias e análises por IA ainda não estão disponíveis neste painel.", status: "Não disponível", icon: BrainCircuit },
   ] },
@@ -238,6 +239,8 @@ function FinancePanel() {
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [deliveryOverview, setDeliveryOverview] = useState<FinanceDeliveryOverview | null>(null);
   const [deliveryLoading, setDeliveryLoading] = useState(false);
+  const [cashFlow, setCashFlow] = useState<FinanceCashFlow | null>(null);
+  const [cashFlowLoading, setCashFlowLoading] = useState(false);
   const bankFileRef = useRef<HTMLInputElement>(null);
   const [settlementDrafts, setSettlementDrafts] = useState<Record<string, FinanceSettlementInput>>({});
   const [transactionQuery, setTransactionQuery] = useState("");
@@ -259,6 +262,15 @@ function FinancePanel() {
 
   useEffect(() => {
     headingRef.current?.focus({ preventScroll: true });
+  }, [activeModule]);
+
+  useEffect(() => {
+    if (activeModule !== "cashflow") return;
+    setCashFlowLoading(true);
+    financeApi.cashFlow()
+      .then(setCashFlow)
+      .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar o fluxo de caixa."))
+      .finally(() => setCashFlowLoading(false));
   }, [activeModule]);
 
   useEffect(() => {
@@ -891,6 +903,32 @@ function FinancePanel() {
                       {paymentOverview.summaries.length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhum pagamento registrado.</p> : <table className="w-full min-w-[720px] text-left text-sm">
                         <thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Método</th><th className="px-3 py-3">Gateway</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Quantidade</th><th className="px-3 py-3 text-right">Bruto</th><th className="px-3 py-3 text-right">Tarifa vinculada</th></tr></thead>
                         <tbody>{paymentOverview.summaries.map((summary) => <tr key={`${summary.method}-${summary.gateway}-${summary.provider}-${summary.status}`} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{summary.method}</td><td className="px-3 py-3 text-stone">{summary.gateway} · {summary.provider}</td><td className="px-3 py-3 text-stone">{summary.status}</td><td className="px-3 py-3 text-stone">{summary.count}</td><td className="px-3 py-3 text-right font-bold text-cream">{currency(summary.gross_amount)}</td><td className="px-3 py-3 text-right font-bold text-amber-200">{currency(summary.linked_fee_amount)}</td></tr>)}</tbody>
+                      </table>}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {activeModule === "cashflow" && (
+            <div className="space-y-5">
+              {cashFlowLoading ? (
+                <div className="flex min-h-40 items-center justify-center rounded-2xl border border-surface-03 bg-surface-02 text-stone"><Loader2 size={22} className="mr-2 animate-spin text-gold" />Carregando fluxo de caixa...</div>
+              ) : cashFlow && (
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <Metric title="Saldo inicial" value={currency(cashFlow.opening_balance)} subtitle={`${cashFlow.date_from} a ${cashFlow.date_to}`} icon={Wallet} tone="success" />
+                    <Metric title="Realizado" value={currency(cashFlow.realized_result)} subtitle={`Entradas ${currency(cashFlow.realized_income)} · Saídas ${currency(cashFlow.realized_expense)}`} icon={CheckCircle2} tone={cashFlow.realized_result >= 0 ? "success" : "warn"} />
+                    <Metric title="Projetado" value={currency(cashFlow.projected_result)} subtitle={`Entradas ${currency(cashFlow.projected_income)} · Saídas ${currency(cashFlow.projected_expense)}`} icon={TrendingUp} tone={cashFlow.projected_result >= 0 ? "success" : "warn"} />
+                    <Metric title="Saldo projetado" value={currency(cashFlow.closing_projected_balance)} subtitle={`Saldo realizado ${currency(cashFlow.closing_realized_balance)}`} icon={LineChart} tone={cashFlow.closing_projected_balance >= 0 ? "success" : "warn"} />
+                  </div>
+                  <div className={panelClass}>
+                    <CardHeading icon={LineChart} title="Extrato do fluxo de caixa" description="Cada linha mostra o efeito projetado e o valor já realizado do lançamento, sem misturar cadastros auxiliares." />
+                    <div className="mt-4 overflow-x-auto">
+                      {cashFlow.lines.length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhum lançamento no período atual.</p> : <table className="w-full min-w-[820px] text-left text-sm">
+                        <thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Data</th><th className="px-3 py-3">Lançamento</th><th className="px-3 py-3">Conta · Categoria</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Projetado</th><th className="px-3 py-3 text-right">Realizado</th></tr></thead>
+                        <tbody>{cashFlow.lines.map((line) => <tr key={line.id} className="border-b border-surface-03/70"><td className="px-3 py-3 text-stone">{line.movement_date}</td><td className="px-3 py-3 font-bold text-cream">{line.description}</td><td className="px-3 py-3 text-stone">{line.account_name || "Conta não informada"} · {line.category_name || "Sem categoria"}</td><td className="px-3 py-3 text-stone">{line.status}</td><td className={`px-3 py-3 text-right font-bold ${line.projected_amount >= 0 ? "text-emerald-300" : "text-amber-300"}`}>{currency(line.projected_amount)}</td><td className={`px-3 py-3 text-right font-bold ${line.realized_amount >= 0 ? "text-emerald-300" : "text-amber-300"}`}>{currency(line.realized_amount)}</td></tr>)}</tbody>
                       </table>}
                     </div>
                   </div>

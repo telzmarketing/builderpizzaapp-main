@@ -294,6 +294,33 @@ class FinanceDeliveryOverviewOut(BaseModel):
     cancelled_amount: float
 
 
+class FinanceCashFlowLineOut(BaseModel):
+    id: str
+    movement_date: date
+    description: str
+    entry_type: FinanceEntryType
+    status: FinanceTransactionStatus
+    account_name: str | None = None
+    category_name: str | None = None
+    projected_amount: float
+    realized_amount: float
+
+
+class FinanceCashFlowOut(BaseModel):
+    date_from: date
+    date_to: date
+    opening_balance: float
+    realized_income: float
+    realized_expense: float
+    realized_result: float
+    projected_income: float
+    projected_expense: float
+    projected_result: float
+    closing_realized_balance: float
+    closing_projected_balance: float
+    lines: list[FinanceCashFlowLineOut]
+
+
 class FinanceObligationInstallmentIn(BaseModel):
     installment_number: int = Field(ge=1)
     amount: Decimal = Field(gt=0, max_digits=20, decimal_places=2)
