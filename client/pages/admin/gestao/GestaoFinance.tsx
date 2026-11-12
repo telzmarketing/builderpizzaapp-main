@@ -39,6 +39,7 @@ import {
   type FinanceBankStatement,
   type FinanceBankStatementImportInput,
   type FinanceBankReconciliationLine,
+  type FinancePaymentOverview,
   type FinanceAccountInput,
   type FinanceCategory,
   type FinanceCategoryInput,
@@ -232,6 +233,8 @@ function FinancePanel() {
   const [bankError, setBankError] = useState("");
   const [selectedStatement, setSelectedStatement] = useState<string | null>(null);
   const [reconciliationLines, setReconciliationLines] = useState<FinanceBankReconciliationLine[]>([]);
+  const [paymentOverview, setPaymentOverview] = useState<FinancePaymentOverview | null>(null);
+  const [paymentLoading, setPaymentLoading] = useState(false);
   const bankFileRef = useRef<HTMLInputElement>(null);
   const [settlementDrafts, setSettlementDrafts] = useState<Record<string, FinanceSettlementInput>>({});
   const [transactionQuery, setTransactionQuery] = useState("");
@@ -326,6 +329,15 @@ function FinancePanel() {
 
   useEffect(() => {
     if (activeModule === "banks") loadBankStatements();
+  }, [activeModule]);
+
+  useEffect(() => {
+    if (activeModule !== "cards") return;
+    setPaymentLoading(true);
+    financeApi.paymentOverview()
+      .then(setPaymentOverview)
+      .catch((err) => setBankError(err instanceof Error ? err.message : "Nao foi possivel carregar pagamentos."))
+      .finally(() => setPaymentLoading(false));
   }, [activeModule]);
 
   const importBankFile = async (file: File) => {
@@ -847,6 +859,31 @@ function FinancePanel() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeModule === "cards" && (
+            <div className="space-y-5">
+              {paymentLoading ? (
+                <div className="flex min-h-40 items-center justify-center rounded-2xl border border-surface-03 bg-surface-02 text-stone"><Loader2 size={22} className="mr-2 animate-spin text-gold" />Carregando pagamentos...</div>
+              ) : paymentOverview && (
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    <Metric title="Pagamentos" value={String(paymentOverview.total_count)} subtitle="Registros no checkout" icon={CreditCard} tone="success" />
+                    <Metric title="Volume bruto" value={currency(paymentOverview.total_gross_amount)} subtitle="Valor dos pagamentos" icon={ReceiptText} tone="success" />
+                    <Metric title="Tarifas vinculadas" value={currency(paymentOverview.total_linked_fee_amount)} subtitle="Tarifas registradas no financeiro" icon={SlidersHorizontal} tone="warn" />
+                  </div>
+                  <div className={panelClass}>
+                    <CardHeading icon={CreditCard} title="Cartões e Pix" description="Volume por método, gateway, provedor e status. A conciliação de repasse depende de tarifas e liquidações vinculadas." />
+                    <div className="mt-4 overflow-x-auto">
+                      {paymentOverview.summaries.length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhum pagamento registrado.</p> : <table className="w-full min-w-[720px] text-left text-sm">
+                        <thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Método</th><th className="px-3 py-3">Gateway</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Quantidade</th><th className="px-3 py-3 text-right">Bruto</th><th className="px-3 py-3 text-right">Tarifa vinculada</th></tr></thead>
+                        <tbody>{paymentOverview.summaries.map((summary) => <tr key={`${summary.method}-${summary.gateway}-${summary.provider}-${summary.status}`} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{summary.method}</td><td className="px-3 py-3 text-stone">{summary.gateway} · {summary.provider}</td><td className="px-3 py-3 text-stone">{summary.status}</td><td className="px-3 py-3 text-stone">{summary.count}</td><td className="px-3 py-3 text-right font-bold text-cream">{currency(summary.gross_amount)}</td><td className="px-3 py-3 text-right font-bold text-amber-200">{currency(summary.linked_fee_amount)}</td></tr>)}</tbody>
+                      </table>}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
 

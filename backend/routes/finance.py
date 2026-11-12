@@ -24,6 +24,7 @@ from backend.schemas.finance import (
     FinanceCounterpartyIn,
     FinanceCounterpartyOut,
     FinanceOverviewOut,
+    FinancePaymentOverviewOut,
     FinanceObligationFromFiscalIn,
     FinanceObligationOut,
     FinanceSettlementIn,
@@ -42,6 +43,11 @@ def service(db: Session, tenant_context: TenantContext | None) -> FinanceService
 @router.get("/overview", response_model=FinanceOverviewOut)
 def overview(db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
     return service(db, tenant_context).overview()
+
+
+@router.get("/payments/overview", response_model=FinancePaymentOverviewOut)
+def payment_overview(db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    return service(db, tenant_context).payment_overview()
 
 
 @router.get("/accounts", response_model=list[FinanceAccountOut])

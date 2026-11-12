@@ -261,6 +261,23 @@ class FinanceOverviewOut(BaseModel):
     transactions: list[FinanceTransactionOut]
 
 
+class FinancePaymentSummaryOut(BaseModel):
+    method: str
+    gateway: str
+    provider: str
+    status: str
+    count: int
+    gross_amount: float
+    linked_fee_amount: float
+
+
+class FinancePaymentOverviewOut(BaseModel):
+    summaries: list[FinancePaymentSummaryOut]
+    total_count: int
+    total_gross_amount: float
+    total_linked_fee_amount: float
+
+
 class FinanceObligationInstallmentIn(BaseModel):
     installment_number: int = Field(ge=1)
     amount: Decimal = Field(gt=0, max_digits=20, decimal_places=2)

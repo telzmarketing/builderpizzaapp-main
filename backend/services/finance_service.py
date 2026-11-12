@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, DecimalException, ROUND_HALF_UP
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.exceptions import DomainError
@@ -85,6 +86,64 @@ class FinanceService:
             "categories": self.list_categories(),
             "counterparties": self.list_counterparties(),
             "transactions": self.list_transactions(),
+        }
+
+    def payment_overview(self) -> dict:
+        rows = (
+            self._db.query(
+                Payment.method,
+                Payment.gateway,
+                Payment.provider,
+                Payment.status,
+                func.count(Payment.id),
+                func.coalesce(func.sum(Payment.amount), 0),
+            )
+            .filter(Payment.tenant_id == self._tenant_id)
+            .group_by(Payment.method, Payment.gateway, Payment.provider, Payment.status)
+            .order_by(Payment.method, Payment.gateway, Payment.provider, Payment.status)
+            .all()
+        )
+        fee_rows = (
+            self._db.query(
+                FinanceTransaction.payment_id,
+                func.coalesce(func.sum(FinanceTransaction.fee_amount), 0),
+            )
+            .filter(
+                FinanceTransaction.tenant_id == self._tenant_id,
+                FinanceTransaction.payment_id.is_not(None),
+            )
+            .group_by(FinanceTransaction.payment_id)
+            .all()
+        )
+        linked_fees = {payment_id: round(float(amount or 0), 2) for payment_id, amount in fee_rows}
+        summaries = []
+        for method, gateway, provider, status, count, gross_amount in rows:
+            method_value = getattr(method, "value", method)
+            status_value = getattr(status, "value", status)
+            payment_ids = [
+                payment_id for payment_id, in self._db.query(Payment.id)
+                .filter(
+                    Payment.tenant_id == self._tenant_id,
+                    Payment.method == method,
+                    Payment.gateway == gateway,
+                    Payment.provider == provider,
+                    Payment.status == status,
+                ).all()
+            ]
+            summaries.append({
+                "method": str(method_value),
+                "gateway": gateway or "unknown",
+                "provider": provider or "unknown",
+                "status": str(status_value),
+                "count": int(count or 0),
+                "gross_amount": round(float(gross_amount or 0), 2),
+                "linked_fee_amount": round(sum(linked_fees.get(payment_id, 0) for payment_id in payment_ids), 2),
+            })
+        return {
+            "summaries": summaries,
+            "total_count": sum(item["count"] for item in summaries),
+            "total_gross_amount": round(sum(item["gross_amount"] for item in summaries), 2),
+            "total_linked_fee_amount": round(sum(item["linked_fee_amount"] for item in summaries), 2),
         }
 
     def summary(self) -> dict:
