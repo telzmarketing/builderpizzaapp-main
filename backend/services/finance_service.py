@@ -181,6 +181,45 @@ class FinanceService:
             "cancelled_amount": by_status["cancelled"],
         }
 
+    def delivery_earnings(
+        self,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        status: str | None = None,
+    ) -> list[dict]:
+        if date_from and date_to and date_from > date_to:
+            raise FinanceInvalidReference("O periodo de repasses de entrega e invalido.")
+        if status and status not in {"pending", "paid", "cancelled"}:
+            raise FinanceInvalidReference("Status de repasse invalido.")
+        query = (
+            self._db.query(DeliveryEarning)
+            .join(DeliveryPerson, DeliveryPerson.id == DeliveryEarning.delivery_person_id)
+            .options(joinedload(DeliveryEarning.delivery_person))
+            .filter(DeliveryEarning.tenant_id == self._tenant_id)
+        )
+        if date_from:
+            query = query.filter(DeliveryEarning.period_date >= date_from)
+        if date_to:
+            query = query.filter(DeliveryEarning.period_date <= date_to)
+        if status:
+            query = query.filter(DeliveryEarning.status == status)
+        rows = query.order_by(DeliveryEarning.period_date.desc(), DeliveryEarning.created_at.desc()).limit(500).all()
+        return [
+            {
+                "id": row.id,
+                "delivery_id": row.delivery_id,
+                "delivery_person_id": row.delivery_person_id,
+                "delivery_person_name": row.delivery_person.name,
+                "amount": round(float(row.amount or 0), 2),
+                "status": row.status,
+                "period_date": row.period_date,
+                "paid_at": row.paid_at,
+                "paid_by": row.paid_by,
+                "notes": row.notes,
+            }
+            for row in rows
+        ]
+
     def bi_overview(self, date_from: date | None = None, date_to: date | None = None) -> dict:
         today = date.today()
         start = date_from or today.replace(day=1)

@@ -31,6 +31,7 @@ from backend.schemas.finance import (
     FinanceOverviewOut,
     FinancePaymentOverviewOut,
     FinanceDeliveryOverviewOut,
+    FinanceDeliveryEarningOut,
     FinanceCashFlowOut,
     FinanceForecastOut,
     FinanceObligationFromFiscalIn,
@@ -61,6 +62,21 @@ def payment_overview(db: Session = Depends(get_db), _admin: AdminUser = Depends(
 @router.get("/delivery/overview", response_model=FinanceDeliveryOverviewOut)
 def delivery_finance_overview(db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
     return service(db, tenant_context).delivery_finance_overview()
+
+
+@router.get("/delivery/earnings", response_model=list[FinanceDeliveryEarningOut])
+def delivery_earnings(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    status: str | None = Query(default=None, pattern="^(pending|paid|cancelled)$"),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+    tenant_context: TenantContext | None = Depends(panel_operation_context),
+):
+    try:
+        return service(db, tenant_context).delivery_earnings(date_from, date_to, status)
+    except DomainError as exc:
+        return err(exc)
 
 
 @router.get("/bi", response_model=FinanceBiOut)

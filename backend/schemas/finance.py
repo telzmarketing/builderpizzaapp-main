@@ -317,6 +317,19 @@ class FinanceDeliveryOverviewOut(BaseModel):
     cancelled_amount: float
 
 
+class FinanceDeliveryEarningOut(BaseModel):
+    id: str
+    delivery_id: str
+    delivery_person_id: str
+    delivery_person_name: str
+    amount: float
+    status: str
+    period_date: date
+    paid_at: datetime | None = None
+    paid_by: str | None = None
+    notes: str | None = None
+
+
 class FinanceCashFlowLineOut(BaseModel):
     id: str
     movement_date: date

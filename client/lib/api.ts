@@ -2596,6 +2596,19 @@ export interface FinanceDeliveryOverview {
   cancelled_amount: number;
 }
 
+export interface FinanceDeliveryEarning {
+  id: string;
+  delivery_id: string;
+  delivery_person_id: string;
+  delivery_person_name: string;
+  amount: number;
+  status: string;
+  period_date: string;
+  paid_at?: string | null;
+  paid_by?: string | null;
+  notes?: string | null;
+}
+
 export interface FinanceCashFlowLine {
   id: string;
   movement_date: string;
@@ -6459,6 +6472,14 @@ export const financeApi = {
   overview: () => get<FinanceOverview>("/gestao/finance/overview"),
   paymentOverview: () => get<FinancePaymentOverview>("/gestao/finance/payments/overview"),
   deliveryOverview: () => get<FinanceDeliveryOverview>("/gestao/finance/delivery/overview"),
+  deliveryEarnings: (params?: { date_from?: string; date_to?: string; status?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.date_from) query.set("date_from", params.date_from);
+    if (params?.date_to) query.set("date_to", params.date_to);
+    if (params?.status) query.set("status", params.status);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return get<FinanceDeliveryEarning[]>(`/gestao/finance/delivery/earnings${suffix}`);
+  },
   cashFlow: (params?: { date_from?: string; date_to?: string }) => {
     const query = new URLSearchParams();
     if (params?.date_from) query.set("date_from", params.date_from);

@@ -41,6 +41,7 @@ import {
   type FinanceBankReconciliationLine,
   type FinancePaymentOverview,
   type FinanceDeliveryOverview,
+  type FinanceDeliveryEarning,
   type FinanceCashFlow,
   type FinanceBudget,
   type FinanceBudgetInput,
@@ -242,6 +243,7 @@ function FinancePanel() {
   const [paymentOverview, setPaymentOverview] = useState<FinancePaymentOverview | null>(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [deliveryOverview, setDeliveryOverview] = useState<FinanceDeliveryOverview | null>(null);
+  const [deliveryEarnings, setDeliveryEarnings] = useState<FinanceDeliveryEarning[]>([]);
   const [deliveryLoading, setDeliveryLoading] = useState(false);
   const [cashFlow, setCashFlow] = useState<FinanceCashFlow | null>(null);
   const [cashFlowLoading, setCashFlowLoading] = useState(false);
@@ -323,8 +325,8 @@ function FinancePanel() {
   useEffect(() => {
     if (activeModule !== "delivery" && activeModule !== "couriers") return;
     setDeliveryLoading(true);
-    financeApi.deliveryOverview()
-      .then(setDeliveryOverview)
+    Promise.all([financeApi.deliveryOverview(), financeApi.deliveryEarnings()])
+      .then(([overview, earnings]) => { setDeliveryOverview(overview); setDeliveryEarnings(earnings); })
       .catch((err) => setBankError(err instanceof Error ? err.message : "Nao foi possivel carregar os repasses dos entregadores."))
       .finally(() => setDeliveryLoading(false));
   }, [activeModule]);
@@ -991,6 +993,12 @@ function FinancePanel() {
                         <thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Método</th><th className="px-3 py-3">Gateway</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Quantidade</th><th className="px-3 py-3 text-right">Bruto</th><th className="px-3 py-3 text-right">Tarifa vinculada</th></tr></thead>
                         <tbody>{paymentOverview.summaries.map((summary) => <tr key={`${summary.method}-${summary.gateway}-${summary.provider}-${summary.status}`} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{summary.method}</td><td className="px-3 py-3 text-stone">{summary.gateway} · {summary.provider}</td><td className="px-3 py-3 text-stone">{summary.status}</td><td className="px-3 py-3 text-stone">{summary.count}</td><td className="px-3 py-3 text-right font-bold text-cream">{currency(summary.gross_amount)}</td><td className="px-3 py-3 text-right font-bold text-amber-200">{currency(summary.linked_fee_amount)}</td></tr>)}</tbody>
                       </table>}
+                    </div>
+                  </div>
+                  <div className={`${panelClass} overflow-x-auto`}>
+                    <CardHeading icon={ReceiptText} title="Repasses detalhados" description="Valores operacionais originados na logística. O status pago representa o repasse registrado; não cria lançamento financeiro duplicado." />
+                    <div className="mt-4">
+                      {deliveryEarnings.length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhum repasse registrado.</p> : <table className="w-full min-w-[720px] text-left text-sm"><thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Entregador</th><th className="px-3 py-3">Período</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Entrega</th><th className="px-3 py-3 text-right">Valor</th></tr></thead><tbody>{deliveryEarnings.map((earning) => <tr key={earning.id} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{earning.delivery_person_name}</td><td className="px-3 py-3 text-stone">{earning.period_date}</td><td className="px-3 py-3 text-stone">{earning.status}</td><td className="px-3 py-3 text-stone">{earning.delivery_id}</td><td className="px-3 py-3 text-right font-black text-cream">{currency(earning.amount)}</td></tr>)}</tbody></table>}
                     </div>
                   </div>
                 </>
