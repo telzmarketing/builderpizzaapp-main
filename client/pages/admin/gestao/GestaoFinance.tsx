@@ -82,7 +82,7 @@ const financeModuleGroups: Array<{ id: string; title: string; modules: FinanceMo
   { id: "operations", title: "Operação", modules: [
     { id: "payables", title: "Contas a Pagar", description: "Despesas registradas, vencimentos e baixas parciais ou integrais.", status: "Base disponível", icon: ArrowDownCircle },
     { id: "receivables", title: "Contas a Receber", description: "Receitas registradas, vencimentos e registro de recebimentos.", status: "Base disponível", icon: ArrowUpCircle },
-    { id: "cash", title: "Caixa e Tesouraria", description: "Contas e saldos cadastrados. Abertura de caixa, fechamento diário e transferências ainda não estão disponíveis.", status: "Cobertura parcial", icon: Wallet },
+    { id: "cash", title: "Caixa e Tesouraria", description: "Saldos por conta, liquidações e movimentações efetivamente realizadas.", status: "Base disponível", icon: Wallet },
   ] },
   { id: "controlling", title: "Controladoria", modules: [
     { id: "dre", title: "DRE e Resultados", description: "Resultado por competência e grupos da DRE informados pelo resumo. A apropriação completa de CMV não é comprovada por esta visão.", status: "Cobertura parcial", icon: BarChart3 },
@@ -798,6 +798,56 @@ function FinancePanel() {
                 <DimensionList title="Por centro de custo" icon={SlidersHorizontal} rows={data.management.by_cost_center} />
               </div>
             </>
+          )}
+
+          {activeModule === "cash" && (
+            <div className="space-y-5">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <Metric title="Saldo consolidado" value={currency(data.summary.balance)} subtitle="Saldo inicial mais liquidações" icon={Wallet} tone={data.summary.balance >= 0 ? "success" : "warn"} />
+                <Metric title="Receitas liquidadas" value={currency(data.management.cash_realized_income)} subtitle="Entradas efetivamente recebidas" icon={ArrowUpCircle} tone="success" />
+                <Metric title="Despesas liquidadas" value={currency(data.management.cash_realized_expense)} subtitle="Saídas efetivamente pagas" icon={ArrowDownCircle} tone="warn" />
+                <Metric title="Resultado de caixa" value={currency(data.management.cash_realized_result)} subtitle="Receitas menos despesas" icon={TrendingUp} tone={data.management.cash_realized_result >= 0 ? "success" : "warn"} />
+              </div>
+
+              <div className="grid gap-5 xl:grid-cols-[1.1fr_1fr]">
+                <div className={panelClass}>
+                  <CardHeading icon={Landmark} title="Contas e saldos" description="Saldo inicial e posição calculada a partir das liquidações." />
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {data.accounts.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhuma conta cadastrada.</p>
+                    ) : data.accounts.map((account) => (
+                      <div key={account.id} className="rounded-xl border border-surface-03 bg-surface-01 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-black text-cream">{account.name}</p>
+                            <p className="mt-1 text-xs uppercase tracking-wide text-stone">{account.account_type}</p>
+                          </div>
+                          <Wallet size={18} className="text-gold" aria-hidden="true" />
+                        </div>
+                        <p className={`mt-4 text-2xl font-black ${account.current_balance >= 0 ? "text-emerald-200" : "text-amber-200"}`}>{currency(account.current_balance)}</p>
+                        <p className="mt-1 text-xs text-stone">Saldo inicial: {currency(account.opening_balance)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className={panelClass}>
+                  <CardHeading icon={ReceiptText} title="Últimas movimentações" description="Lançamentos com baixa parcial ou integral." />
+                  <div className="mt-4 space-y-2">
+                    {data.transactions.filter((transaction) => transaction.status === "partial" || transaction.status === "paid").slice(0, 8).map((transaction) => (
+                      <div key={transaction.id} className="flex items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-01 px-3 py-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-cream">{transaction.description}</p>
+                          <p className="mt-1 truncate text-xs text-stone">{transaction.account_name || "Conta não informada"} · {transaction.paid_at || transaction.competence_date}</p>
+                        </div>
+                        <p className={`shrink-0 text-sm font-black ${transaction.entry_type === "income" ? "text-emerald-300" : "text-amber-300"}`}>{transaction.entry_type === "income" ? "+" : "-"}{currency(transaction.paid_amount || transaction.amount)}</p>
+                      </div>
+                    ))}
+                    {data.transactions.filter((transaction) => transaction.status === "partial" || transaction.status === "paid").length === 0 && <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhuma movimentação liquidada.</p>}
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
 
           {activeModule === "registries" && <div className="space-y-5">
