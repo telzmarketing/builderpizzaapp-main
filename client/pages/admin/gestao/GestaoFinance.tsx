@@ -42,6 +42,8 @@ import {
   type FinancePaymentOverview,
   type FinanceDeliveryOverview,
   type FinanceCashFlow,
+  type FinanceBudget,
+  type FinanceBudgetInput,
   type FinanceAccountInput,
   type FinanceCategory,
   type FinanceCategoryInput,
@@ -90,7 +92,7 @@ const financeModuleGroups: Array<{ id: string; title: string; modules: FinanceMo
   { id: "controlling", title: "Controladoria", modules: [
     { id: "dre", title: "DRE e Resultados", description: "Receitas e despesas por competência, com CMV operacional separado e pendências de cobertura explícitas.", status: "Base disponível", icon: BarChart3 },
     { id: "cmv", title: "Custos e CMV", description: "Custos por snapshot de venda, cobertura, pendências e impacto operacional apresentados junto da DRE.", status: "Base disponível", icon: Tags },
-    { id: "budget", title: "Orçamento Empresarial", description: "Agrupamentos por centro de custo estão disponíveis. Cadastro governado de centros, orçamento e comparação orçado versus realizado ainda não estão disponíveis.", status: "Cobertura parcial", icon: Target },
+    { id: "budget", title: "Orçamento Empresarial", description: "Criação de períodos orçamentários e comparação entre valores planejados e lançamentos realizados.", status: "Base disponível", icon: Target },
     { id: "bi", title: "BI Financeiro", description: "Distribuição dos valores por canal, categoria e centro de custo. Análises avançadas e séries históricas ainda não estão disponíveis.", status: "Cobertura parcial", icon: TrendingUp },
   ] },
   { id: "treasury", title: "Tesouraria", modules: [
@@ -241,6 +243,17 @@ function FinancePanel() {
   const [deliveryLoading, setDeliveryLoading] = useState(false);
   const [cashFlow, setCashFlow] = useState<FinanceCashFlow | null>(null);
   const [cashFlowLoading, setCashFlowLoading] = useState(false);
+  const [budgets, setBudgets] = useState<FinanceBudget[]>([]);
+  const [budgetLoading, setBudgetLoading] = useState(false);
+  const [budgetSaving, setBudgetSaving] = useState(false);
+  const [budgetDraft, setBudgetDraft] = useState<FinanceBudgetInput>({
+    name: "",
+    period_start: `${today().slice(0, 8)}01`,
+    period_end: today(),
+    status: "draft",
+    notes: "",
+    lines: [{ category_id: null, cost_center: "", entry_type: "expense", planned_amount: 0, notes: "" }],
+  });
   const bankFileRef = useRef<HTMLInputElement>(null);
   const [settlementDrafts, setSettlementDrafts] = useState<Record<string, FinanceSettlementInput>>({});
   const [transactionQuery, setTransactionQuery] = useState("");
@@ -262,6 +275,15 @@ function FinancePanel() {
 
   useEffect(() => {
     headingRef.current?.focus({ preventScroll: true });
+  }, [activeModule]);
+
+  useEffect(() => {
+    if (activeModule !== "budget") return;
+    setBudgetLoading(true);
+    financeApi.listBudgets()
+      .then(setBudgets)
+      .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar os orcamentos."))
+      .finally(() => setBudgetLoading(false));
   }, [activeModule]);
 
   useEffect(() => {
@@ -443,6 +465,21 @@ function FinancePanel() {
       setError(err instanceof Error ? err.message : "Nao foi possivel salvar categoria.");
     } finally {
       setSaving("");
+    }
+  };
+
+  const createBudget = async () => {
+    if (!budgetDraft.name.trim() || budgetDraft.lines.some((line) => Number(line.planned_amount) < 0)) return;
+    setBudgetSaving(true);
+    setError("");
+    try {
+      await financeApi.createBudget({ ...budgetDraft, name: budgetDraft.name.trim(), lines: budgetDraft.lines.map((line) => ({ ...line, planned_amount: Number(line.planned_amount || 0) })) });
+      setBudgetDraft((draft) => ({ ...draft, name: "", notes: "", lines: [{ category_id: null, cost_center: "", entry_type: "expense", planned_amount: 0, notes: "" }] }));
+      setBudgets(await financeApi.listBudgets());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel salvar o orcamento.");
+    } finally {
+      setBudgetSaving(false);
     }
   };
 
@@ -953,6 +990,37 @@ function FinancePanel() {
                   <div className="rounded-xl border border-surface-03 bg-surface-01 p-4"><p className="text-xs font-black uppercase tracking-wide text-stone">Percentual CMV</p><p className="mt-2 text-lg font-black text-cream">{data.management.operational_cmv.cmv_percent == null ? "-" : `${data.management.operational_cmv.cmv_percent.toFixed(2)}%`}</p></div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeModule === "budget" && (
+            <div className="space-y-5">
+              <div className={panelClass}>
+                <CardHeading icon={Target} title="Novo orçamento" description="Defina um período e linhas planejadas. O realizado é calculado somente a partir dos lançamentos financeiros do mesmo período." />
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <input className={inputClass} placeholder="Nome do orçamento" value={budgetDraft.name} onChange={(event) => setBudgetDraft({ ...budgetDraft, name: event.target.value })} />
+                  <input aria-label="Início do orçamento" className={inputClass} type="date" value={budgetDraft.period_start} onChange={(event) => setBudgetDraft({ ...budgetDraft, period_start: event.target.value })} />
+                  <input aria-label="Fim do orçamento" className={inputClass} type="date" value={budgetDraft.period_end} onChange={(event) => setBudgetDraft({ ...budgetDraft, period_end: event.target.value })} />
+                  <button type="button" className={buttonClass} onClick={createBudget} disabled={budgetSaving || !budgetDraft.name.trim()}>{budgetSaving ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Criar orçamento</button>
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-[1fr_12rem_12rem]">
+                  <select aria-label="Categoria orçamentária" className={inputClass} value={budgetDraft.lines[0]?.category_id || ""} onChange={(event) => setBudgetDraft({ ...budgetDraft, lines: [{ ...budgetDraft.lines[0], category_id: event.target.value || null }] })}>
+                    <option value="">Todas as categorias</option>
+                    {(data?.categories ?? []).filter((category) => category.entry_type === budgetDraft.lines[0]?.entry_type).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                  </select>
+                  <input aria-label="Centro de custo orçamentário" className={inputClass} placeholder="Centro de custo" value={budgetDraft.lines[0]?.cost_center || ""} onChange={(event) => setBudgetDraft({ ...budgetDraft, lines: [{ ...budgetDraft.lines[0], cost_center: event.target.value }] })} />
+                  <input aria-label="Valor planejado" className={inputClass} type="number" min="0" step="0.01" placeholder="Valor planejado" value={budgetDraft.lines[0]?.planned_amount || ""} onChange={(event) => setBudgetDraft({ ...budgetDraft, lines: [{ ...budgetDraft.lines[0], planned_amount: Number(event.target.value || 0) }] })} />
+                </div>
+              </div>
+              {budgetLoading ? <div className="flex min-h-40 items-center justify-center rounded-2xl border border-surface-03 bg-surface-02 text-stone"><Loader2 size={22} className="mr-2 animate-spin text-gold" />Carregando orçamentos...</div> : <div className="space-y-4">
+                {budgets.length === 0 ? <div className={panelClass}><p className="text-sm text-stone">Nenhum orçamento cadastrado.</p></div> : budgets.map((budget) => (
+                  <div key={budget.id} className={panelClass}>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-lg font-black text-cream">{budget.name}</p><p className="mt-1 text-sm text-stone">{budget.period_start} a {budget.period_end} · {budget.status}</p></div><p className={`text-xl font-black ${budget.variance_result <= 0 ? "text-emerald-300" : "text-amber-300"}`}>{currency(budget.variance_result)} <span className="text-xs font-bold text-stone">variação</span></p></div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-4"><Metric title="Planejado receitas" value={currency(budget.planned_income)} icon={ArrowUpCircle} tone="success" /><Metric title="Realizado receitas" value={currency(budget.actual_income)} icon={CheckCircle2} tone="success" /><Metric title="Planejado despesas" value={currency(budget.planned_expense)} icon={ArrowDownCircle} tone="warn" /><Metric title="Realizado despesas" value={currency(budget.actual_expense)} icon={TrendingUp} tone="warn" /></div>
+                    <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Categoria</th><th className="px-3 py-3">Centro</th><th className="px-3 py-3">Tipo</th><th className="px-3 py-3 text-right">Planejado</th><th className="px-3 py-3 text-right">Realizado</th><th className="px-3 py-3 text-right">Variação</th></tr></thead><tbody>{budget.lines.map((line) => <tr key={line.id} className="border-b border-surface-03/70"><td className="px-3 py-3 text-cream">{line.category_name || "Todas"}</td><td className="px-3 py-3 text-stone">{line.cost_center || "Todos"}</td><td className="px-3 py-3 text-stone">{line.entry_type}</td><td className="px-3 py-3 text-right text-cream">{currency(line.planned_amount)}</td><td className="px-3 py-3 text-right text-cream">{currency(line.actual_amount)}</td><td className={`px-3 py-3 text-right font-bold ${line.variance_amount <= 0 ? "text-emerald-300" : "text-amber-300"}`}>{currency(line.variance_amount)}</td></tr>)}</tbody></table></div>
+                  </div>
+                ))}
+              </div>}
             </div>
           )}
 

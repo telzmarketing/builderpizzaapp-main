@@ -331,6 +331,46 @@ class FinanceCashFlowOut(BaseModel):
     lines: list[FinanceCashFlowLineOut]
 
 
+class FinanceBudgetLineIn(BaseModel):
+    category_id: str | None = None
+    cost_center: str | None = Field(default=None, max_length=120)
+    entry_type: FinanceEntryType = "expense"
+    planned_amount: Decimal = Field(ge=0, max_digits=20, decimal_places=2)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class FinanceBudgetIn(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    period_start: date
+    period_end: date
+    status: Literal["draft", "active", "closed"] = "draft"
+    notes: str | None = Field(default=None, max_length=2000)
+    lines: list[FinanceBudgetLineIn] = Field(min_length=1, max_length=500)
+
+
+class FinanceBudgetLineOut(FinanceBudgetLineIn):
+    id: str
+    category_name: str | None = None
+    actual_amount: float
+    variance_amount: float
+
+
+class FinanceBudgetOut(BaseModel):
+    id: str
+    tenant_id: str
+    name: str
+    period_start: date
+    period_end: date
+    status: str
+    notes: str | None = None
+    planned_income: float
+    planned_expense: float
+    actual_income: float
+    actual_expense: float
+    variance_result: float
+    lines: list[FinanceBudgetLineOut]
+
+
 class FinanceObligationInstallmentIn(BaseModel):
     installment_number: int = Field(ge=1)
     amount: Decimal = Field(gt=0, max_digits=20, decimal_places=2)

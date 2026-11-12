@@ -14,7 +14,7 @@ from backend.core.exceptions import DomainError
 from backend.core.tenant_context import TenantContext, TenantContextMissing
 from backend.core.wave7_tenant_orm import wave7_orm_enabled
 from backend.models.finance import (
-    FinanceAccount, FinanceCategory, FinanceCounterparty, FinanceObligation,
+    FinanceAccount, FinanceBudget, FinanceBudgetLine, FinanceCategory, FinanceCounterparty, FinanceObligation,
     FinanceBankReconciliationEvent, FinanceBankStatement, FinanceBankStatementLine, FinanceObligationInstallment,
     FinanceSettlement, FinanceTransaction,
 )
@@ -27,7 +27,7 @@ from backend.models.order import Order, OrderStatus
 from backend.models.payment import Payment, PaymentStatus
 from backend.models.delivery import DeliveryEarning, DeliveryPerson
 from backend.schemas.finance import (
-    FinanceAccountIn, FinanceCategoryIn, FinanceCounterpartyIn,
+    FinanceAccountIn, FinanceBudgetIn, FinanceCategoryIn, FinanceCounterpartyIn,
     FinanceBankMatchIn, FinanceBankReconciliationReasonIn, FinanceBankStatementImportIn, FinanceObligationFromFiscalIn,
     FinanceSettlementIn, FinanceTransactionIn,
 )
@@ -232,6 +232,109 @@ class FinanceService:
             "closing_realized_balance": round(opening + realized_income - realized_expense, 2),
             "closing_projected_balance": round(opening + projected_income - projected_expense, 2),
             "lines": sorted(lines, key=lambda line: (line["movement_date"], line["id"]), reverse=True),
+        }
+
+    def list_budgets(self) -> list[dict]:
+        rows = (
+            self._db.query(FinanceBudget)
+            .filter(FinanceBudget.tenant_id == self._tenant_id)
+            .options(joinedload(FinanceBudget.lines).joinedload(FinanceBudgetLine.category))
+            .order_by(FinanceBudget.period_start.desc(), FinanceBudget.created_at.desc())
+            .limit(200)
+            .all()
+        )
+        transactions = (
+            self._db.query(FinanceTransaction)
+            .filter(FinanceTransaction.tenant_id == self._tenant_id, FinanceTransaction.status != "cancelled")
+            .all()
+        )
+        return [self._serialize_budget(row, transactions) for row in rows]
+
+    def create_budget(self, payload: FinanceBudgetIn, admin_id: str | None = None) -> dict:
+        if payload.period_start > payload.period_end:
+            raise FinanceInvalidReference("O período do orçamento é inválido.")
+        lines = []
+        for item in payload.lines:
+            category = self._get_category(item.category_id) if item.category_id else None
+            if category and category.entry_type != item.entry_type:
+                raise FinanceInvalidReference("A categoria do orçamento não corresponde ao tipo do valor.")
+            lines.append(FinanceBudgetLine(
+                id=f"fin-budget-line-{uuid.uuid4().hex[:12]}",
+                tenant_id=self._tenant_id,
+                category_id=item.category_id,
+                cost_center=item.cost_center.strip() if item.cost_center else None,
+                entry_type=item.entry_type,
+                planned_amount=self._money(item.planned_amount, "valor planejado"),
+                notes=item.notes,
+            ))
+        row = FinanceBudget(
+            id=f"fin-budget-{uuid.uuid4().hex[:12]}",
+            tenant_id=self._tenant_id,
+            name=payload.name.strip(),
+            period_start=payload.period_start,
+            period_end=payload.period_end,
+            status=payload.status,
+            notes=payload.notes,
+            created_by_admin_id=admin_id,
+            lines=lines,
+        )
+        self._db.add(row)
+        try:
+            self._db.commit()
+        except Exception:
+            self._db.rollback()
+            raise
+        self._db.refresh(row)
+        return self._serialize_budget(row, [])
+
+    def _serialize_budget(self, row: FinanceBudget, transactions: list[FinanceTransaction]) -> dict:
+        def actual_for(line: FinanceBudgetLine) -> float:
+            total = 0.0
+            for transaction in transactions:
+                if transaction.competence_date < row.period_start or transaction.competence_date > row.period_end:
+                    continue
+                if transaction.entry_type != line.entry_type:
+                    continue
+                if line.category_id and transaction.category_id != line.category_id:
+                    continue
+                if line.cost_center and (transaction.cost_center or "") != line.cost_center:
+                    continue
+                total += float(transaction.amount or 0.0)
+            return round(total, 2)
+
+        serialized_lines = []
+        for line in row.lines:
+            actual = actual_for(line)
+            planned = float(line.planned_amount or 0.0)
+            serialized_lines.append({
+                "id": line.id,
+                "category_id": line.category_id,
+                "category_name": line.category.name if line.category else None,
+                "cost_center": line.cost_center,
+                "entry_type": line.entry_type,
+                "planned_amount": planned,
+                "notes": line.notes,
+                "actual_amount": actual,
+                "variance_amount": round(actual - planned, 2),
+            })
+        planned_income = sum(line["planned_amount"] for line in serialized_lines if line["entry_type"] == "income")
+        planned_expense = sum(line["planned_amount"] for line in serialized_lines if line["entry_type"] == "expense")
+        actual_income = sum(line["actual_amount"] for line in serialized_lines if line["entry_type"] == "income")
+        actual_expense = sum(line["actual_amount"] for line in serialized_lines if line["entry_type"] == "expense")
+        return {
+            "id": row.id,
+            "tenant_id": row.tenant_id,
+            "name": row.name,
+            "period_start": row.period_start,
+            "period_end": row.period_end,
+            "status": row.status,
+            "notes": row.notes,
+            "planned_income": round(planned_income, 2),
+            "planned_expense": round(planned_expense, 2),
+            "actual_income": round(actual_income, 2),
+            "actual_expense": round(actual_expense, 2),
+            "variance_result": round((actual_income - actual_expense) - (planned_income - planned_expense), 2),
+            "lines": serialized_lines,
         }
 
     def summary(self) -> dict:

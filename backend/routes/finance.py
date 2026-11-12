@@ -21,6 +21,8 @@ from backend.schemas.finance import (
     FinanceBankReconciliationReasonIn,
     FinanceBankReconciliationLineOut,
     FinanceBankStatementOut,
+    FinanceBudgetIn,
+    FinanceBudgetOut,
     FinanceCategoryIn,
     FinanceCategoryOut,
     FinanceCounterpartyIn,
@@ -69,6 +71,19 @@ def cash_flow(
 ):
     try:
         return service(db, tenant_context).cash_flow(date_from, date_to)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.get("/budgets", response_model=list[FinanceBudgetOut])
+def list_budgets(db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    return service(db, tenant_context).list_budgets()
+
+
+@router.post("/budgets", response_model=FinanceBudgetOut, status_code=201)
+def create_budget(body: FinanceBudgetIn, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).create_budget(body, admin.id)
     except DomainError as exc:
         return err(exc)
 

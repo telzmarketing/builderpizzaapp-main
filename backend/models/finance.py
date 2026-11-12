@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, CheckConstraint
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -27,6 +27,49 @@ class FinanceAccount(Base):
 
     transactions = relationship("FinanceTransaction", back_populates="account")
     __table_args__ = (Index("uq_finance_accounts_tenant_id_id", "tenant_id", "id", unique=True),)
+
+
+class FinanceBudget(Base):
+    __tablename__ = "finance_budgets"
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_finance_budgets_tenant"), nullable=False)
+    name = Column(String(160), nullable=False)
+    period_start = Column(Date, nullable=False, index=True)
+    period_end = Column(Date, nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="draft", index=True)
+    notes = Column(Text, nullable=True)
+    created_by_admin_id = Column(String, ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    lines = relationship("FinanceBudgetLine", cascade="all, delete-orphan", back_populates="budget", order_by="FinanceBudgetLine.id")
+    __table_args__ = (
+        Index("uq_finance_budgets_tenant_id_id", "tenant_id", "id", unique=True),
+        CheckConstraint("period_end >= period_start", name="ck_finance_budgets_period"),
+        CheckConstraint("status IN ('draft', 'active', 'closed')", name="ck_finance_budgets_status"),
+    )
+
+
+class FinanceBudgetLine(Base):
+    __tablename__ = "finance_budget_lines"
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_finance_budget_lines_tenant"), nullable=False)
+    budget_id = Column(String, ForeignKey("finance_budgets.id", ondelete="CASCADE"), nullable=False, index=True)
+    category_id = Column(String, ForeignKey("finance_categories.id", ondelete="SET NULL"), nullable=True, index=True)
+    cost_center = Column(String(120), nullable=True, index=True)
+    entry_type = Column(String(20), nullable=False, default="expense")
+    planned_amount = Column(Numeric(20, 2), nullable=False, default=0)
+    notes = Column(Text, nullable=True)
+
+    budget = relationship("FinanceBudget", back_populates="lines")
+    category = relationship("FinanceCategory")
+    __table_args__ = (
+        Index("uq_finance_budget_lines_tenant_id_id", "tenant_id", "id", unique=True),
+        CheckConstraint("entry_type IN ('income', 'expense')", name="ck_finance_budget_lines_entry_type"),
+        CheckConstraint("planned_amount >= 0", name="ck_finance_budget_lines_amount"),
+    )
 
 
 class FinanceBankStatement(Base):

@@ -2623,6 +2623,46 @@ export interface FinanceCashFlow {
   lines: FinanceCashFlowLine[];
 }
 
+export interface FinanceBudgetLineInput {
+  category_id?: string | null;
+  cost_center?: string | null;
+  entry_type: FinanceEntryType;
+  planned_amount: number;
+  notes?: string | null;
+}
+
+export interface FinanceBudgetInput {
+  name: string;
+  period_start: string;
+  period_end: string;
+  status?: "draft" | "active" | "closed";
+  notes?: string | null;
+  lines: FinanceBudgetLineInput[];
+}
+
+export interface FinanceBudgetLine extends FinanceBudgetLineInput {
+  id: string;
+  category_name?: string | null;
+  actual_amount: number;
+  variance_amount: number;
+}
+
+export interface FinanceBudget {
+  id: string;
+  tenant_id: string;
+  name: string;
+  period_start: string;
+  period_end: string;
+  status: string;
+  notes?: string | null;
+  planned_income: number;
+  planned_expense: number;
+  actual_income: number;
+  actual_expense: number;
+  variance_result: number;
+  lines: FinanceBudgetLine[];
+}
+
 export interface FinanceBankStatementLineInput {
   external_id: string;
   transaction_date: string;
@@ -6387,6 +6427,8 @@ export const financeApi = {
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return get<FinanceCashFlow>(`/gestao/finance/cash-flow${suffix}`);
   },
+  listBudgets: () => get<FinanceBudget[]>("/gestao/finance/budgets"),
+  createBudget: (data: FinanceBudgetInput) => post<FinanceBudget>("/gestao/finance/budgets", data),
   listBankStatements: () => get<FinanceBankStatement[]>("/gestao/finance/bank-statements"),
   listBankStatementLines: (id: string) => get<FinanceBankStatementLine[]>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/lines`),
   listBankReconciliation: (id: string) => get<FinanceBankReconciliationLine[]>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/reconciliation`),
