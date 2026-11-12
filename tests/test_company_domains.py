@@ -148,6 +148,35 @@ def test_create_ignores_no_tenant_input_and_returns_challenge_only_once(company)
     assert company.db.query(PlatformAuditLog).filter(PlatformAuditLog.action == "domain_created").one().actor_user_id == "admin-a"
 
 
+def test_platform_hostname_reservation_does_not_block_company_hostname(company):
+    company.settings.TENANT_DOMAINS_PLATFORM_HOSTNAMES = "app.telz.com.br"
+    response = company.client.post(
+        "/api/admin/company/domains", headers=company.headers(),
+        json={"hostname": "app.grantorinopizzaria.com.br", "kind": "custom"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["domain"]["hostname"] == "app.grantorinopizzaria.com.br"
+
+
+def test_platform_hostname_and_real_registry_conflicts_remain_blocked(company):
+    company.settings.TENANT_DOMAINS_PLATFORM_HOSTNAMES = "app.telz.com.br"
+
+    reserved = company.client.post(
+        "/api/admin/company/domains", headers=company.headers(),
+        json={"hostname": "app.telz.com.br", "kind": "custom"},
+    )
+    assert reserved.status_code == 409
+    assert reserved.json() == {"error": "PlatformHostnameReserved"}
+
+    registered = company.client.post(
+        "/api/admin/company/domains", headers=company.headers(),
+        json={"hostname": "b.example.com", "kind": "custom"},
+    )
+    assert registered.status_code == 409
+    assert registered.json() == {"error": "HostnameAlreadyRegistered"}
+
+
 def test_authorized_actor_must_match_panel_membership_exactly():
     from fastapi import HTTPException
     from backend.core.rbac_authorization import AuthorizedTenantActor

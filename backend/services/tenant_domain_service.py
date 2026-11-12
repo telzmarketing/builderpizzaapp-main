@@ -22,6 +22,23 @@ class TenantDomainConflict(DomainError):
     http_status = 409
 
 
+class PlatformHostnameReserved(TenantDomainConflict):
+    """A platform-owned hostname cannot be assigned to a tenant."""
+
+    def __init__(self):
+        super().__init__(
+            "Dominio principal da plataforma nao pode ser vinculado a tenant.",
+            code="PlatformHostnameReserved",
+        )
+
+
+class HostnameAlreadyRegistered(TenantDomainConflict):
+    """The hostname is already bound in the tenant-domain registry."""
+
+    def __init__(self):
+        super().__init__("Hostname ja cadastrado.", code="HostnameAlreadyRegistered")
+
+
 def parse_hostname_set(raw: str) -> frozenset[str]:
     return frozenset(normalize_hostname(item) for item in raw.split(",") if item.strip())
 
@@ -66,7 +83,7 @@ class TenantDomainService:
                        platform_hostnames: frozenset[str]) -> tuple[TenantDomain, str]:
         normalized = normalize_hostname(hostname)
         if normalized in platform_hostnames:
-            raise TenantDomainConflict("Dominio principal da plataforma nao pode ser vinculado a tenant.")
+            raise PlatformHostnameReserved()
         if kind not in {"subdomain", "custom"}:
             raise TenantDomainValidationError("Tipo de dominio invalido.")
         tenant = self._db.query(Tenant).filter(
@@ -75,7 +92,7 @@ class TenantDomainService:
         if tenant is None:
             raise TenantContextMissing("Tenant inexistente ou inativo.")
         if self._db.query(TenantDomain).filter(TenantDomain.hostname.ilike(normalized)).first() is not None:
-            raise TenantDomainConflict("Hostname ja cadastrado.")
+            raise HostnameAlreadyRegistered()
         token = secrets.token_urlsafe(32)
         domain = TenantDomain(
             id=str(uuid.uuid4()), tenant_id=tenant_id, hostname=normalized,

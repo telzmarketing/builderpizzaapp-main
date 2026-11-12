@@ -10,7 +10,7 @@ from backend.core.tenant_context import TenantSource
 from backend.models.tenant_domain import TenantDomain
 from backend.schemas.tenant_domain import TenantDomainOut
 from backend.services.platform_audit_service import PlatformAuditService
-from backend.services.tenant_domain_service import TenantDomainConflict, TenantDomainService, parse_hostname_set
+from backend.services.tenant_domain_service import HostnameAlreadyRegistered, TenantDomainService, parse_hostname_set
 from backend.services.tenant_domain_ssl_service import TenantDomainSSLService
 
 
@@ -54,7 +54,7 @@ class TenantDomainSelfService:
             self.db.commit()
         except IntegrityError as exc:
             self.db.rollback()
-            raise TenantDomainConflict("Hostname ja cadastrado.") from exc
+            raise HostnameAlreadyRegistered() from exc
         return {"domain": self.public(domain), "verification": lifecycle.verification_challenge(domain, token)}
 
     def action(self, domain_id, action, *, request=None):

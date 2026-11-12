@@ -2,8 +2,9 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from backend.models.tenant_domain import TenantDomain
 from backend.services.tenant_domain_service import (
-    TenantDomainService, parse_hostname_set, remote_is_trusted,
-    TenantDomainValidationError, trusted_request_hostname, verification_token_hash,
+    HostnameAlreadyRegistered, PlatformHostnameReserved, TenantDomainService,
+    parse_hostname_set, remote_is_trusted, TenantDomainValidationError,
+    trusted_request_hostname, verification_token_hash,
 )
 
 
@@ -51,3 +52,13 @@ def test_wrong_verification_proof_does_not_publish() -> None:
     with pytest.raises(TenantDomainValidationError, match="invalida"):
         service.confirm_verification(domain, "wrong")
     assert domain.status == "pending"
+
+
+def test_domain_conflict_errors_have_distinct_codes_and_legacy_messages() -> None:
+    reserved = PlatformHostnameReserved()
+    registered = HostnameAlreadyRegistered()
+
+    assert reserved.code == "PlatformHostnameReserved"
+    assert reserved.message == "Dominio principal da plataforma nao pode ser vinculado a tenant."
+    assert registered.code == "HostnameAlreadyRegistered"
+    assert registered.message == "Hostname ja cadastrado."
