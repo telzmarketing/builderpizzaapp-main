@@ -88,8 +88,8 @@ const financeModuleGroups: Array<{ id: string; title: string; modules: FinanceMo
     { id: "cash", title: "Caixa e Tesouraria", description: "Saldos por conta, liquidações e movimentações efetivamente realizadas.", status: "Base disponível", icon: Wallet },
   ] },
   { id: "controlling", title: "Controladoria", modules: [
-    { id: "dre", title: "DRE e Resultados", description: "Resultado por competência e grupos da DRE informados pelo resumo. A apropriação completa de CMV não é comprovada por esta visão.", status: "Cobertura parcial", icon: BarChart3 },
-    { id: "cmv", title: "Custos e CMV", description: "A apuração de custos pertence ao módulo CMV do ERP. A integração completa dos custos à DRE ainda não está disponível aqui.", status: "Cobertura parcial", icon: Tags },
+    { id: "dre", title: "DRE e Resultados", description: "Receitas e despesas por competência, com CMV operacional separado e pendências de cobertura explícitas.", status: "Base disponível", icon: BarChart3 },
+    { id: "cmv", title: "Custos e CMV", description: "Custos por snapshot de venda, cobertura, pendências e impacto operacional apresentados junto da DRE.", status: "Base disponível", icon: Tags },
     { id: "budget", title: "Orçamento Empresarial", description: "Agrupamentos por centro de custo estão disponíveis. Cadastro governado de centros, orçamento e comparação orçado versus realizado ainda não estão disponíveis.", status: "Cobertura parcial", icon: Target },
     { id: "bi", title: "BI Financeiro", description: "Distribuição dos valores por canal, categoria e centro de custo. Análises avançadas e séries históricas ainda não estão disponíveis.", status: "Cobertura parcial", icon: TrendingUp },
   ] },
@@ -934,6 +934,25 @@ function FinancePanel() {
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {(activeModule === "dre" || activeModule === "cmv") && (
+            <div className="space-y-5">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <Metric title="Receita competência" value={currency(data.management.accrual_income)} subtitle="Lançamentos financeiros de receita" icon={ArrowUpCircle} tone="success" />
+                <Metric title="CMV operacional" value={currency(data.management.operational_cmv.cost_total)} subtitle={`${data.management.operational_cmv.snapshot_count} snapshots · ${data.management.operational_cmv.pending_count} pendentes`} icon={Tags} tone={data.management.operational_cmv.pending_count ? "warn" : "success"} />
+                <Metric title="Despesas competência" value={currency(data.management.accrual_expense)} subtitle="Lançamentos financeiros de despesa" icon={ArrowDownCircle} tone="warn" />
+                <Metric title="Resultado competência" value={currency(data.management.accrual_result)} subtitle={`CMV ${data.management.operational_cmv.status === "complete" ? "disponível separadamente" : "pendente"}`} icon={BarChart3} tone={data.management.accrual_result >= 0 ? "success" : "warn"} />
+              </div>
+              <div className={panelClass}>
+                <CardHeading icon={BarChart3} title="DRE e CMV operacional" description="A DRE mantém competência financeira separada do CMV operacional. O custo é exibido apenas quando existe snapshot histórico; nenhuma estimativa atual de ficha técnica é lançada automaticamente na DRE." />
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-xl border border-surface-03 bg-surface-01 p-4"><p className="text-xs font-black uppercase tracking-wide text-stone">Status da DRE</p><p className="mt-2 text-lg font-black text-gold">{data.management.dre_label}</p></div>
+                  <div className="rounded-xl border border-surface-03 bg-surface-01 p-4"><p className="text-xs font-black uppercase tracking-wide text-stone">Receita dos snapshots</p><p className="mt-2 text-lg font-black text-cream">{currency(data.management.operational_cmv.sale_total)}</p></div>
+                  <div className="rounded-xl border border-surface-03 bg-surface-01 p-4"><p className="text-xs font-black uppercase tracking-wide text-stone">Percentual CMV</p><p className="mt-2 text-lg font-black text-cream">{data.management.operational_cmv.cmv_percent == null ? "-" : `${data.management.operational_cmv.cmv_percent.toFixed(2)}%`}</p></div>
+                </div>
+              </div>
             </div>
           )}
 

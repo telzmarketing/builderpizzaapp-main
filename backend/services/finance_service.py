@@ -23,8 +23,8 @@ from backend.models.inventory import InventoryPurchase
 from backend.models.inventory_receipts import InventoryReceiptDocument
 from backend.models.fiscal import FiscalDocument
 from backend.models.cmv import OrderCmvSnapshot
-from backend.models.order import Order
-from backend.models.payment import Payment
+from backend.models.order import Order, OrderStatus
+from backend.models.payment import Payment, PaymentStatus
 from backend.models.delivery import DeliveryEarning, DeliveryPerson
 from backend.schemas.finance import (
     FinanceAccountIn, FinanceCategoryIn, FinanceCounterpartyIn,
@@ -660,7 +660,8 @@ class FinanceService:
         cash_expense = sum(self._cash_effect(row) for row in transactions if row.entry_type == "expense" and row.status in {"partial", "paid"})
         accrual_income = sum(float(row.amount or 0.0) for row in transactions if row.entry_type == "income")
         accrual_expense = sum(float(row.amount or 0.0) for row in transactions if row.entry_type == "expense")
-        cmv_count = self._db.query(OrderCmvSnapshot).filter(OrderCmvSnapshot.tenant_id == self._tenant_id).count()
+        operational_cmv = self._operational_cmv_summary()
+        cmv_count = operational_cmv["snapshot_count"]
         dre_lines: dict[tuple[str, str], dict] = {}
         origin_lines: dict[tuple[str, str], dict] = {}
         category_lines: dict[tuple[str, str], dict] = {}
@@ -679,8 +680,8 @@ class FinanceService:
             self._add_dimension(cost_center_lines, cost_center, row.entry_type, amount)
             self._add_dimension(channel_lines, channel, row.entry_type, amount)
 
-        dre_status = "complete_with_operational_cmv" if cmv_count else "partial_without_cmv"
-        dre_label = "DRE completa com CMV operacional" if cmv_count else "DRE parcial sem CMV"
+        dre_status = "complete_with_operational_cmv" if cmv_count and operational_cmv["pending_count"] == 0 else "partial_without_cmv"
+        dre_label = "DRE completa com CMV operacional" if dre_status == "complete_with_operational_cmv" else "DRE parcial com CMV pendente"
         return {
             "cash_realized_income": round(cash_income, 2),
             "cash_realized_expense": round(cash_expense, 2),
@@ -688,6 +689,7 @@ class FinanceService:
             "accrual_income": round(accrual_income, 2),
             "accrual_expense": round(accrual_expense, 2),
             "accrual_result": round(accrual_income - accrual_expense, 2),
+            "operational_cmv": operational_cmv,
             "dre_status": dre_status,
             "dre_label": dre_label,
             "dre_lines": [
@@ -701,6 +703,36 @@ class FinanceService:
             "by_category": self._dimension_rows(category_lines),
             "by_cost_center": self._dimension_rows(cost_center_lines),
             "by_channel": self._dimension_rows(channel_lines),
+        }
+
+    def _operational_cmv_summary(self) -> dict:
+        effective_statuses = [
+            OrderStatus.paid,
+            OrderStatus.pago,
+            OrderStatus.preparing,
+            OrderStatus.ready_for_pickup,
+            OrderStatus.on_the_way,
+            OrderStatus.delivered,
+        ]
+        rows = (
+            self._db.query(OrderCmvSnapshot)
+            .join(Order, Order.id == OrderCmvSnapshot.order_id)
+            .join(Payment, Payment.order_id == Order.id)
+            .filter(OrderCmvSnapshot.tenant_id == self._tenant_id)
+            .filter(Payment.tenant_id == self._tenant_id, Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]))
+            .filter(Order.status.in_(effective_statuses))
+            .all()
+        )
+        sale_total = round(sum(float(row.sale_total or 0.0) for row in rows), 2)
+        cost_total = round(sum(float(row.cost_total or 0.0) for row in rows), 2)
+        pending_count = sum(1 for row in rows if row.missing_recipe or row.missing_cost)
+        return {
+            "snapshot_count": len(rows),
+            "pending_count": pending_count,
+            "sale_total": sale_total,
+            "cost_total": cost_total,
+            "cmv_percent": round((cost_total / sale_total) * 100, 2) if sale_total > 0 else None,
+            "status": "complete" if rows and pending_count == 0 else "pending" if rows else "not_available",
         }
 
     def create_transaction(self, payload: FinanceTransactionIn, admin_id: str | None = None) -> dict:

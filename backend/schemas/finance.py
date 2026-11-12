@@ -236,6 +236,15 @@ class FinanceDimensionSummaryOut(BaseModel):
     count: int
 
 
+class FinanceOperationalCmvOut(BaseModel):
+    snapshot_count: int
+    pending_count: int
+    sale_total: float
+    cost_total: float
+    cmv_percent: float | None = None
+    status: str
+
+
 class FinanceManagementOut(BaseModel):
     cash_realized_income: float
     cash_realized_expense: float
@@ -243,6 +252,7 @@ class FinanceManagementOut(BaseModel):
     accrual_income: float
     accrual_expense: float
     accrual_result: float
+    operational_cmv: FinanceOperationalCmvOut
     dre_status: str
     dre_label: str
     dre_lines: list[FinanceDreLineOut]

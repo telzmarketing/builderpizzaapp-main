@@ -2800,6 +2800,7 @@ export interface FinanceManagement {
   accrual_income: number;
   accrual_expense: number;
   accrual_result: number;
+  operational_cmv: FinanceOperationalCmv;
   dre_status: string;
   dre_label: string;
   dre_lines: FinanceDreLine[];
@@ -2807,6 +2808,15 @@ export interface FinanceManagement {
   by_category: FinanceDimensionSummary[];
   by_cost_center: FinanceDimensionSummary[];
   by_channel: FinanceDimensionSummary[];
+}
+
+export interface FinanceOperationalCmv {
+  snapshot_count: number;
+  pending_count: number;
+  sale_total: number;
+  cost_total: number;
+  cmv_percent?: number | null;
+  status: string;
 }
 
 export interface FinanceOverview {
