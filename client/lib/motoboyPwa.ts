@@ -1,5 +1,7 @@
+import { isPublicSalesPath } from "./tracking";
+
 export type PwaAppKey =
-  | "motoboy" | "bi-mobile" | "kds-principal" | "kds-pizzaiolo" | "kds-preparo"
+  | "storefront" | "motoboy" | "bi-mobile" | "kds-principal" | "kds-pizzaiolo" | "kds-preparo"
   | "kds-esfiha" | "kds-expedicao" | "kds-motoboys" | "kds-pdv" | "kds-analitico";
 
 export type PwaAppDefinition = {
@@ -12,6 +14,7 @@ export type PwaAppDefinition = {
 };
 
 export const PWA_APPS: readonly PwaAppDefinition[] = [
+  { key: "storefront", scope: "/", entryPath: "/", canonicalPaths: ["/"], label: "Loja" },
   { key: "motoboy", scope: "/motoboy/", entryPath: "/motoboy/", canonicalPaths: ["/motoboy"], label: "Motoboy" },
   { key: "bi-mobile", scope: "/painel/bi-mobile/", entryPath: "/painel/bi-mobile/", canonicalPaths: ["/painel/bi-mobile"], label: "BI Mobile" },
   { key: "kds-principal", scope: "/app/kds/principal/", entryPath: "/app/kds/principal/", aliasScope: "/painel/kds/", canonicalPaths: ["/painel/kds"], label: "KDS Principal" },
@@ -117,11 +120,13 @@ export function clearPwaContext(storage: Pick<Storage, "removeItem"> = localStor
 }
 
 function matchesPath(pathname: string, app: PwaAppDefinition) {
+  if (app.key === "storefront") return isPublicSalesPath(pathname);
   return pathname === app.scope.slice(0, -1) || pathname.startsWith(app.scope)
     || app.canonicalPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
 function matchesDedicatedEntry(pathname: string, app: PwaAppDefinition) {
+  if (app.key === "storefront") return isPublicSalesPath(pathname);
   const entryRoot = app.entryPath.endsWith("/") ? app.entryPath.slice(0, -1) : app.entryPath;
   return pathname === entryRoot || pathname === app.entryPath || pathname.startsWith(app.scope)
     || app.canonicalPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
@@ -175,7 +180,7 @@ export async function configurePwaWorker(pathname: string, container: ServiceWor
   const entryApp = getPwaEntryApp(pathname);
   const registrations = await container.getRegistrations();
   const legacy = registrations.filter((registration) => isLegacyMotoboyWorker(registration, origin));
-  const canRegister = app && (entryApp?.key === app.key || app.key === "motoboy" || app.key === "bi-mobile");
+  const canRegister = app && (entryApp?.key === app.key || app.key === "storefront" || app.key === "motoboy" || app.key === "bi-mobile");
   if (!canRegister) {
     await Promise.all(legacy.map(async (registration) => { await registration.update(); await retireLegacyWorker(registration); }));
     return null;

@@ -24,6 +24,7 @@ type PwaApp = {
 };
 
 const PWA_APPS: Record<string, PwaApp> = {
+  "/": { key: "storefront", scope: "/", cachePrefix: "telz-storefront" },
   "/motoboy/": { key: "motoboy", scope: "/motoboy/", cachePrefix: "telz-motoboy" },
   "/painel/bi-mobile/": { key: "bi-mobile", scope: "/painel/bi-mobile/", cachePrefix: "telz-bi-mobile" },
   "/app/kds/principal/": { key: "kds-principal", scope: "/app/kds/principal/", cachePrefix: "telz-kds-principal" },
@@ -46,9 +47,13 @@ const PWA_APPS: Record<string, PwaApp> = {
 
 const app = PWA_APPS[scopePath];
 const scopedWorker = Boolean(app);
-const legacyRootWorker = scopePath === "/";
+const legacyRootWorker = scopePath === "/" && !app;
 const isMotoboy = (pathname: string) => pathname === "/motoboy" || pathname.startsWith("/motoboy/");
-const isWithinApp = (pathname: string) => Boolean(app && (pathname === app.scope.slice(0, -1) || pathname.startsWith(app.scope)));
+const isStorefrontPath = (pathname: string) => !["/painel", "/motoboy", "/tv", "/app/kds"]
+  .some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+const isWithinApp = (pathname: string) => Boolean(app && (app.key === "storefront"
+  ? isStorefrontPath(pathname)
+  : pathname === app.scope.slice(0, -1) || pathname.startsWith(app.scope)));
 
 const SHARED_PRECACHE_PATTERNS = [
   /^\/index\.html(?:\?.*)?$/,
@@ -60,6 +65,9 @@ const SHARED_PRECACHE_PATTERNS = [
 ];
 
 const APP_PRECACHE_PATTERNS: Record<string, RegExp[]> = {
+  storefront: [
+    /^\/assets\/(?:Index|Product|Cardapio|Cart|Checkout|OrderTracking|Campanha|Promocao)-[^/]+\.js$/,
+  ],
   motoboy: [/^\/assets\/Motoboy-[^/]+\.js$/],
   "bi-mobile": [/^\/assets\/Bi(?:Mobile|Dashboard)-[^/]+\.js$/],
   "kds-principal": [
@@ -166,7 +174,7 @@ if (scopedWorker) self.addEventListener("fetch", (event) => {
   })());
 });
 
-if (legacyRootWorker || app?.key === "motoboy") self.addEventListener("push", (event) => {
+if (legacyRootWorker || app?.key === "storefront" || app?.key === "motoboy") self.addEventListener("push", (event) => {
   const fallback: PushPayload = {
     title: "Motoboy Delivery",
     body: "Nova atualizacao no painel do entregador.",
@@ -193,7 +201,7 @@ if (legacyRootWorker || app?.key === "motoboy") self.addEventListener("push", (e
   );
 });
 
-if (legacyRootWorker || app?.key === "motoboy") self.addEventListener("notificationclick", (event) => {
+if (legacyRootWorker || app?.key === "storefront" || app?.key === "motoboy") self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
   const requested = new URL(event.notification.data?.url || "/motoboy/", self.location.origin);

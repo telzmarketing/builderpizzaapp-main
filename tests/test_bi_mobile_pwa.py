@@ -37,6 +37,7 @@ def test_existing_manifest_contract_is_unchanged_without_app_selector():
 
 def test_all_supported_pwa_manifests_have_unique_installation_boundaries():
     assert set(PWA_MANIFESTS) == {
+        "storefront",
         "motoboy", "bi-mobile", "kds-principal", "kds-pizzaiolo", "kds-esfiha",
         "kds-preparo", "kds-expedicao", "kds-motoboys", "kds-pdv",
         "kds-analitico",
@@ -55,11 +56,35 @@ def test_all_supported_pwa_manifests_have_unique_installation_boundaries():
     assert len({manifest["start_url"] for manifest in manifests}) == len(PWA_MANIFESTS)
     assert len({manifest["scope"] for manifest in manifests}) == len(PWA_MANIFESTS)
     assert {manifest["name"] for manifest in manifests} >= {
+        "Loja Tenant",
         "Motoboy", "BI Mobile", "KDS Principal", "KDS Pizzaiolo",
         "KDS Cozinha Preparo", "KDS Expedição", "KDS Motoboys",
         "KDS PDV", "KDS Analítico",
     }
     assert all(manifest["icons"][0]["src"].startswith("/api/site-config/favicon?") for manifest in manifests)
+
+
+def test_storefront_manifest_uses_the_public_origin_as_installation_boundary():
+    service = SiteConfigService(None)
+    service.read = lambda _request: ({"brand": {"name": "Pizzaria", "pageTitle": "Pizzaria"}}, None, SiteIdentity(tenant_id="tenant-1"))
+
+    manifest = service.manifest(object(), app="storefront")
+
+    assert manifest["id"] == "/"
+    assert manifest["start_url"] == "/"
+    assert manifest["scope"] == "/"
+    assert manifest["name"] == "Pizzaria"
+    assert manifest["short_name"] == "Pizzaria"
+
+
+def test_storefront_manifest_uses_safe_branding_fallback_and_short_name_limit():
+    service = SiteConfigService(None)
+    service.read = lambda _request: ({"brand": {"name": "N" * 40, "pageTitle": ""}}, None, SiteIdentity(tenant_id="tenant-1"))
+
+    manifest = service.manifest(object(), app="storefront")
+
+    assert manifest["name"] == "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+    assert manifest["short_name"] == "N" * 24
 
 
 def test_kds_manifests_start_from_the_operational_routes():

@@ -7,6 +7,24 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform?: string }>;
 };
 
+export const PWA_INSTALL_DELAY_MS = 60_000;
+
+function installedStorageKey(appKey: PwaAppKey) {
+  return `telz:pwa-installed:${appKey}`;
+}
+
+export function hasRecordedPwaInstallation(appKey: PwaAppKey, storage: Storage = localStorage) {
+  try {
+    return storage.getItem(installedStorageKey(appKey)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function recordPwaInstallation(appKey: PwaAppKey, storage: Storage = localStorage) {
+  try { storage.setItem(installedStorageKey(appKey), "1"); } catch { /* storage can be unavailable */ }
+}
+
 function isStandaloneMode() {
   const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
   return window.matchMedia("(display-mode: standalone)").matches || navigatorWithStandalone.standalone === true;
@@ -20,7 +38,7 @@ export function canShowPwaInstallButton(pathname: string, only?: readonly PwaApp
   return !!app && (entryApp?.key === app.key || canonicalInstallable || legacyInstallable) && (!only || only.includes(app.key));
 }
 
-export default function PwaInstallButton({ only, pathname, hideOnKds = false, inline = false }: { only?: readonly PwaAppKey[]; pathname?: string; hideOnKds?: boolean; inline?: boolean } = {}) {
+export default function PwaInstallButton({ only, pathname, hideOnKds = false, inline = false, delayMs = 0, variant = "compact" }: { only?: readonly PwaAppKey[]; pathname?: string; hideOnKds?: boolean; inline?: boolean; delayMs?: number; variant?: "compact" | "banner" } = {}) {
   const currentPathname = pathname ?? (typeof window === "undefined" ? "" : window.location.pathname);
   const app = getPwaApp(currentPathname);
   const allowed = canShowPwaInstallButton(currentPathname, only);
@@ -28,32 +46,46 @@ export default function PwaInstallButton({ only, pathname, hideOnKds = false, in
   const [prompt, setPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
+  const [delayElapsed, setDelayElapsed] = useState(delayMs === 0);
 
   useEffect(() => {
-    setInstalled(allowed && isStandaloneMode());
+    setInstalled(allowed && (isStandaloneMode() || (app ? hasRecordedPwaInstallation(app.key) : false)));
+    setDelayElapsed(delayMs === 0);
     setShowInstructions(false);
     if (!allowed) { setPrompt(null); return; }
+    const timer = delayMs > 0 ? window.setTimeout(() => setDelayElapsed(true), delayMs) : undefined;
     const onBeforeInstall = (event: Event) => {
       event.preventDefault();
       if (!isStandaloneMode()) setPrompt(event as BeforeInstallPromptEvent);
     };
-    const onInstalled = () => { setInstalled(true); setPrompt(null); };
+    const onInstalled = () => {
+      if (app) recordPwaInstallation(app.key);
+      setInstalled(true);
+      setPrompt(null);
+    };
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
     window.addEventListener("appinstalled", onInstalled);
     return () => {
       window.removeEventListener("beforeinstallprompt", onBeforeInstall);
       window.removeEventListener("appinstalled", onInstalled);
+      if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [allowed, currentPathname]);
+  }, [allowed, app, currentPathname, delayMs]);
 
-  if (!allowed || installed || !app || (hideOnKds && isKds)) return null;
+  if (!allowed || installed || !delayElapsed || !app || (hideOnKds && isKds)) return null;
   return (
-    <div className={`pwa-install-anchor${inline ? " pwa-install-anchor-inline" : ""}`} data-pwa-app={app.key}>
+    <div className={`pwa-install-anchor${inline ? " pwa-install-anchor-inline" : ""}${variant === "banner" ? " pwa-install-anchor-banner" : ""}`} data-pwa-app={app.key}>
+      {variant === "banner" && <div className="pwa-install-message" role="status">Instale a loja no seu celular para acessar mais rápido.</div>}
       <button type="button" onClick={() => {
         const current = prompt;
         if (!current) { setShowInstructions((value) => !value); return; }
         setPrompt(null);
-        void current.prompt().then(() => current.userChoice).catch(() => setPrompt(current));
+        void current.prompt().then(() => current.userChoice).then((choice) => {
+          if (choice.outcome === "accepted" && app) {
+            recordPwaInstallation(app.key);
+            setInstalled(true);
+          }
+        }).catch(() => setPrompt(current));
       }} className="pwa-install-button" aria-expanded={showInstructions} aria-label={`Instalar ${app.label}`} title={`Instalar ${app.label}`}>
         <Download size={15} aria-hidden="true" /> <span>Instalar</span>
       </button>

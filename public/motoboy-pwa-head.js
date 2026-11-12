@@ -16,6 +16,7 @@
     ["/app/kds/analitico", "kds-analitico", "KDS Analítico"],
   ];
   function appFor(path) {
+    if (path === "/" || path === "/menu" || path === "/cardapio" || path === "/cart" || path === "/checkout" || path === "/order-tracking" || path.indexOf("/product/") === 0 || path.indexOf("/campanha/") === 0 || path.indexOf("/promocao/") === 0) return ["storefront", "Loja"];
     if (path === "/motoboy" || path.indexOf("/motoboy/") === 0) return ["motoboy", "Motoboy"];
     if (path === "/painel/bi-mobile" || path.indexOf("/painel/bi-mobile/") === 0) return ["bi-mobile", "BI Mobile"];
     for (var i = 0; i < apps.length; i += 1) {

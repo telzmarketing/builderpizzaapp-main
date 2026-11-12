@@ -33,6 +33,14 @@ class InvalidManifestApp(DomainError):
 
 
 PWA_MANIFESTS = {
+    "storefront": {
+        "id": "/",
+        "start_url": "/",
+        "scope": "/",
+        "name": "Loja online",
+        "short_name": "Loja",
+        "description": "Loja online para pedidos",
+    },
     "motoboy": {
         "id": "/motoboy",
         "start_url": "/motoboy/",
@@ -297,6 +305,14 @@ class SiteConfigService:
         version = self.version(updated_at)
         if app is not None:
             app_manifest = PWA_MANIFESTS[app]
+            if app == "storefront":
+                # The public store is tenant-branded; operational app names
+                # remain the canonical static labels defined above.
+                app_manifest = {
+                    **app_manifest,
+                    "name": name or "Sua Loja",
+                    "short_name": short_name[:24] or "Sua Loja",
+                }
             # KDS screens are operational workspaces with persistent horizontal
             # lanes. The browser may ignore this hint, so the UI still remains
             # usable in portrait with its own internal scrolling behavior.

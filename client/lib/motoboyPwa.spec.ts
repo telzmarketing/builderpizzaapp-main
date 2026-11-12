@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { configureBiMobileWorker, configureMotoboyWorker, configurePwaWorker, consumePwaContextTarget, getPwaApp, getPwaEntryApp, isBiMobilePath, isMotoboyPath, isPwaEntryPath, KDS_PWA_KEYS, PWA_CONTEXT_STORAGE_KEY, pwaScopeForPath, readPwaContext, rememberPwaContext } from "./motoboyPwa";
-import { canShowPwaInstallButton } from "@/components/PwaInstallButton";
+import { canShowPwaInstallButton, hasRecordedPwaInstallation, PWA_INSTALL_DELAY_MS } from "@/components/PwaInstallButton";
 
 const origin = "https://pizza.example";
 function memoryStorage() {
@@ -22,7 +22,7 @@ function registration(scope = "/", script = "/sw.js", subscribed = false) {
 }
 
 describe("Motoboy installation ownership", () => {
-  it.each(["/", "/checkout", "/painel", "/motoboy-falso"])("never registers on %s", async (path) => {
+  it.each(["/painel", "/motoboy-falso"])("never registers on non-PWA %s", async (path) => {
     expect(isMotoboyPath(path)).toBe(false);
     const container = { getRegistrations: vi.fn().mockResolvedValue([]), register: vi.fn() };
     await configureMotoboyWorker(path, container as unknown as ServiceWorkerContainer, origin);
@@ -45,6 +45,7 @@ describe("Motoboy installation ownership", () => {
     const legacy = registration("/", "/sw.js", true);
     const container = { getRegistrations: vi.fn().mockResolvedValue([legacy]), register: vi.fn() };
     await configureMotoboyWorker("/", container as unknown as ServiceWorkerContainer, origin);
+    expect(container.register).toHaveBeenCalledWith("/sw.js", { scope: "/", updateViaCache: "none" });
     expect(legacy.update).toHaveBeenCalledOnce();
     expect(legacy.unregister).not.toHaveBeenCalled();
   });
@@ -58,11 +59,11 @@ describe("Motoboy installation ownership", () => {
     };
     const window = { location: { pathname: "/", search: "", hash: "", replace: vi.fn() }, updateMotoboyPwaHead: undefined as undefined | ((path: string) => void) };
     vm.runInNewContext(readFileSync("public/motoboy-pwa-head.js", "utf8"), { window, document });
-    expect(nodes).toHaveLength(0);
+    expect(nodes.find((node) => node.rel === "manifest")?.href).toBe("/api/site-config/manifest.webmanifest?app=storefront");
     window.updateMotoboyPwaHead!("/motoboy/");
     expect(nodes.find((node) => node.rel === "manifest")?.href).toBe("/api/site-config/manifest.webmanifest?app=motoboy");
     window.updateMotoboyPwaHead!("/checkout");
-    expect(nodes).toHaveLength(0);
+    expect(nodes.find((node) => node.rel === "manifest")?.href).toBe("/api/site-config/manifest.webmanifest?app=storefront");
   });
 });
 
@@ -141,6 +142,23 @@ describe("KDS PWA entries", () => {
     expect(canShowPwaInstallButton("/painel/cozinha", KDS_PWA_KEYS)).toBe(true);
     expect(canShowPwaInstallButton("/app/kds/pizzaiolo/", KDS_PWA_KEYS)).toBe(true);
     expect(canShowPwaInstallButton("/painel/orders", KDS_PWA_KEYS)).toBe(false);
+  });
+
+  it("maps public customer URLs to the storefront PWA and registers the root scope", async () => {
+    expect(getPwaApp("/")?.key).toBe("storefront");
+    expect(getPwaApp("/product/123")?.key).toBe("storefront");
+    expect(canShowPwaInstallButton("/cardapio", ["storefront"])).toBe(true);
+
+    const container = { getRegistrations: vi.fn().mockResolvedValue([]), register: vi.fn().mockResolvedValue({}) };
+    await configurePwaWorker("/", container as unknown as ServiceWorkerContainer, origin);
+    expect(container.register).toHaveBeenCalledWith("/sw.js", { scope: "/", updateViaCache: "none" });
+  });
+
+  it("keeps an installed storefront hidden after a page reload", () => {
+    const values = new Map<string, string>([["telz:pwa-installed:storefront", "1"]]);
+    const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: vi.fn() } as unknown as Storage;
+    expect(hasRecordedPwaInstallation("storefront", storage)).toBe(true);
+    expect(PWA_INSTALL_DELAY_MS).toBe(60_000);
   });
 
   it("registers a narrow scope for a dedicated KDS entry", async () => {

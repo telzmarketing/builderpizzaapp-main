@@ -23,6 +23,30 @@
   flex: 0 0 auto;
 }
 
+.pwa-install-anchor-banner {
+  top: auto;
+  right: max(0.75rem, env(safe-area-inset-right));
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  left: max(0.75rem, env(safe-area-inset-left));
+  max-width: none;
+  align-items: stretch;
+  margin-inline: auto;
+  width: min(31rem, calc(100vw - 1.5rem));
+  border: 1px solid rgb(251 191 36 / 0.35);
+  border-radius: 0.85rem;
+  background: rgb(7 21 32 / 0.97);
+  padding: 0.7rem;
+  box-shadow: 0 12px 34px rgb(0 0 0 / 0.35);
+}
+
+.pwa-install-message {
+  padding: 0.15rem 0.1rem 0.45rem;
+  color: #f8e7b0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .kds-preparation {
   min-height: 100dvh;
   width: 100%;
