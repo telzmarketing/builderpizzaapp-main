@@ -262,6 +262,19 @@ class FinanceManagementOut(BaseModel):
     by_channel: list[FinanceDimensionSummaryOut]
 
 
+class FinanceBiOut(BaseModel):
+    date_from: date
+    date_to: date
+    total_income: float
+    total_expense: float
+    result: float
+    transaction_count: int
+    by_origin: list[FinanceOriginSummaryOut]
+    by_category: list[FinanceDimensionSummaryOut]
+    by_cost_center: list[FinanceDimensionSummaryOut]
+    by_channel: list[FinanceDimensionSummaryOut]
+
+
 class FinanceOverviewOut(BaseModel):
     summary: FinanceSummaryOut
     management: FinanceManagementOut

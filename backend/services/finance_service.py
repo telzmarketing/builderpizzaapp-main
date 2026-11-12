@@ -181,6 +181,55 @@ class FinanceService:
             "cancelled_amount": by_status["cancelled"],
         }
 
+    def bi_overview(self, date_from: date | None = None, date_to: date | None = None) -> dict:
+        today = date.today()
+        start = date_from or today.replace(day=1)
+        end = date_to or today
+        if start > end:
+            raise FinanceInvalidReference("O periodo do BI financeiro e invalido.")
+        rows = (
+            self._db.query(FinanceTransaction)
+            .options(joinedload(FinanceTransaction.category), joinedload(FinanceTransaction.order))
+            .filter(
+                FinanceTransaction.tenant_id == self._tenant_id,
+                FinanceTransaction.status != "cancelled",
+                FinanceTransaction.competence_date >= start,
+                FinanceTransaction.competence_date <= end,
+            )
+            .all()
+        )
+        origin_lines: dict[tuple[str, str], dict] = {}
+        category_lines: dict[tuple[str, str], dict] = {}
+        cost_center_lines: dict[tuple[str, str], dict] = {}
+        channel_lines: dict[tuple[str, str], dict] = {}
+        total_income = 0.0
+        total_expense = 0.0
+        for row in rows:
+            amount = round(float(row.amount or 0), 2)
+            if row.entry_type == "income":
+                total_income += amount
+            else:
+                total_expense += amount
+            self._add_dimension(origin_lines, row.origin_type or "manual", row.entry_type, amount)
+            self._add_dimension(category_lines, row.category.name if row.category else "Sem categoria", row.entry_type, amount)
+            self._add_dimension(cost_center_lines, row.cost_center or "Sem centro de custo", row.entry_type, amount)
+            self._add_dimension(channel_lines, row.order.sales_channel if row.order and row.order.sales_channel else "Sem canal", row.entry_type, amount)
+        return {
+            "date_from": start,
+            "date_to": end,
+            "total_income": round(total_income, 2),
+            "total_expense": round(total_expense, 2),
+            "result": round(total_income - total_expense, 2),
+            "transaction_count": len(rows),
+            "by_origin": [
+                {"origin_type": item["label"], "entry_type": item["entry_type"], "amount": item["amount"], "count": item["count"]}
+                for item in self._dimension_rows(origin_lines)
+            ],
+            "by_category": self._dimension_rows(category_lines),
+            "by_cost_center": self._dimension_rows(cost_center_lines),
+            "by_channel": self._dimension_rows(channel_lines),
+        }
+
     def cash_flow(self, date_from: date | None = None, date_to: date | None = None) -> dict:
         today = date.today()
         start = date_from or today.replace(day=1)

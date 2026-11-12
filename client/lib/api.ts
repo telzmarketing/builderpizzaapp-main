@@ -2682,6 +2682,26 @@ export interface FinanceForecast {
   periods: FinanceForecastPeriod[];
 }
 
+export interface FinanceBiDimension {
+  label: string;
+  entry_type: FinanceEntryType;
+  amount: number;
+  count: number;
+}
+
+export interface FinanceBi {
+  date_from: string;
+  date_to: string;
+  total_income: number;
+  total_expense: number;
+  result: number;
+  transaction_count: number;
+  by_origin: Array<{ origin_type: string; entry_type: FinanceEntryType; amount: number; count: number }>;
+  by_category: FinanceBiDimension[];
+  by_cost_center: FinanceBiDimension[];
+  by_channel: FinanceBiDimension[];
+}
+
 export interface FinanceBankStatementLineInput {
   external_id: string;
   transaction_date: string;
@@ -6447,6 +6467,13 @@ export const financeApi = {
     return get<FinanceCashFlow>(`/gestao/finance/cash-flow${suffix}`);
   },
   forecast: (months = 6) => get<FinanceForecast>(`/gestao/finance/forecast?months=${months}`),
+  bi: (params?: { date_from?: string; date_to?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.date_from) query.set("date_from", params.date_from);
+    if (params?.date_to) query.set("date_to", params.date_to);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return get<FinanceBi>(`/gestao/finance/bi${suffix}`);
+  },
   listBudgets: () => get<FinanceBudget[]>("/gestao/finance/budgets"),
   createBudget: (data: FinanceBudgetInput) => post<FinanceBudget>("/gestao/finance/budgets", data),
   listBankStatements: () => get<FinanceBankStatement[]>("/gestao/finance/bank-statements"),

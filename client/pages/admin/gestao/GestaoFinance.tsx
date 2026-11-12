@@ -45,6 +45,7 @@ import {
   type FinanceBudget,
   type FinanceBudgetInput,
   type FinanceForecast,
+  type FinanceBi,
   type FinanceAccountInput,
   type FinanceCategory,
   type FinanceCategoryInput,
@@ -94,7 +95,7 @@ const financeModuleGroups: Array<{ id: string; title: string; modules: FinanceMo
     { id: "dre", title: "DRE e Resultados", description: "Receitas e despesas por competência, com CMV operacional separado e pendências de cobertura explícitas.", status: "Base disponível", icon: BarChart3 },
     { id: "cmv", title: "Custos e CMV", description: "Custos por snapshot de venda, cobertura, pendências e impacto operacional apresentados junto da DRE.", status: "Base disponível", icon: Tags },
     { id: "budget", title: "Orçamento Empresarial", description: "Criação de períodos orçamentários e comparação entre valores planejados e lançamentos realizados.", status: "Base disponível", icon: Target },
-    { id: "bi", title: "BI Financeiro", description: "Distribuição dos valores por canal, categoria e centro de custo. Análises avançadas e séries históricas ainda não estão disponíveis.", status: "Cobertura parcial", icon: TrendingUp },
+    { id: "bi", title: "BI Financeiro", description: "Distribuição dos valores por período, origem, canal, categoria e centro de custo.", status: "Base disponível", icon: TrendingUp },
   ] },
   { id: "treasury", title: "Tesouraria", modules: [
     { id: "banks", title: "Bancos e Conciliação", description: "Contas bancárias cadastradas. Importação de extratos, conciliação e tratamento de divergências ainda não estão disponíveis.", status: "Cobertura parcial", icon: Landmark },
@@ -246,6 +247,9 @@ function FinancePanel() {
   const [cashFlowLoading, setCashFlowLoading] = useState(false);
   const [forecast, setForecast] = useState<FinanceForecast | null>(null);
   const [forecastLoading, setForecastLoading] = useState(false);
+  const [bi, setBi] = useState<FinanceBi | null>(null);
+  const [biLoading, setBiLoading] = useState(false);
+  const [biPeriod, setBiPeriod] = useState({ date_from: `${today().slice(0, 8)}01`, date_to: today() });
   const [budgets, setBudgets] = useState<FinanceBudget[]>([]);
   const [budgetLoading, setBudgetLoading] = useState(false);
   const [budgetSaving, setBudgetSaving] = useState(false);
@@ -279,6 +283,15 @@ function FinancePanel() {
   useEffect(() => {
     headingRef.current?.focus({ preventScroll: true });
   }, [activeModule]);
+
+  useEffect(() => {
+    if (activeModule !== "bi") return;
+    setBiLoading(true);
+    financeApi.bi(biPeriod)
+      .then(setBi)
+      .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar o BI financeiro."))
+      .finally(() => setBiLoading(false));
+  }, [activeModule, biPeriod]);
 
   useEffect(() => {
     if (activeModule !== "budget") return;
@@ -719,12 +732,25 @@ function FinancePanel() {
             </div>
           </div>
 
-          {activeModule !== "overview" && activeModule !== "registries" && activeModule !== "banks" && activeModule !== "planning" && !isTransactionArea && (
+          {activeModule !== "overview" && activeModule !== "registries" && activeModule !== "banks" && activeModule !== "planning" && activeModule !== "bi" && !isTransactionArea && (
             <div className={`${panelClass} min-h-64 flex flex-col items-center justify-center text-center`}>
               <div className="rounded-2xl border border-surface-03 bg-surface-01 p-4 text-gold"><CurrentIcon size={28} aria-hidden="true" /></div>
               <h4 className="mt-4 text-xl font-black text-cream">{currentModule.title}</h4>
               <p className="mt-2 max-w-xl text-sm leading-relaxed text-stone">{currentModule.description}</p>
               <span className={`mt-4 rounded-full border px-3 py-1.5 text-[10px] font-black uppercase tracking-wide ${financeModuleStatuses[currentModule.status].className}`}>{currentModule.status}</span>
+            </div>
+          )}
+
+          {activeModule === "bi" && (
+            <div className="space-y-5">
+              <div className={panelClass}>
+                <CardHeading icon={TrendingUp} title="Análise financeira" description="Valores por competência, sem alterar os lançamentos. Use o período para comparar origem, categoria, centro de custo e canal." />
+                <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]"><input aria-label="Início do BI" className={inputClass} type="date" value={biPeriod.date_from} onChange={(event) => setBiPeriod({ ...biPeriod, date_from: event.target.value })} /><input aria-label="Fim do BI" className={inputClass} type="date" value={biPeriod.date_to} onChange={(event) => setBiPeriod({ ...biPeriod, date_to: event.target.value })} /><button type="button" className={buttonClass} onClick={() => setBiPeriod({ ...biPeriod })} disabled={biLoading}>{biLoading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />} Atualizar</button></div>
+              </div>
+              {biLoading ? <div className="flex min-h-40 items-center justify-center rounded-2xl border border-surface-03 bg-surface-02 text-stone"><Loader2 size={22} className="mr-2 animate-spin text-gold" />Carregando BI...</div> : bi && <>
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric title="Receitas" value={currency(bi.total_income)} subtitle={`${bi.transaction_count} lançamentos no período`} icon={ArrowUpCircle} tone="success" /><Metric title="Despesas" value={currency(bi.total_expense)} subtitle="Valores por competência" icon={ArrowDownCircle} tone="warn" /><Metric title="Resultado" value={currency(bi.result)} subtitle="Receitas menos despesas" icon={BarChart3} tone={bi.result >= 0 ? "success" : "warn"} /><Metric title="Período" value={`${bi.date_from} a ${bi.date_to}`} subtitle="Filtro aplicado" icon={CalendarCheck2} /></div>
+                <div className="grid gap-5 xl:grid-cols-2"><DimensionList title="Por origem" icon={ReceiptText} rows={bi.by_origin.map((row) => ({ label: row.origin_type, entry_type: row.entry_type, amount: row.amount, count: row.count }))} /><DimensionList title="Por canal" icon={Landmark} rows={bi.by_channel} /><DimensionList title="Por categoria" icon={Tags} rows={bi.by_category} /><DimensionList title="Por centro de custo" icon={SlidersHorizontal} rows={bi.by_cost_center} /></div>
+              </>}
             </div>
           )}
 
