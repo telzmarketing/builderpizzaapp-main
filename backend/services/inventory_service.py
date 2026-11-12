@@ -29,6 +29,8 @@ from backend.models.inventory import (
     InventoryUnit,
 )
 from backend.models.order import Order, OrderItem
+from backend.models.finance import FinanceTransaction
+from backend.models.rbac import AdminAuditLog
 from backend.models.product import Product, ProductCrustType, ProductDrinkVariant, ProductSize
 from backend.schemas.inventory import (
     InventoryCategoryIn,
@@ -289,6 +291,8 @@ class InventoryService:
 
     def create_purchase(self, payload: InventoryPurchaseIn) -> dict:
         data = payload.model_dump()
+        if data.get("status") == "cancelled":
+            raise InventoryInvalidReference("Cancelamento exige o fluxo oficial de reversao.")
         items = data.pop("items", [])
         if data.get("supplier_id"):
             self._ensure(InventorySupplier, data["supplier_id"], "Fornecedor")
@@ -303,6 +307,7 @@ class InventoryService:
         )
         self._db.add(purchase)
         self._replace_purchase_items(purchase, items)
+        self._validate_purchase_confirmation(purchase)
         self._db.commit()
         self._db.refresh(purchase)
         if purchase.status == "confirmed":
@@ -360,6 +365,8 @@ class InventoryService:
     def update_purchase(self, purchase_id: str, payload: InventoryPurchaseIn) -> dict:
         purchase = self._get_purchase(purchase_id)
         previous_status = purchase.status
+        if payload.status == "cancelled":
+            raise InventoryInvalidReference("Cancelamento exige o fluxo oficial de reversao.")
         if previous_status == "confirmed":
             raise InventoryInvalidReference("Compra confirmada nao pode ser alterada.")
         data = payload.model_dump()
@@ -370,6 +377,7 @@ class InventoryService:
             setattr(purchase, key, value)
         self._db.query(InventoryPurchaseItem).filter(InventoryPurchaseItem.purchase_id == purchase.id).delete(synchronize_session=False)
         self._replace_purchase_items(purchase, items)
+        self._validate_purchase_confirmation(purchase)
         self._db.commit()
         self._db.refresh(purchase)
         if previous_status != "confirmed" and purchase.status == "confirmed":
@@ -381,6 +389,47 @@ class InventoryService:
         if purchase.status == "confirmed":
             raise InventoryInvalidReference("Compra confirmada nao pode ser removida.")
         self._delete(purchase)
+
+    def cancel_invalid_replenishment(self, purchase_id: str, *, reason: str) -> dict:
+        """Cancel only an untouched zero-value minimum-stock confirmation."""
+        purchase = self._get_purchase(purchase_id)
+        if purchase.status != "confirmed" or purchase.source != "min_stock":
+            raise InventoryInvalidReference("Somente uma reposicao minima confirmada pode ser revertida.")
+        if purchase.supplier_id or Decimal(str(purchase.total_amount or 0)) != ZERO:
+            raise InventoryInvalidReference("A compra nao atende aos criterios de reversao segura.")
+        if self._db.query(FinanceTransaction.id).filter(
+            FinanceTransaction.tenant_id == self._tenant_id,
+            FinanceTransaction.inventory_purchase_id == purchase.id,
+        ).first() is not None:
+            raise InventoryInvalidReference("A compra possui movimento financeiro e nao pode ser revertida por este fluxo.")
+        if self._db.query(InventoryStockMovement.id).filter(
+            InventoryStockMovement.tenant_id == self._tenant_id,
+            InventoryStockMovement.source_id == purchase.id,
+        ).first() is not None:
+            raise InventoryInvalidReference("A compra possui movimento de estoque e nao pode ser revertida por este fluxo.")
+        old_status = purchase.status
+        purchase.status = "cancelled"
+        purchase.notes = f"{purchase.notes or ''}\nRevertida: {reason.strip()}".strip()
+        self._db.add(AdminAuditLog(
+            id=f"audit-{uuid.uuid4().hex}", tenant_id=self._tenant_id,
+            user_id=self._actor_id if not self._actor_id.startswith("system:") else None,
+            action="inventory_purchase_cancelled", module_key="estoque",
+            entity_type="inventory_purchase", entity_id=purchase.id,
+            old_value=old_status, new_value="cancelled",
+        ))
+        self._db.commit()
+        self._db.refresh(purchase)
+        return self._serialize_purchase(purchase)
+
+    def _validate_purchase_confirmation(self, purchase: InventoryPurchase) -> None:
+        if purchase.status != "confirmed" or purchase.source != "min_stock":
+            return
+        items = list(purchase.items)
+        if not purchase.supplier_id or not items or any(Decimal(str(item.unit_cost or 0)) <= ZERO for item in items):
+            raise InventoryInvalidReference("Reposicao minima exige fornecedor, itens e custo unitario positivo antes da confirmacao.")
+        total = sum((Decimal(str(item.total_cost or 0)) for item in items), ZERO)
+        if total <= ZERO:
+            raise InventoryInvalidReference("Reposicao minima exige valor total positivo antes da confirmacao.")
 
     def _publish_purchase_confirmed(self, purchase: InventoryPurchase) -> None:
         try:

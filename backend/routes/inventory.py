@@ -241,6 +241,15 @@ def delete_purchase(purchase_id: str, db: Session = Depends(get_db), _actor: Aut
     except DomainError as exc:
         return err(exc)
 
+@router.post("/purchases/{purchase_id}/cancel-invalid-replenishment", response_model=InventoryPurchaseOut)
+def cancel_invalid_replenishment(purchase_id: str, db: Session = Depends(get_db), _actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "manage")), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context, _actor).cancel_invalid_replenishment(
+            purchase_id, reason="Reposicao minima confirmada com valor zero, sem fornecedor e sem obrigacao financeira."
+        )
+    except DomainError as exc:
+        return err(exc)
+
 
 @router.get("/manual-entries", response_model=list[InventoryManualEntryOut])
 def list_manual_entries(db: Session = Depends(get_db), _actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "view")), tenant_context: TenantContext | None = Depends(panel_operation_context)):
