@@ -29,6 +29,78 @@ class FinanceAccount(Base):
     __table_args__ = (Index("uq_finance_accounts_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
+class FinanceBankStatement(Base):
+    __tablename__ = "finance_bank_statements"
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_finance_bank_statements_tenant"), nullable=False)
+    account_id = Column(String, ForeignKey("finance_accounts.id", ondelete="RESTRICT"), nullable=False, index=True)
+    source = Column(String(30), nullable=False, default="manual", index=True)
+    external_reference = Column(String(180), nullable=True)
+    file_hash = Column(String(128), nullable=True)
+    period_start = Column(Date, nullable=True)
+    period_end = Column(Date, nullable=True)
+    opening_balance = Column(Numeric(20, 2), nullable=True)
+    closing_balance = Column(Numeric(20, 2), nullable=True)
+    status = Column(String(20), nullable=False, default="imported", index=True)
+    imported_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    created_by_admin_id = Column(String, ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    account = relationship("FinanceAccount")
+    lines = relationship("FinanceBankStatementLine", cascade="all, delete-orphan", back_populates="statement", order_by="FinanceBankStatementLine.transaction_date, FinanceBankStatementLine.id")
+    __table_args__ = (
+        Index("uq_finance_bank_statements_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_finance_bank_statements_import", "tenant_id", "account_id", "file_hash", unique=True, postgresql_where=file_hash.is_not(None)),
+    )
+
+
+class FinanceBankStatementLine(Base):
+    __tablename__ = "finance_bank_statement_lines"
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_finance_bank_statement_lines_tenant"), nullable=False)
+    statement_id = Column(String, ForeignKey("finance_bank_statements.id", ondelete="CASCADE"), nullable=False, index=True)
+    account_id = Column(String, ForeignKey("finance_accounts.id", ondelete="RESTRICT"), nullable=False, index=True)
+    external_id = Column(String(180), nullable=False)
+    transaction_date = Column(Date, nullable=False, index=True)
+    description = Column(String(220), nullable=False)
+    amount = Column(Numeric(20, 2), nullable=False)
+    balance = Column(Numeric(20, 2), nullable=True)
+    reconciliation_status = Column(String(20), nullable=False, default="unmatched", index=True)
+    matched_transaction_id = Column(String, ForeignKey("finance_transactions.id", ondelete="SET NULL"), nullable=True, index=True)
+    matched_at = Column(DateTime(timezone=True), nullable=True)
+    matched_by_admin_id = Column(String, ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    statement = relationship("FinanceBankStatement", back_populates="lines")
+    account = relationship("FinanceAccount")
+    matched_transaction = relationship("FinanceTransaction")
+    __table_args__ = (
+        Index("uq_finance_bank_statement_lines_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_finance_bank_statement_lines_external", "statement_id", "external_id", unique=True),
+    )
+
+
+class FinanceBankReconciliationEvent(Base):
+    __tablename__ = "finance_bank_reconciliation_events"
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_finance_bank_reconciliation_events_tenant"), nullable=False)
+    statement_line_id = Column(String, ForeignKey("finance_bank_statement_lines.id", ondelete="RESTRICT"), nullable=False, index=True)
+    action = Column(String(20), nullable=False, index=True)
+    transaction_id = Column(String, ForeignKey("finance_transactions.id", ondelete="SET NULL"), nullable=True, index=True)
+    admin_id = Column(String, ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True, index=True)
+    reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    statement_line = relationship("FinanceBankStatementLine")
+    transaction = relationship("FinanceTransaction")
+    __table_args__ = (
+        Index("uq_finance_bank_reconciliation_events_tenant_id_id", "tenant_id", "id", unique=True),
+    )
+
+
 class FinanceCategory(Base):
     __tablename__ = "finance_categories"
 

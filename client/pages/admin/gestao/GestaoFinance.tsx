@@ -36,6 +36,9 @@ import AdminGestao from "./AdminGestao";
 import {
   financeApi,
   type FinanceAccount,
+  type FinanceBankStatement,
+  type FinanceBankStatementImportInput,
+  type FinanceBankReconciliationLine,
   type FinanceAccountInput,
   type FinanceCategory,
   type FinanceCategoryInput,
@@ -49,6 +52,7 @@ import {
 } from "@/lib/api";
 
 type FinanceModuleId = "overview" | "payables" | "receivables" | "cash" | "banks" | "cards" | "delivery" | "couriers" | "cmv" | "cashflow" | "dre" | "budget" | "planning" | "bi" | "intelligence" | "suppliers" | "fiscal" | "settings" | "registries" | "transactions";
+type FinanceRegistryPanel = "account" | "category" | "counterparty" | "transaction";
 
 const focusClass = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-surface-01";
 
@@ -56,6 +60,11 @@ const panelClass = "rounded-2xl border border-surface-03 bg-surface-02 p-5 shado
 const inputClass = "min-h-11 min-w-0 w-full rounded-xl border border-surface-03 bg-surface-01 px-3 py-2.5 text-sm text-cream outline-none transition placeholder:text-stone/70 focus-visible:border-gold focus-visible:ring-2 focus-visible:ring-gold";
 const buttonClass = `inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gold px-3.5 py-2.5 text-sm font-black text-black transition hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-60 ${focusClass}`;
 const mutedButtonClass = `inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-surface-03 bg-surface-01 px-3.5 py-2.5 text-sm font-bold text-stone transition hover:border-gold/40 hover:bg-surface-03 hover:text-cream disabled:cursor-not-allowed disabled:opacity-60 ${focusClass}`;
+
+const sha256File = async (file: File): Promise<string> => {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+};
 
 type FinanceModuleStatus = "Base disponível" | "Cobertura parcial" | "Não disponível";
 type FinanceModule = { id: FinanceModuleId; title: string; description: string; status: FinanceModuleStatus; icon: LucideIcon };
@@ -112,6 +121,27 @@ function today() {
 
 function currency(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
+}
+
+function parseBankCsv(text: string): FinanceBankStatementImportInput["lines"] {
+  const rows = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (rows.length === 0) throw new Error("O CSV do extrato esta vazio.");
+  const delimiter = rows[0].includes(";") ? ";" : ",";
+  const start = /date|data|description|descricao/i.test(rows[0]) ? 1 : 0;
+  const lines = rows.slice(start).map((row, index) => {
+    const columns = row.split(delimiter).map((value) => value.trim().replace(/^\"|\"$/g, ""));
+    const [external_id, transaction_date, description, amount, balance] = columns;
+    if (!external_id || !transaction_date || !description || !amount) {
+      throw new Error(`Linha ${index + start + 1} do CSV esta incompleta.`);
+    }
+    const normalizeNumber = (value: string) => value.includes(",") ? value.replace(/\./g, "").replace(",", ".") : value;
+    const normalizedAmount = normalizeNumber(amount);
+    const normalizedBalance = balance ? normalizeNumber(balance) : null;
+    if (!Number.isFinite(Number(normalizedAmount))) throw new Error(`Valor invalido na linha ${index + start + 1}.`);
+    return { external_id, transaction_date, description, amount: normalizedAmount, balance: normalizedBalance };
+  });
+  if (lines.length === 0) throw new Error("O CSV nao possui movimentacoes.");
+  return lines;
 }
 
 const emptyAccount: FinanceAccountInput = {
@@ -196,13 +226,23 @@ function FinancePanel() {
   const [categoryDraft, setCategoryDraft] = useState<FinanceCategoryInput>(emptyCategory);
   const [counterpartyDraft, setCounterpartyDraft] = useState<FinanceCounterpartyInput>(emptyCounterparty);
   const [transactionDraft, setTransactionDraft] = useState<FinanceTransactionInput>(emptyTransaction);
+  const [registryPanel, setRegistryPanel] = useState<FinanceRegistryPanel>("account");
+  const [bankStatements, setBankStatements] = useState<FinanceBankStatement[]>([]);
+  const [bankLoading, setBankLoading] = useState(false);
+  const [bankError, setBankError] = useState("");
+  const [selectedStatement, setSelectedStatement] = useState<string | null>(null);
+  const [reconciliationLines, setReconciliationLines] = useState<FinanceBankReconciliationLine[]>([]);
+  const bankFileRef = useRef<HTMLInputElement>(null);
   const [settlementDrafts, setSettlementDrafts] = useState<Record<string, FinanceSettlementInput>>({});
   const [transactionQuery, setTransactionQuery] = useState("");
   const [transactionStatus, setTransactionStatus] = useState("all");
   const [transactionEntryType, setTransactionEntryType] = useState("all");
   const currentModule = [...financeModules, ...operationalPages].find((item) => item.id === activeModule)!;
   const CurrentIcon = currentModule.icon;
-  const isTransactionArea = ["payables", "receivables", "transactions", "cash", "banks"].includes(activeModule);
+  // Ledger pages render only financial entries. Account/counterparty
+  // registries belong to Cadastros and must never be repeated inside
+  // payables, receivables, cash or reconciliation views.
+  const isTransactionArea = ["payables", "receivables", "transactions"].includes(activeModule);
 
   const selectModule = (id: FinanceModuleId) => {
     setActiveModule(id);
@@ -217,6 +257,7 @@ function FinancePanel() {
 
   const newTransaction = (entryType?: FinanceEntryType) => {
     setActiveModule("registries");
+    setRegistryPanel("transaction");
     if (entryType) setTransactionDraft((draft) => ({ ...draft, entry_type: entryType, category_id: null }));
   };
 
@@ -229,9 +270,93 @@ function FinancePanel() {
       .finally(() => setLoading(false));
   };
 
+  const loadBankStatements = () => {
+    setBankLoading(true);
+    setBankError("");
+    financeApi.listBankStatements()
+      .then(setBankStatements)
+      .catch((err) => setBankError(err instanceof Error ? err.message : "Nao foi possivel carregar os extratos."))
+      .finally(() => setBankLoading(false));
+  };
+
+  const loadReconciliation = (statementId: string) => {
+    setSelectedStatement(statementId);
+    setBankLoading(true);
+    setBankError("");
+    financeApi.listBankReconciliation(statementId)
+      .then(setReconciliationLines)
+      .catch((err) => setBankError(err instanceof Error ? err.message : "Nao foi possivel carregar a conciliacao."))
+      .finally(() => setBankLoading(false));
+  };
+
+  const matchBankLine = async (lineId: string, transactionId: string) => {
+    setSaving(`match-${lineId}`);
+    setBankError("");
+    try {
+      await financeApi.matchBankStatementLine(lineId, transactionId);
+      if (selectedStatement) loadReconciliation(selectedStatement);
+      loadBankStatements();
+    } catch (err) {
+      setBankError(err instanceof Error ? err.message : "Nao foi possivel conciliar a linha.");
+    } finally {
+      setSaving("");
+    }
+  };
+
+  const changeBankLineStatus = async (lineId: string, action: "unmatch" | "ignore") => {
+    const reason = window.prompt(action === "unmatch" ? "Informe o motivo da desconciliacao:" : "Informe o motivo para ignorar esta linha:");
+    if (!reason?.trim()) return;
+    setSaving(`${action}-${lineId}`);
+    setBankError("");
+    try {
+      if (action === "unmatch") await financeApi.unmatchBankStatementLine(lineId, reason.trim());
+      else await financeApi.ignoreBankStatementLine(lineId, reason.trim());
+      if (selectedStatement) loadReconciliation(selectedStatement);
+      loadBankStatements();
+    } catch (err) {
+      setBankError(err instanceof Error ? err.message : "Nao foi possivel atualizar a linha bancaria.");
+    } finally {
+      setSaving("");
+    }
+  };
+
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (activeModule === "banks") loadBankStatements();
+  }, [activeModule]);
+
+  const importBankFile = async (file: File) => {
+    if (!data?.accounts.length) {
+      setBankError("Cadastre uma conta financeira antes de importar um extrato.");
+      return;
+    }
+    setSaving("bank-import");
+    setBankError("");
+    try {
+      const content = await file.text();
+      const lines = parseBankCsv(content);
+      const fileHash = await sha256File(file);
+      const payload: FinanceBankStatementImportInput = {
+        account_id: data.accounts.find((account) => account.account_type === "bank")?.id ?? data.accounts[0].id,
+        source: "csv",
+        external_reference: file.name,
+        file_hash: fileHash,
+        period_start: lines.map((line) => line.transaction_date).sort()[0],
+        period_end: lines.map((line) => line.transaction_date).sort().at(-1),
+        lines,
+      };
+      await financeApi.importBankStatement(payload);
+      loadBankStatements();
+    } catch (err) {
+      setBankError(err instanceof Error ? err.message : "Nao foi possivel importar o extrato.");
+    } finally {
+      setSaving("");
+      if (bankFileRef.current) bankFileRef.current.value = "";
+    }
+  };
 
   const categoriesForEntry = useMemo(() => {
     return (data?.categories ?? []).filter((category) => category.entry_type === transactionDraft.entry_type);
@@ -509,12 +634,110 @@ function FinancePanel() {
             </div>
           </div>
 
-          {activeModule !== "overview" && activeModule !== "registries" && !isTransactionArea && (
+          {activeModule !== "overview" && activeModule !== "registries" && activeModule !== "banks" && !isTransactionArea && (
             <div className={`${panelClass} min-h-64 flex flex-col items-center justify-center text-center`}>
               <div className="rounded-2xl border border-surface-03 bg-surface-01 p-4 text-gold"><CurrentIcon size={28} aria-hidden="true" /></div>
               <h4 className="mt-4 text-xl font-black text-cream">{currentModule.title}</h4>
               <p className="mt-2 max-w-xl text-sm leading-relaxed text-stone">{currentModule.description}</p>
               <span className={`mt-4 rounded-full border px-3 py-1.5 text-[10px] font-black uppercase tracking-wide ${financeModuleStatuses[currentModule.status].className}`}>{currentModule.status}</span>
+            </div>
+          )}
+
+          {activeModule === "banks" && (
+            <div className="space-y-4">
+              <div className={`${panelClass} flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`}>
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-gold">Extratos bancarios</p>
+                  <h4 className="mt-1 text-xl font-black text-cream">Importacao e pendencias de conciliacao</h4>
+                  <p className="mt-1 max-w-2xl text-sm leading-relaxed text-stone">Importe um CSV para registrar as movimentacoes sem alterar lancamentos existentes. A conciliacao sera confirmada em uma etapa separada.</p>
+                </div>
+                <div>
+                  <input
+                    ref={bankFileRef}
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="sr-only"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void importBankFile(file);
+                    }}
+                  />
+                  <button type="button" onClick={() => bankFileRef.current?.click()} disabled={saving === "bank-import" || bankLoading} className={buttonClass}>
+                    {saving === "bank-import" ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+                    Importar CSV
+                  </button>
+                </div>
+              </div>
+
+              {bankError && <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200" role="alert">{bankError}</div>}
+
+              <div className={`${panelClass} overflow-x-auto`}>
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-black text-cream">Extratos importados</h4>
+                    <p className="mt-1 text-xs text-stone">Cada arquivo importado fica preservado e auditavel.</p>
+                  </div>
+                  <span className="rounded-full border border-surface-03 bg-surface-01 px-3 py-1 text-xs font-bold text-stone">{bankStatements.length} extratos</span>
+                </div>
+                {bankLoading ? (
+                  <div className="flex min-h-32 items-center justify-center text-sm text-stone"><Loader2 size={18} className="mr-2 animate-spin text-gold" /> Carregando extratos...</div>
+                ) : bankStatements.length === 0 ? (
+                  <EmptyText icon={Landmark} text="Nenhum extrato importado para esta empresa." />
+                ) : (
+                  <div className="min-w-[720px] divide-y divide-surface-03">
+                    <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr_auto_auto] gap-4 px-3 pb-3 text-[10px] font-black uppercase tracking-wide text-stone">
+                      <span>Conta</span><span>Periodo</span><span>Movimentacoes</span><span>Pendencias</span><span>Status</span><span />
+                    </div>
+                    {bankStatements.map((statement) => (
+                      <div key={statement.id} className="grid grid-cols-[1.5fr_1fr_1fr_1fr_auto_auto] items-center gap-4 px-3 py-4 text-sm">
+                        <div><p className="font-bold text-cream">{statement.account_name}</p><p className="mt-1 text-xs text-stone">{statement.external_reference || statement.source}</p></div>
+                        <span className="text-stone">{statement.period_start || "-"} a {statement.period_end || "-"}</span>
+                        <span className="text-stone">{statement.line_count}</span>
+                        <span className={statement.unmatched_count ? "font-bold text-amber-300" : "text-emerald-300"}>{statement.unmatched_count}</span>
+                        <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[10px] font-black uppercase text-amber-300">{statement.status}</span>
+                        <button type="button" onClick={() => loadReconciliation(statement.id)} className={mutedButtonClass}>Revisar</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {selectedStatement && (
+                <div className={panelClass}>
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div><h4 className="font-black text-cream">Linhas para conciliacao</h4><p className="mt-1 text-xs text-stone">Escolha uma sugestao compativel para confirmar o vinculo.</p></div>
+                    <span className="rounded-full border border-surface-03 bg-surface-01 px-3 py-1 text-xs font-bold text-stone">{reconciliationLines.length} linhas</span>
+                  </div>
+                  {reconciliationLines.length === 0 ? <EmptyText icon={ClipboardList} text="Nenhuma linha encontrada neste extrato." /> : (
+                    <div className="space-y-3">
+                      {reconciliationLines.map((line) => (
+                        <div key={line.id} className="rounded-xl border border-surface-03 bg-surface-01 p-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div><p className="font-bold text-cream">{line.description}</p><p className="mt-1 text-xs text-stone">{line.transaction_date} · {line.external_id}</p></div>
+                            <div className="text-right"><p className={`font-black ${Number(line.amount) >= 0 ? "text-emerald-300" : "text-amber-300"}`}>{currency(Number(line.amount))}</p><span className="text-[10px] font-black uppercase text-amber-300">{line.reconciliation_status}</span></div>
+                          </div>
+                          {line.reconciliation_status === "matched" ? (
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                              <p className="text-xs text-emerald-300">Linha conciliada com o lancamento {line.matched_transaction_id}.</p>
+                              <button type="button" onClick={() => void changeBankLineStatus(line.id, "unmatch")} disabled={saving === `unmatch-${line.id}`} className={mutedButtonClass}>{saving === `unmatch-${line.id}` && <Loader2 size={14} className="animate-spin" />} Desconciliar</button>
+                            </div>
+                          ) : (
+                            <div className="mt-3 space-y-2">
+                              {line.candidates.length === 0 ? <p className="text-xs text-stone">Nenhum lancamento compativel encontrado automaticamente.</p> : line.candidates.map((candidate) => (
+                                <div key={candidate.id} className="flex flex-col gap-2 rounded-lg border border-surface-03 bg-surface-02 p-3 sm:flex-row sm:items-center sm:justify-between">
+                                  <div><p className="text-sm font-bold text-cream">{candidate.description}</p><p className="text-xs text-stone">{candidate.competence_date} · {candidate.id}</p></div>
+                                  <button type="button" onClick={() => void matchBankLine(line.id, candidate.id)} disabled={saving === `match-${line.id}`} className={buttonClass}>{saving === `match-${line.id}` && <Loader2 size={14} className="animate-spin" />} Conciliar</button>
+                                </div>
+                              ))}
+                              {line.reconciliation_status !== "ignored" && <button type="button" onClick={() => void changeBankLineStatus(line.id, "ignore")} disabled={saving === `ignore-${line.id}`} className="text-xs font-bold text-stone underline decoration-stone/40 underline-offset-4 hover:text-cream">Ignorar linha com justificativa</button>}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
       {loading && (
@@ -577,8 +800,32 @@ function FinancePanel() {
             </>
           )}
 
-          {activeModule === "registries" && <div className="grid gap-5 xl:grid-cols-4">
+          {activeModule === "registries" && <div className="space-y-5">
+            <div className="grid gap-3 rounded-2xl border border-surface-03 bg-surface-02 p-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Ações de cadastro financeiro">
+              {([
+                ["account", Landmark, "Nova conta", "Banco, caixa ou carteira"],
+                ["category", Tags, "Nova categoria", "Classificação da DRE"],
+                ["counterparty", Users, "Novo favorecido", "Fornecedor ou parceiro"],
+                ["transaction", ReceiptText, "Novo lançamento", "Receita ou despesa"],
+              ] as const).map(([panel, Icon, title, description]) => (
+                <button
+                  key={panel}
+                  type="button"
+                  onClick={() => setRegistryPanel(panel)}
+                  aria-pressed={registryPanel === panel}
+                  className={`flex min-h-16 items-center gap-3 rounded-xl border px-3 py-3 text-left transition ${registryPanel === panel ? "border-gold/60 bg-gold/10 text-cream" : "border-surface-03 bg-surface-01 text-stone hover:border-gold/40 hover:text-cream"} ${focusClass}`}
+                >
+                  <span className="rounded-lg border border-current/20 p-2"><Icon size={17} aria-hidden="true" /></span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-black">{title}</span>
+                    <span className="mt-0.5 block truncate text-xs opacity-75">{description}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+
             <div className={`${panelClass} flex flex-col`}>
+              {registryPanel === "account" && <>
               <CardHeading icon={Landmark} title="Nova conta" description="Organize bancos, caixas e carteiras." />
               <div className="space-y-3">
                 <input aria-label="Nome da conta" className={inputClass} placeholder="Nome da conta" value={accountDraft.name} onChange={(event) => setAccountDraft({ ...accountDraft, name: event.target.value })} />
@@ -595,9 +842,9 @@ function FinancePanel() {
                   Criar conta
                 </button>
               </div>
-            </div>
+              </>}
 
-            <div className={`${panelClass} flex flex-col`}>
+              {registryPanel === "category" && <>
               <CardHeading icon={Tags} title="Nova categoria" description="Classifique receitas e despesas na DRE." />
               <div className="space-y-3">
                 <input aria-label="Nome da categoria" className={inputClass} placeholder="Nome da categoria" value={categoryDraft.name} onChange={(event) => setCategoryDraft({ ...categoryDraft, name: event.target.value })} />
@@ -611,9 +858,9 @@ function FinancePanel() {
                   Criar categoria
                 </button>
               </div>
-            </div>
+              </>}
 
-            <div className={`${panelClass} flex flex-col`}>
+              {registryPanel === "counterparty" && <>
               <CardHeading icon={Users} title="Novo favorecido" description="Mantenha fornecedores e parceiros acessíveis." />
               <div className="space-y-3">
                 <input aria-label="Nome do favorecido" className={inputClass} placeholder="Nome" value={counterpartyDraft.name} onChange={(event) => setCounterpartyDraft({ ...counterpartyDraft, name: event.target.value })} />
@@ -631,9 +878,9 @@ function FinancePanel() {
                   Criar favorecido
                 </button>
               </div>
-            </div>
+              </>}
 
-            <div className={`${panelClass} flex flex-col`}>
+              {registryPanel === "transaction" && <>
               <CardHeading icon={ReceiptText} title="Novo lancamento" description="Registre uma receita ou despesa manual." />
               <div className="space-y-3">
                 <input aria-label="Descricao do lancamento" className={inputClass} placeholder="Descricao" value={transactionDraft.description} onChange={(event) => setTransactionDraft({ ...transactionDraft, description: event.target.value })} />
@@ -688,47 +935,11 @@ function FinancePanel() {
                   Criar lancamento
                 </button>
               </div>
+              </>}
             </div>
           </div>}
 
-          {isTransactionArea && <div className="grid gap-5 xl:grid-cols-[.85fr_.85fr_1.7fr]">
-            <div className={panelClass}>
-              <CardHeading icon={Landmark} title="Contas" description={`${data.accounts.length} contas disponiveis`} />
-              <div className="space-y-2">
-                {data.accounts.map((account) => (
-                  <div key={account.id} className="rounded-lg border border-surface-03 bg-surface-01 px-3 py-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-bold text-cream">{account.name}</p>
-                        <p className="text-xs text-stone">{account.account_type.replace(/_/g, " ")}</p>
-                      </div>
-                      <p className="font-black text-gold">{currency(account.current_balance)}</p>
-                    </div>
-                  </div>
-                ))}
-                {data.accounts.length === 0 && <EmptyText text="Nenhuma conta cadastrada." />}
-              </div>
-            </div>
-
-            <div className={panelClass}>
-              <CardHeading icon={Users} title="Favorecidos" description={`${data.counterparties.length} cadastros ativos`} />
-              <div className="space-y-2">
-                {data.counterparties.map((counterparty) => (
-                  <div key={counterparty.id} className="rounded-lg border border-surface-03 bg-surface-01 px-3 py-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-bold text-cream">{counterparty.name}</p>
-                        <p className="text-xs text-stone">{counterparty.counterparty_type} {counterparty.document ? `- ${counterparty.document}` : ""}</p>
-                      </div>
-                      <p className="font-black text-amber-300">{currency(counterparty.open_amount)}</p>
-                    </div>
-                  </div>
-                ))}
-                {data.counterparties.length === 0 && <EmptyText text="Nenhum favorecido cadastrado." />}
-              </div>
-            </div>
-
-            <div className={panelClass}>
+          {isTransactionArea && <div className={panelClass}>
               <div className="flex flex-col gap-4 border-b border-surface-03 pb-4">
                 <CardHeading icon={ClipboardList} title="Lancamentos" description={`${filteredTransactions.length} de ${data.transactions.length} registros exibidos`} />
                 <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_10rem_10rem]">
@@ -817,8 +1028,7 @@ function FinancePanel() {
                 {data.transactions.length === 0 && <EmptyText icon={ClipboardList} text="Nenhum lancamento cadastrado." />}
                 {data.transactions.length > 0 && filteredTransactions.length === 0 && <EmptyText icon={Search} text="Nenhum lancamento corresponde aos filtros." />}
               </div>
-            </div>
-          </div>}
+            </div>}
         </>
       )}
         </div>

@@ -8,6 +8,8 @@ FinanceAccountType = Literal["cash", "bank", "credit_card", "wallet", "other"]
 FinanceEntryType = Literal["income", "expense"]
 FinanceTransactionStatus = Literal["pending", "partial", "paid", "cancelled"]
 FinanceCounterpartyType = Literal["supplier", "customer", "employee", "partner", "other"]
+FinanceBankStatementStatus = Literal["imported", "reconciled", "closed"]
+FinanceBankStatementLineStatus = Literal["unmatched", "suggested", "matched", "ignored", "divergent"]
 
 
 class FinanceAccountIn(BaseModel):
@@ -24,6 +26,86 @@ class FinanceAccountOut(FinanceAccountIn):
     current_balance: float = 0.0
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class FinanceBankStatementLineIn(BaseModel):
+    external_id: str = Field(min_length=1, max_length=180)
+    transaction_date: date
+    description: str = Field(min_length=1, max_length=220)
+    amount: Decimal = Field(max_digits=20, decimal_places=2)
+    balance: Decimal | None = Field(default=None, max_digits=20, decimal_places=2)
+
+
+class FinanceBankStatementImportIn(BaseModel):
+    account_id: str
+    source: str = Field(default="manual", min_length=1, max_length=30)
+    external_reference: str | None = Field(default=None, max_length=180)
+    file_hash: str | None = Field(default=None, max_length=128)
+    period_start: date | None = None
+    period_end: date | None = None
+    opening_balance: Decimal | None = Field(default=None, max_digits=20, decimal_places=2)
+    closing_balance: Decimal | None = Field(default=None, max_digits=20, decimal_places=2)
+    lines: list[FinanceBankStatementLineIn] = Field(min_length=1, max_length=10000)
+
+
+class FinanceBankStatementLineOut(FinanceBankStatementLineIn):
+    id: str
+    tenant_id: str
+    statement_id: str
+    reconciliation_status: FinanceBankStatementLineStatus
+    matched_transaction_id: str | None = None
+    matched_at: datetime | None = None
+
+
+class FinanceBankMatchIn(BaseModel):
+    transaction_id: str
+
+
+class FinanceBankReconciliationReasonIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=1000)
+
+
+class FinanceBankMatchCandidateOut(BaseModel):
+    id: str
+    description: str
+    competence_date: date
+    amount: float
+    entry_type: FinanceEntryType
+    status: FinanceTransactionStatus
+
+
+class FinanceBankReconciliationLineOut(FinanceBankStatementLineOut):
+    candidates: list[FinanceBankMatchCandidateOut] = Field(default_factory=list)
+
+
+class FinanceBankReconciliationEventOut(BaseModel):
+    id: str
+    tenant_id: str
+    statement_line_id: str
+    action: str
+    transaction_id: str | None = None
+    admin_id: str | None = None
+    reason: str | None = None
+    created_at: datetime
+
+
+class FinanceBankStatementOut(BaseModel):
+    id: str
+    tenant_id: str
+    account_id: str
+    account_name: str
+    source: str
+    external_reference: str | None = None
+    file_hash: str | None = None
+    period_start: date | None = None
+    period_end: date | None = None
+    opening_balance: Decimal | None = None
+    closing_balance: Decimal | None = None
+    status: FinanceBankStatementStatus
+    imported_at: datetime
+    line_count: int
+    unmatched_count: int
+    created_at: datetime
 
 
 class FinanceCategoryIn(BaseModel):
@@ -206,7 +288,7 @@ class FinanceObligationInstallmentOut(BaseModel):
 class FinanceObligationOut(BaseModel):
     id: str
     tenant_id: str
-    fiscal_document_id: str
+    fiscal_document_id: str | None = None
     idempotency_key: str
     status: FinanceTransactionStatus
     currency: str

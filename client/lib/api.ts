@@ -2547,6 +2547,8 @@ export type FinanceAccountType = "cash" | "bank" | "credit_card" | "wallet" | "o
 export type FinanceEntryType = "income" | "expense";
 export type FinanceTransactionStatus = "pending" | "partial" | "paid" | "cancelled";
 export type FinanceCounterpartyType = "supplier" | "customer" | "employee" | "partner" | "other";
+export type FinanceBankStatementStatus = "imported" | "reconciled" | "closed";
+export type FinanceBankStatementLineStatus = "unmatched" | "suggested" | "matched" | "ignored" | "divergent";
 
 export interface FinanceAccount {
   id: string;
@@ -2559,6 +2561,72 @@ export interface FinanceAccount {
   active: boolean;
   created_at?: string | null;
   updated_at?: string | null;
+}
+
+export interface FinanceBankStatementLineInput {
+  external_id: string;
+  transaction_date: string;
+  description: string;
+  amount: string;
+  balance?: string | null;
+}
+
+export interface FinanceBankStatementImportInput {
+  account_id: string;
+  source: string;
+  external_reference?: string | null;
+  file_hash?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  opening_balance?: string | null;
+  closing_balance?: string | null;
+  lines: FinanceBankStatementLineInput[];
+}
+
+export interface FinanceBankStatementLine {
+  id: string;
+  tenant_id: string;
+  statement_id: string;
+  external_id: string;
+  transaction_date: string;
+  description: string;
+  amount: string;
+  balance?: string | null;
+  reconciliation_status: FinanceBankStatementLineStatus;
+  matched_transaction_id?: string | null;
+  matched_at?: string | null;
+}
+
+export interface FinanceBankMatchCandidate {
+  id: string;
+  description: string;
+  competence_date: string;
+  amount: number;
+  entry_type: FinanceEntryType;
+  status: FinanceTransactionStatus;
+}
+
+export interface FinanceBankReconciliationLine extends FinanceBankStatementLine {
+  candidates: FinanceBankMatchCandidate[];
+}
+
+export interface FinanceBankStatement {
+  id: string;
+  tenant_id: string;
+  account_id: string;
+  account_name: string;
+  source: string;
+  external_reference?: string | null;
+  file_hash?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  opening_balance?: string | null;
+  closing_balance?: string | null;
+  status: FinanceBankStatementStatus;
+  imported_at: string;
+  line_count: number;
+  unmatched_count: number;
+  created_at: string;
 }
 
 export interface FinanceCategory {
@@ -6240,6 +6308,13 @@ export const cmvApi = {
 
 export const financeApi = {
   overview: () => get<FinanceOverview>("/gestao/finance/overview"),
+  listBankStatements: () => get<FinanceBankStatement[]>("/gestao/finance/bank-statements"),
+  listBankStatementLines: (id: string) => get<FinanceBankStatementLine[]>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/lines`),
+  listBankReconciliation: (id: string) => get<FinanceBankReconciliationLine[]>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/reconciliation`),
+  matchBankStatementLine: (lineId: string, transactionId: string) => post<FinanceBankStatementLine>(`/gestao/finance/bank-statement-lines/${encodeURIComponent(lineId)}/match`, { transaction_id: transactionId }),
+  unmatchBankStatementLine: (lineId: string, reason: string) => post<FinanceBankStatementLine>(`/gestao/finance/bank-statement-lines/${encodeURIComponent(lineId)}/unmatch`, { reason }),
+  ignoreBankStatementLine: (lineId: string, reason: string) => post<FinanceBankStatementLine>(`/gestao/finance/bank-statement-lines/${encodeURIComponent(lineId)}/ignore`, { reason }),
+  importBankStatement: (data: FinanceBankStatementImportInput) => post<FinanceBankStatement>("/gestao/finance/bank-statements/import", data),
   createAccount: (data: FinanceAccountInput) => post<FinanceAccount>("/gestao/finance/accounts", data),
   updateAccount: (id: string, data: FinanceAccountInput) => put<FinanceAccount>(`/gestao/finance/accounts/${id}`, data),
   removeAccount: (id: string) => del<void>(`/gestao/finance/accounts/${id}`),

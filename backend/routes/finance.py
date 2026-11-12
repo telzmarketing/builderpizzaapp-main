@@ -12,6 +12,13 @@ from backend.routes.admin_auth import get_current_admin
 from backend.schemas.finance import (
     FinanceAccountIn,
     FinanceAccountOut,
+    FinanceBankStatementImportIn,
+    FinanceBankStatementLineOut,
+    FinanceBankMatchIn,
+    FinanceBankReconciliationEventOut,
+    FinanceBankReconciliationReasonIn,
+    FinanceBankReconciliationLineOut,
+    FinanceBankStatementOut,
     FinanceCategoryIn,
     FinanceCategoryOut,
     FinanceCounterpartyIn,
@@ -45,6 +52,67 @@ def list_accounts(db: Session = Depends(get_db), _admin: AdminUser = Depends(get
 @router.post("/accounts", response_model=FinanceAccountOut, status_code=201)
 def create_account(body: FinanceAccountIn, db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
     return service(db, tenant_context).create_account(body)
+
+
+@router.get("/bank-statements", response_model=list[FinanceBankStatementOut])
+def list_bank_statements(db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    return service(db, tenant_context).list_bank_statements()
+
+
+@router.get("/bank-statements/{statement_id}/lines", response_model=list[FinanceBankStatementLineOut])
+def list_bank_statement_lines(statement_id: str, db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).list_bank_statement_lines(statement_id)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.get("/bank-statements/{statement_id}/reconciliation", response_model=list[FinanceBankReconciliationLineOut])
+def list_bank_reconciliation(statement_id: str, db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).list_bank_reconciliation(statement_id)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/bank-statement-lines/{line_id}/match", response_model=FinanceBankStatementLineOut)
+def match_bank_statement_line(line_id: str, body: FinanceBankMatchIn, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).match_bank_statement_line(line_id, body, admin.id)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/bank-statement-lines/{line_id}/unmatch", response_model=FinanceBankStatementLineOut)
+def unmatch_bank_statement_line(line_id: str, body: FinanceBankReconciliationReasonIn, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).unmatch_bank_statement_line(line_id, body, admin.id)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/bank-statement-lines/{line_id}/ignore", response_model=FinanceBankStatementLineOut)
+def ignore_bank_statement_line(line_id: str, body: FinanceBankReconciliationReasonIn, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).ignore_bank_statement_line(line_id, body, admin.id)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.get("/bank-statement-lines/{line_id}/events", response_model=list[FinanceBankReconciliationEventOut])
+def list_reconciliation_events(line_id: str, db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).list_reconciliation_events(line_id)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/bank-statements/import", response_model=FinanceBankStatementOut, status_code=201)
+def import_bank_statement(body: FinanceBankStatementImportIn, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).import_bank_statement(body, admin.id)
+    except DomainError as exc:
+        return err(exc)
 
 
 @router.put("/accounts/{account_id}", response_model=FinanceAccountOut)

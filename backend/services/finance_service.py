@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, DecimalException, ROUND_HALF_UP
 
 from sqlalchemy.exc import IntegrityError
@@ -14,7 +14,8 @@ from backend.core.tenant_context import TenantContext, TenantContextMissing
 from backend.core.wave7_tenant_orm import wave7_orm_enabled
 from backend.models.finance import (
     FinanceAccount, FinanceCategory, FinanceCounterparty, FinanceObligation,
-    FinanceObligationInstallment, FinanceSettlement, FinanceTransaction,
+    FinanceBankReconciliationEvent, FinanceBankStatement, FinanceBankStatementLine, FinanceObligationInstallment,
+    FinanceSettlement, FinanceTransaction,
 )
 from backend.models.gestao import GestaoModuleSettings
 from backend.models.inventory import InventoryPurchase
@@ -25,7 +26,8 @@ from backend.models.order import Order
 from backend.models.payment import Payment
 from backend.schemas.finance import (
     FinanceAccountIn, FinanceCategoryIn, FinanceCounterpartyIn,
-    FinanceObligationFromFiscalIn, FinanceSettlementIn, FinanceTransactionIn,
+    FinanceBankMatchIn, FinanceBankReconciliationReasonIn, FinanceBankStatementImportIn, FinanceObligationFromFiscalIn,
+    FinanceSettlementIn, FinanceTransactionIn,
 )
 from backend.services.finance_contracts import (
     FinancialContractViolation,
@@ -120,6 +122,156 @@ class FinanceService:
         )
         balances = self._account_balance_map()
         return [self._serialize_account(row, balances.get(row.id, 0.0)) for row in rows]
+
+    def list_bank_statements(self) -> list[dict]:
+        rows = (
+            self._db.query(FinanceBankStatement)
+            .join(FinanceBankStatement.account)
+            .filter(FinanceBankStatement.tenant_id == self._tenant_id)
+            .options(joinedload(FinanceBankStatement.account), joinedload(FinanceBankStatement.lines))
+            .order_by(FinanceBankStatement.imported_at.desc())
+            .limit(300)
+            .all()
+        )
+        return [self._serialize_bank_statement(row) for row in rows]
+
+    def list_bank_statement_lines(self, statement_id: str) -> list[dict]:
+        statement = self._get_bank_statement(statement_id)
+        return [self._serialize_bank_statement_line(row) for row in statement.lines]
+
+    def list_bank_reconciliation(self, statement_id: str) -> list[dict]:
+        statement = self._get_bank_statement(statement_id)
+        return [
+            {
+                **self._serialize_bank_statement_line(line),
+                "candidates": [self._serialize_bank_candidate(candidate) for candidate in self._matching_transactions(statement, line)],
+            }
+            for line in statement.lines
+        ]
+
+    def match_bank_statement_line(self, line_id: str, payload: FinanceBankMatchIn, admin_id: str | None = None) -> dict:
+        line = (
+            self._db.query(FinanceBankStatementLine)
+            .filter(FinanceBankStatementLine.tenant_id == self._tenant_id, FinanceBankStatementLine.id == line_id)
+            .with_for_update()
+            .first()
+        )
+        if not line:
+            raise FinanceNotFound("Linha do extrato")
+        transaction = self._get_transaction(payload.transaction_id, for_update=True)
+        if transaction.account_id != line.account_id:
+            raise FinanceInvalidReference("O lancamento precisa pertencer a mesma conta do extrato.")
+        if transaction.status not in {"partial", "paid"}:
+            raise FinanceInvalidReference("Somente lancamentos baixados podem ser conciliados.")
+        if line.reconciliation_status == "matched" and line.matched_transaction_id == transaction.id:
+            return self._serialize_bank_statement_line(line)
+        already_matched = (
+            self._db.query(FinanceBankStatementLine)
+            .filter(
+                FinanceBankStatementLine.tenant_id == self._tenant_id,
+                FinanceBankStatementLine.matched_transaction_id == transaction.id,
+                FinanceBankStatementLine.reconciliation_status == "matched",
+                FinanceBankStatementLine.id != line.id,
+            )
+            .first()
+        )
+        if already_matched:
+            raise FinanceInvalidReference("O lancamento ja esta conciliado com outra linha bancaria.")
+        if not self._amount_matches_line(line, transaction):
+            raise FinanceInvalidReference("O valor do lancamento nao corresponde ao movimento bancario.")
+        line.reconciliation_status = "matched"
+        line.matched_transaction_id = transaction.id
+        line.matched_at = datetime.now(timezone.utc)
+        line.matched_by_admin_id = admin_id
+        self._record_reconciliation_event(line, "matched", transaction.id, admin_id, None)
+        self._db.commit()
+        self._db.refresh(line)
+        return self._serialize_bank_statement_line(line)
+
+    def unmatch_bank_statement_line(self, line_id: str, payload: FinanceBankReconciliationReasonIn, admin_id: str | None = None) -> dict:
+        line = self._get_bank_statement_line(line_id, for_update=True)
+        if line.reconciliation_status != "matched" or not line.matched_transaction_id:
+            raise FinanceInvalidReference("A linha nao esta conciliada.")
+        previous_transaction_id = line.matched_transaction_id
+        line.reconciliation_status = "unmatched"
+        line.matched_transaction_id = None
+        line.matched_at = None
+        line.matched_by_admin_id = None
+        self._record_reconciliation_event(line, "unmatched", previous_transaction_id, admin_id, payload.reason)
+        self._db.commit()
+        self._db.refresh(line)
+        return self._serialize_bank_statement_line(line)
+
+    def ignore_bank_statement_line(self, line_id: str, payload: FinanceBankReconciliationReasonIn, admin_id: str | None = None) -> dict:
+        line = self._get_bank_statement_line(line_id, for_update=True)
+        if line.reconciliation_status == "matched":
+            raise FinanceInvalidReference("Desconcilie a linha antes de ignora-la.")
+        line.reconciliation_status = "ignored"
+        self._record_reconciliation_event(line, "ignored", None, admin_id, payload.reason)
+        self._db.commit()
+        self._db.refresh(line)
+        return self._serialize_bank_statement_line(line)
+
+    def list_reconciliation_events(self, line_id: str) -> list[dict]:
+        self._get_bank_statement_line(line_id)
+        rows = (
+            self._db.query(FinanceBankReconciliationEvent)
+            .filter(FinanceBankReconciliationEvent.tenant_id == self._tenant_id, FinanceBankReconciliationEvent.statement_line_id == line_id)
+            .order_by(FinanceBankReconciliationEvent.created_at.desc())
+            .all()
+        )
+        return [self._serialize_reconciliation_event(row) for row in rows]
+
+    def import_bank_statement(self, payload: FinanceBankStatementImportIn, admin_id: str | None = None) -> dict:
+        account = self._get_account(payload.account_id)
+        if payload.period_start and payload.period_end and payload.period_start > payload.period_end:
+            raise FinanceInvalidReference("O periodo do extrato e invalido.")
+
+        if payload.file_hash:
+            existing = (
+                self._db.query(FinanceBankStatement)
+                .filter(
+                    FinanceBankStatement.tenant_id == self._tenant_id,
+                    FinanceBankStatement.account_id == account.id,
+                    FinanceBankStatement.file_hash == payload.file_hash,
+                )
+                .first()
+            )
+            if existing:
+                return self._serialize_bank_statement(existing)
+
+        external_ids = [line.external_id.strip() for line in payload.lines]
+        if len(set(external_ids)) != len(external_ids):
+            raise FinanceInvalidReference("O extrato possui identificadores de lancamento duplicados.")
+
+        statement = FinanceBankStatement(
+            id=f"fin-stm-{uuid.uuid4().hex[:12]}",
+            tenant_id=self._tenant_id,
+            account_id=account.id,
+            source=payload.source.strip(),
+            external_reference=payload.external_reference,
+            file_hash=payload.file_hash,
+            period_start=payload.period_start,
+            period_end=payload.period_end,
+            opening_balance=payload.opening_balance,
+            closing_balance=payload.closing_balance,
+            created_by_admin_id=admin_id,
+        )
+        self._db.add(statement)
+        for payload_line, external_id in zip(payload.lines, external_ids):
+            statement.lines.append(FinanceBankStatementLine(
+                id=f"fin-stl-{uuid.uuid4().hex[:12]}",
+                tenant_id=self._tenant_id,
+                account_id=account.id,
+                external_id=external_id,
+                transaction_date=payload_line.transaction_date,
+                description=payload_line.description.strip(),
+                amount=payload_line.amount,
+                balance=payload_line.balance,
+            ))
+        self._db.commit()
+        self._db.refresh(statement)
+        return self._serialize_bank_statement(statement)
 
     def create_account(self, payload: FinanceAccountIn) -> dict:
         opening_balance = self._money(payload.opening_balance, "saldo inicial", allow_negative=True)
@@ -1060,6 +1212,124 @@ class FinanceService:
                 "amount": self._money(item.amount), "due_date": item.due_date, "status": item.status,
                 "paid_amount": self._money(item.paid_amount), "created_at": item.created_at,
             } for item in row.installments],
+        }
+
+    def _get_bank_statement(self, statement_id: str) -> FinanceBankStatement:
+        row = (
+            self._db.query(FinanceBankStatement)
+            .options(joinedload(FinanceBankStatement.account), joinedload(FinanceBankStatement.lines))
+            .filter(FinanceBankStatement.tenant_id == self._tenant_id, FinanceBankStatement.id == statement_id)
+            .first()
+        )
+        if not row:
+            raise FinanceNotFound("Extrato bancario")
+        return row
+
+    def _get_bank_statement_line(self, line_id: str, *, for_update: bool = False) -> FinanceBankStatementLine:
+        query = self._db.query(FinanceBankStatementLine).filter(
+            FinanceBankStatementLine.tenant_id == self._tenant_id,
+            FinanceBankStatementLine.id == line_id,
+        )
+        if for_update:
+            query = query.with_for_update()
+        row = query.first()
+        if not row:
+            raise FinanceNotFound("Linha do extrato")
+        return row
+
+    def _record_reconciliation_event(self, line: FinanceBankStatementLine, action: str, transaction_id: str | None, admin_id: str | None, reason: str | None) -> None:
+        self._db.add(FinanceBankReconciliationEvent(
+            id=f"fin-rec-{uuid.uuid4().hex[:12]}",
+            tenant_id=self._tenant_id,
+            statement_line_id=line.id,
+            action=action,
+            transaction_id=transaction_id,
+            admin_id=admin_id,
+            reason=reason,
+        ))
+
+    @staticmethod
+    def _serialize_reconciliation_event(row: FinanceBankReconciliationEvent) -> dict:
+        return {
+            "id": row.id,
+            "tenant_id": row.tenant_id,
+            "statement_line_id": row.statement_line_id,
+            "action": row.action,
+            "transaction_id": row.transaction_id,
+            "admin_id": row.admin_id,
+            "reason": row.reason,
+            "created_at": row.created_at,
+        }
+
+    @staticmethod
+    def _serialize_bank_statement_line(row: FinanceBankStatementLine) -> dict:
+        return {
+            "id": row.id,
+            "tenant_id": row.tenant_id,
+            "statement_id": row.statement_id,
+            "external_id": row.external_id,
+            "transaction_date": row.transaction_date,
+            "description": row.description,
+            "amount": row.amount,
+            "balance": row.balance,
+            "reconciliation_status": row.reconciliation_status,
+            "matched_transaction_id": row.matched_transaction_id,
+            "matched_at": row.matched_at,
+        }
+
+    def _serialize_bank_statement(self, row: FinanceBankStatement) -> dict:
+        lines = list(row.lines or [])
+        return {
+            "id": row.id,
+            "tenant_id": row.tenant_id,
+            "account_id": row.account_id,
+            "account_name": row.account.name if row.account else "",
+            "source": row.source,
+            "external_reference": row.external_reference,
+            "file_hash": row.file_hash,
+            "period_start": row.period_start,
+            "period_end": row.period_end,
+            "opening_balance": row.opening_balance,
+            "closing_balance": row.closing_balance,
+            "status": row.status,
+            "imported_at": row.imported_at,
+            "line_count": len(lines),
+            "unmatched_count": sum(1 for line in lines if line.reconciliation_status != "matched"),
+            "created_at": row.created_at,
+        }
+
+    def _matching_transactions(self, statement: FinanceBankStatement, line: FinanceBankStatementLine) -> list[FinanceTransaction]:
+        target_date = line.transaction_date
+        candidates = (
+            self._db.query(FinanceTransaction)
+            .filter(
+                FinanceTransaction.tenant_id == self._tenant_id,
+                FinanceTransaction.account_id == statement.account_id,
+                FinanceTransaction.status.in_(["partial", "paid"]),
+                FinanceTransaction.competence_date.between(target_date - timedelta(days=3), target_date + timedelta(days=3)),
+            )
+            .order_by(FinanceTransaction.competence_date, FinanceTransaction.created_at)
+            .limit(25)
+            .all()
+        )
+        return [candidate for candidate in candidates if self._amount_matches_line(line, candidate)]
+
+    @staticmethod
+    def _amount_matches_line(line: FinanceBankStatementLine, transaction: FinanceTransaction) -> bool:
+        line_amount = Decimal(str(line.amount or 0)).quantize(Decimal("0.01"))
+        settled_amount = Decimal(str(transaction.net_amount or transaction.paid_amount or transaction.amount or 0)).quantize(Decimal("0.01"))
+        expected = settled_amount if transaction.entry_type == "income" else -settled_amount
+        return line_amount == expected
+
+    @staticmethod
+    def _serialize_bank_candidate(row: FinanceTransaction) -> dict:
+        return {
+            "id": row.id,
+            "description": row.description,
+            "competence_date": row.competence_date,
+            "amount": float(row.amount or 0),
+            "entry_type": row.entry_type,
+            "status": row.status,
         }
 
     def _get_category(self, category_id: str) -> FinanceCategory:
