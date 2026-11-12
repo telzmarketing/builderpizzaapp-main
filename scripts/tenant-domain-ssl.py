@@ -5,6 +5,10 @@ from __future__ import annotations
 import contextlib
 import argparse
 from datetime import datetime, timezone
+try:
+    import grp
+except ImportError:  # pragma: no cover - the production target is Unix.
+    grp = None
 import hashlib
 import ipaddress
 import json
@@ -85,6 +89,15 @@ def log_job_failure(job_id, stage, code, rollback_status, error):
         pass  # A logging failure must never alter recovery or its API result.
 
 
+def _syslog_gid():
+    if grp is None:
+        return None
+    try:
+        return grp.getgrnam('syslog').gr_gid
+    except KeyError:
+        return None
+
+
 def trusted(path: Path, *, directory=False, private=False):
     """No links or group/other writers; check each parent as well."""
     path = Path(path)
@@ -92,11 +105,19 @@ def trusted(path: Path, *, directory=False, private=False):
         raise WorkerError()
     for item in [*reversed(path.parents), path]:
         info = item.lstat()
+        # Debian/Ubuntu keep the standard log directory root:syslog 0775 so
+        # services can write through their logging group. This is the only
+        # group-writable path permitted; all other writable paths remain
+        # fail-closed.
+        debian_log_root = (item == Path('/var/log') and stat.S_ISDIR(info.st_mode)
+                           and info.st_uid == 0 and info.st_gid == _syslog_gid()
+                           and stat.S_IMODE(info.st_mode) == 0o775)
         # Ubuntu intentionally exposes a sticky /run/lock. Its private child
         # remains root:root 0700; never permit this exception for another path.
         sticky_lock_root = (item == Path('/run/lock') and stat.S_ISDIR(info.st_mode)
                             and stat.S_IMODE(info.st_mode) == 0o1777)
-        if stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or (info.st_mode & 0o022 and not sticky_lock_root):
+        if (stat.S_ISLNK(info.st_mode) or info.st_uid != 0
+                or (info.st_mode & 0o022 and not (sticky_lock_root or debian_log_root))):
             raise WorkerError()
         if item != path and not stat.S_ISDIR(info.st_mode):
             raise WorkerError()

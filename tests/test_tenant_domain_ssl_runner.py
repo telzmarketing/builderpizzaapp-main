@@ -229,6 +229,37 @@ def test_trusted_path_rejects_symlink_hardlink_and_writable_parents():
         worker.Path = original
 
 
+def test_trusted_accepts_only_standard_debian_log_root(monkeypatch):
+    class FakePath:
+        def __init__(self, name, mode, gid=0, parents=()):
+            self.name, self.parents = name, parents
+            self.info = SimpleNamespace(st_mode=mode, st_uid=0, st_gid=gid, st_nlink=1)
+        def is_absolute(self):
+            return True
+        def lstat(self):
+            return self.info
+        stat = lstat
+        def __eq__(self, other):
+            return self.name == (other.name if isinstance(other, FakePath) else other)
+
+    syslog_gid = 998
+    monkeypatch.setattr(worker, '_syslog_gid', lambda: syslog_gid)
+    monkeypatch.setattr(worker, 'Path', lambda value: value)
+    log_root = FakePath('/var/log', stat.S_IFDIR | 0o775, gid=syslog_gid)
+    child = FakePath('/var/log/letsencrypt', stat.S_IFDIR | 0o700, parents=[log_root])
+    worker.trusted(child, directory=True)
+
+    for invalid_root in (
+        FakePath('/var/log', stat.S_IFDIR | 0o775, gid=0),
+        FakePath('/var/log', stat.S_IFDIR | 0o777, gid=syslog_gid),
+        FakePath('/tmp', stat.S_IFDIR | 0o775, gid=syslog_gid),
+    ):
+        invalid_child = FakePath(invalid_root.name + '/child', stat.S_IFDIR | 0o700,
+                                 parents=[invalid_root])
+        with pytest.raises(worker.WorkerError):
+            worker.trusted(invalid_child, directory=True)
+
+
 @pytest.mark.parametrize('target', ['runner', 'renew-hook'])
 def test_only_exact_sticky_run_lock_is_permitted_with_private_child(monkeypatch, target):
     module = worker
