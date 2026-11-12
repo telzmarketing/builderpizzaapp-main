@@ -14,7 +14,13 @@ class TenantDomain(Base):
             "'dns_error', 'ssl_error', 'suspended', 'removed')",
             name="ck_tenant_domains_status",
         ),
-        Index("uq_tenant_domains_hostname_lower", text("lower(hostname)"), unique=True),
+        Index(
+            "uq_tenant_domains_hostname_lower",
+            text("lower(hostname)"),
+            unique=True,
+            postgresql_where=text("status <> 'removed'"),
+            sqlite_where=text("status <> 'removed'"),
+        ),
         Index("ix_tenant_domains_tenant_status", "tenant_id", "status"),
         Index(
             "uq_tenant_domains_primary_active",

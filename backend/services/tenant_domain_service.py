@@ -91,7 +91,10 @@ class TenantDomainService:
         ).first()
         if tenant is None:
             raise TenantContextMissing("Tenant inexistente ou inativo.")
-        if self._db.query(TenantDomain).filter(TenantDomain.hostname.ilike(normalized)).first() is not None:
+        if self._db.query(TenantDomain).filter(
+            TenantDomain.hostname.ilike(normalized),
+            TenantDomain.status != "removed",
+        ).first() is not None:
             raise HostnameAlreadyRegistered()
         token = secrets.token_urlsafe(32)
         domain = TenantDomain(

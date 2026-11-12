@@ -177,6 +177,46 @@ def test_platform_hostname_and_real_registry_conflicts_remain_blocked(company):
     assert registered.json() == {"error": "HostnameAlreadyRegistered"}
 
 
+def test_removed_hostname_can_be_registered_again_without_erasing_history(company):
+    removed = TenantDomain(
+        id="domain-removed",
+        tenant_id="tenant-a",
+        hostname="app.grantorinopizzaria.com.br",
+        kind="custom",
+        status="removed",
+        removed_at=tenant_domain_ssl_service.utcnow(),
+        verification_token_hash="b" * 64,
+        ssl_status="pending",
+    )
+    company.db.add(removed)
+    company.db.commit()
+
+    response = company.client.post(
+        "/api/admin/company/domains",
+        headers=company.headers(),
+        json={"hostname": "APP.GRANTORINOPIZZARIA.COM.BR", "kind": "custom"},
+    )
+
+    assert response.status_code == 201
+    rows = company.db.query(TenantDomain).filter(
+        TenantDomain.hostname.ilike("app.grantorinopizzaria.com.br")
+    ).order_by(TenantDomain.created_at).all()
+    assert [row.id for row in rows] == ["domain-removed", response.json()["data"]["domain"]["id"]]
+    assert rows[0].status == "removed"
+    assert rows[1].status == "awaiting_dns"
+
+
+def test_active_hostname_cannot_be_registered_again(company):
+    response = company.client.post(
+        "/api/admin/company/domains",
+        headers=company.headers(),
+        json={"hostname": "A.EXAMPLE.COM", "kind": "custom"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"error": "HostnameAlreadyRegistered"}
+
+
 def test_authorized_actor_must_match_panel_membership_exactly():
     from fastapi import HTTPException
     from backend.core.rbac_authorization import AuthorizedTenantActor
