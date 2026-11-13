@@ -8,6 +8,19 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform?: string }>;
 };
 
+export type PwaInstallPlatform = "android" | "ios" | "desktop";
+
+export function detectPwaInstallPlatform(navigatorValue: Pick<Navigator, "userAgent" | "platform" | "maxTouchPoints"> = typeof navigator === "undefined" ? { userAgent: "", platform: "", maxTouchPoints: 0 } : navigator): PwaInstallPlatform {
+  const userAgent = navigatorValue.userAgent || "";
+  const platform = navigatorValue.platform || "";
+  const isAndroid = /Android/i.test(userAgent);
+  const isIosDevice = /iPhone|iPod|iPad/i.test(userAgent)
+    || (/Macintosh/i.test(userAgent) && /MacIntel/i.test(platform) && navigatorValue.maxTouchPoints > 1);
+  if (isAndroid) return "android";
+  if (isIosDevice) return "ios";
+  return "desktop";
+}
+
 export const PWA_INSTALL_DELAY_MS = 60_000;
 
 function installedStorageKey(appKey: PwaAppKey) {
@@ -49,9 +62,11 @@ export default function PwaInstallButton({ only, pathname, hideOnKds = false, in
   const [installed, setInstalled] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
   const [delayElapsed, setDelayElapsed] = useState(delayMs === 0);
+  const [platform, setPlatform] = useState<PwaInstallPlatform>(() => detectPwaInstallPlatform());
 
   useEffect(() => {
     const standaloneMedia = window.matchMedia("(display-mode: standalone)");
+    setPlatform(detectPwaInstallPlatform());
     const refreshInstalledState = () => setInstalled(allowed && (isStandaloneMode(standaloneMedia) || (app ? hasRecordedPwaInstallation(app.key) : false)));
     refreshInstalledState();
     setDelayElapsed(delayMs === 0);
@@ -88,9 +103,27 @@ export default function PwaInstallButton({ only, pathname, hideOnKds = false, in
     };
   }, [allowed, app, currentPathname, delayMs]);
 
-  if (!allowed || installed || !delayElapsed || !app || (hideOnKds && isKds)) return null;
+  const canOfferInstall = !!prompt || platform === "android" || platform === "ios";
+  if (!allowed || installed || !delayElapsed || !app || (hideOnKds && isKds) || !canOfferInstall) return null;
+  const instruction = platform === "ios"
+    ? "No iPhone/iPad: use Compartilhar e escolha \"Adicionar à Tela de Início\"."
+    : platform === "android"
+      ? "No Android: use o menu do navegador e escolha \"Instalar app\" ou \"Adicionar à tela inicial\"."
+      : "No computador: use o ícone de instalação na barra de endereço do navegador.";
   return (
-    <div className={`pwa-install-anchor${inline ? " pwa-install-anchor-inline" : ""}${mobileOnly ? " pwa-install-anchor-mobile-only" : ""}${variant === "banner" ? " pwa-install-anchor-banner" : ""}`} data-pwa-app={app.key}>
+    <div
+      className={`pwa-install-anchor${inline ? " pwa-install-anchor-inline" : ""}${mobileOnly ? " pwa-install-anchor-mobile-only" : ""}${variant === "banner" ? " pwa-install-anchor-banner" : ""}`}
+      data-pwa-app={app.key}
+      style={{
+        position: "static",
+        width: "100%",
+        maxWidth: "100%",
+        alignItems: inline ? "stretch" : "flex-start",
+        margin: "0 0 1rem",
+        padding: "0",
+        pointerEvents: "auto",
+      }}
+    >
       {variant === "banner" && <div className="pwa-install-message" role="status">Instale a loja no seu celular para acessar mais rápido.</div>}
       <button type="button" onClick={() => {
         const current = prompt;
@@ -107,12 +140,7 @@ export default function PwaInstallButton({ only, pathname, hideOnKds = false, in
       </button>
       {showInstructions && !prompt && (
         <p className="pwa-install-hint" role="status">
-          No iPhone/iPad: use Compartilhar e escolha &quot;Adicionar a Tela de Inicio&quot;.
-        </p>
-      )}
-      {false && showInstructions && !prompt && (
-        <p className="pwa-install-hint" role="status">
-          No iPhone/iPad: use Compartilhar e escolha “Adicionar à Tela de Início”.
+          {instruction}
         </p>
       )}
     </div>

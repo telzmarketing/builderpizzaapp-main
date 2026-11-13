@@ -3,17 +3,13 @@
 }
 
 .pwa-install-anchor {
-  position: fixed;
-  /* Keep the compact control below the sticky KDS header controls. */
-  top: max(4.75rem, calc(env(safe-area-inset-top) + 4rem));
-  right: max(0.75rem, env(safe-area-inset-right));
-  z-index: 80;
+  position: static;
   display: flex;
   max-width: min(19rem, calc(100vw - 1.5rem));
   flex-direction: column;
   align-items: flex-end;
   gap: 0.45rem;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .pwa-install-anchor-inline {
@@ -33,13 +29,9 @@
 }
 
 .pwa-install-anchor-banner {
-  top: auto;
-  right: max(0.75rem, env(safe-area-inset-right));
-  bottom: max(0.75rem, env(safe-area-inset-bottom));
-  left: max(0.75rem, env(safe-area-inset-left));
   max-width: none;
   align-items: stretch;
-  margin-inline: auto;
+  margin: 0.75rem auto;
   width: min(31rem, calc(100vw - 1.5rem));
   border: 1px solid rgb(251 191 36 / 0.35);
   border-radius: 0.85rem;

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { configureBiMobileWorker, configureMotoboyWorker, configurePwaWorker, consumePwaContextTarget, getPwaApp, getPwaEntryApp, isBiMobilePath, isMotoboyPath, isPwaEntryPath, KDS_PWA_KEYS, PWA_CONTEXT_STORAGE_KEY, pwaScopeForPath, readPwaContext, rememberPwaContext, resolveAdminLoginTarget } from "./motoboyPwa";
-import { canShowPwaInstallButton, hasRecordedPwaInstallation, PWA_INSTALL_DELAY_MS } from "@/components/PwaInstallButton";
+import { canShowPwaInstallButton, detectPwaInstallPlatform, hasRecordedPwaInstallation, PWA_INSTALL_DELAY_MS } from "@/components/PwaInstallButton";
 
 const origin = "https://pizza.example";
 function memoryStorage() {
@@ -251,4 +251,17 @@ describe("Print Pedido PWA entry", () => {
 
     expect(container.register).toHaveBeenCalledWith("/sw.js", { scope: "/operacoes/print-pedido/", updateViaCache: "none" });
   });
+});
+
+describe("PWA install platform detection", () => {
+  it.each([
+    ["Android Chrome", "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36", "Linux armv8l", 5, "android"],
+    ["iPhone Safari", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1", "iPhone", 5, "ios"],
+    ["iPad Safari", "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1", "iPad", 5, "ios"],
+    ["iPadOS desktop mode", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15", "MacIntel", 5, "ios"],
+    ["desktop Chrome", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36", "Win32", 0, "desktop"],
+  ])("detects %s without showing iOS instructions on other platforms", (_name, userAgent, platform, maxTouchPoints, expected) => {
+    expect(detectPwaInstallPlatform({ userAgent, platform, maxTouchPoints } as Navigator)).toBe(expected);
+  });
+
 });
