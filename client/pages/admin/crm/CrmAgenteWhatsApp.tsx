@@ -65,7 +65,7 @@ type StatusFilter = "all" | ApiAgenteWhatsAppConversation["status"];
 type OutboxFilter = "all" | "pending" | "processing" | "sent" | "failed" | "dead";
 type CampaignAudience = "manual" | "customers" | "leads";
 type StoryMediaType = "image" | "video";
-type ModuleTab = "conversations" | "settings" | "order_notifications";
+type ModuleTab = "dashboard" | "conversations" | "settings" | "order_notifications";
 
 const statusLabels: Record<ApiAgenteWhatsAppConversation["status"], string> = {
   open: "Aberta",
@@ -315,7 +315,7 @@ export default function CrmAgenteWhatsApp() {
   const [selectedId, setSelectedId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("session"));
   const [messages, setMessages] = useState<ApiAgenteWhatsAppMessage[]>([]);
   const [filter, setFilter] = useState<StatusFilter>("all");
-  const [moduleTab, setModuleTab] = useState<ModuleTab>("conversations");
+  const [moduleTab, setModuleTab] = useState<ModuleTab>("dashboard");
   const [search, setSearch] = useState("");
   const [agentFilter, setAgentFilter] = useState("");
   const [periodFrom, setPeriodFrom] = useState("");
@@ -1099,6 +1099,7 @@ export default function CrmAgenteWhatsApp() {
 
       <div className="bg-surface-02 border border-surface-03 rounded-xl p-1 flex gap-1 overflow-x-auto">
         {[
+          { value: "dashboard" as ModuleTab, label: "Dashboard", icon: BarChart3 },
           { value: "conversations" as ModuleTab, label: "Conversas", icon: MessageCircle },
           { value: "settings" as ModuleTab, label: "Configuracoes", icon: Bot },
           { value: "order_notifications" as ModuleTab, label: "Avisos de pedido", icon: Bell },
@@ -1125,7 +1126,7 @@ export default function CrmAgenteWhatsApp() {
         <OrderWhatsappNotificationSettingsPanel />
       )}
 
-      {activeModuleTab === "conversations" && (
+      {activeModuleTab === "dashboard" && (
         <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard icon={MessageCircle} label="Conversas abertas" value={dashboard?.sessions_open ?? 0} />
@@ -2337,7 +2338,7 @@ export default function CrmAgenteWhatsApp() {
       </section>
       )}
 
-      {activeModuleTab === "conversations" && (
+      {activeModuleTab === "dashboard" && (
         <>
 
       {false && (
