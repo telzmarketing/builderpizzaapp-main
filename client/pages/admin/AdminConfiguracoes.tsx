@@ -33,6 +33,7 @@ const dedicatedConfigurationRouteTabs: Record<string, Tab> = {
   "/painel/painel-tv-config": "painel-tv",
   "/painel/som": "som",
   "/painel/identificacao-parceiros": "identificacao-parceiros",
+  "/painel/configuracoes/ia-central": "ia-central",
 };
 
 export function getDedicatedConfigurationTab(pathname: string): Tab | null {
@@ -296,10 +297,6 @@ export default function AdminConfiguracoes() {
             >
               <Tags size={14} />
               Identificação de Parceiros
-            </button>
-            <button type="button" onClick={() => setActiveTab("ia-central")} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "ia-central" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}>
-              <KeyRound size={14} />
-              IA central
             </button>
           </div>}
 

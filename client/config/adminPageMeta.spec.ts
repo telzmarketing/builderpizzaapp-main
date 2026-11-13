@@ -10,6 +10,7 @@ describe("AdminConfiguracoes route metadata", () => {
     ["/painel/painel-tv-config", "Painel de TV"],
     ["/painel/som", "Som"],
     ["/painel/identificacao-parceiros", "Identificação de parceiros"],
+    ["/painel/configuracoes/ia-central", "IA central"],
   ])("keeps dedicated metadata for %s", (pathname, title) => {
     expect(getAdminPageMeta(pathname)).toMatchObject({ eyebrow: "Configuracoes", title });
   });

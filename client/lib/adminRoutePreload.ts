@@ -55,6 +55,7 @@ const routeLoaders: Array<[string, RouteLoader]> = [
   ["/painel/painel-tv-config", () => import("@/pages/admin/AdminConfiguracoes")],
   ["/painel/som", () => import("@/pages/admin/AdminConfiguracoes")],
   ["/painel/identificacao-parceiros", () => import("@/pages/admin/AdminConfiguracoes")],
+  ["/painel/configuracoes/ia-central", () => import("@/pages/admin/AdminConfiguracoes")],
   ["/painel/configuracoes", () => import("@/pages/admin/AdminConfiguracoes")],
   ["/painel/cupons", () => import("@/pages/admin/marketing/MarketingCupons")],
   ["/painel/clientes", () => import("@/pages/admin/AdminClientes")],

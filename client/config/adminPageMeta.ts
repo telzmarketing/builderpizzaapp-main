@@ -93,6 +93,7 @@ export const adminPageMeta: Record<string, PageMeta> = {
   "/painel/usuarios": { eyebrow: "Configuracoes", title: "Usuarios do Sistema", subtitle: "Acessos administrativos" },
   "/painel/lgpd": { eyebrow: "Configuracoes", title: "LGPD & Privacidade", subtitle: "Politicas, consentimentos e privacidade" },
   "/painel/configuracoes": { eyebrow: "Configuracoes", title: "Configuracoes", subtitle: "Preferencias do sistema" },
+  "/painel/configuracoes/ia-central": { eyebrow: "Configuracoes", title: "IA central", subtitle: "Credencial compartilhada pelos módulos de IA da empresa" },
   "/painel/comprovantes-pedidos": { eyebrow: "Configuracoes", title: "Comprovantes de pedidos", subtitle: "Notas, comandas e comprovantes de pedidos" },
   "/painel/etiquetas-expedicao": { eyebrow: "Configuracoes", title: "Etiquetas de expedição", subtitle: "Modelos de etiquetas para caixas e expedição" },
   "/painel/etiquetas-insumos": { eyebrow: "Configuracoes", title: "Etiquetas de insumos", subtitle: "Modelos de etiquetas para porcionamento, lote e validade" },

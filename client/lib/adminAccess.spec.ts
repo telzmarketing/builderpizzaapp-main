@@ -7,6 +7,7 @@ describe("admin navigation route matching", () => {
   it("keeps the aggregate configuration page distinct from dedicated submodule routes", () => {
     expect(isAggregateConfigurationRoute("/painel/configuracoes")).toBe(true);
     expect(isAggregateConfigurationRoute("/painel/comprovantes-pedidos")).toBe(false);
+    expect(isAggregateConfigurationRoute("/painel/configuracoes/ia-central")).toBe(false);
     expect(getDedicatedConfigurationTab("/painel/comprovantes-pedidos")).toBe("comprovantes");
     expect(getDedicatedConfigurationTab("/painel/etiquetas-expedicao")).toBe("etiquetas-expedicao");
     expect(getDedicatedConfigurationTab("/painel/etiquetas-insumos")).toBe("etiquetas-insumos");
@@ -28,9 +29,9 @@ describe("admin navigation route matching", () => {
   });
 
   it("exposes the central AI configuration route to configuration admins", () => {
-    expect(findAdminNavigationGroup("/painel/configuracoes")?.label).toBe("Configuracoes");
-    expect(findAdminNavigationItem("/painel/configuracoes")).toMatchObject({
-      path: "/painel/configuracoes",
+    expect(findAdminNavigationGroup("/painel/configuracoes/ia-central")?.label).toBe("Configuracoes");
+    expect(findAdminNavigationItem("/painel/configuracoes/ia-central")).toMatchObject({
+      path: "/painel/configuracoes/ia-central",
       label: "IA central",
       permissions: ["configuracoes"],
     });

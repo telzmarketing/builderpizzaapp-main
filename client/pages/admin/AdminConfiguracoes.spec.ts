@@ -10,6 +10,7 @@ describe("AdminConfiguracoes route tabs", () => {
     ["/painel/painel-tv-config", "painel-tv"],
     ["/painel/som", "som"],
     ["/painel/identificacao-parceiros", "identificacao-parceiros"],
+    ["/painel/configuracoes/ia-central", "ia-central"],
   ])("limits %s to its own submodule tab", (pathname, expectedTab) => {
     expect(getDedicatedConfigurationTab(pathname)).toBe(expectedTab);
   });

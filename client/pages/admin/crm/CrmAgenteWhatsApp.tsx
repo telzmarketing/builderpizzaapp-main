@@ -1668,7 +1668,7 @@ export default function CrmAgenteWhatsApp() {
 
               <div className="rounded-xl border border-gold/25 bg-gold/5 p-3 text-xs text-stone">
                 A credencial da IA é centralizada no módulo Configurações e compartilhada com Atendimento, Gestor e Print Pedido. Este módulo mantém apenas comportamento, modelo e permissões.
-                <a className="mt-2 inline-flex font-semibold text-gold underline" href="/painel/configuracoes">Administrar credencial central</a>
+                <a className="mt-2 inline-flex font-semibold text-gold underline" href="/painel/configuracoes/ia-central">Administrar credencial central</a>
               </div>
             </div>
 

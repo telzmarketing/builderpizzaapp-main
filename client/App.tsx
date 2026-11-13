@@ -692,6 +692,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/painel-tv-config" element={<AdminConfiguracoes />} />
                 <Route path="/painel/som" element={<AdminConfiguracoes />} />
                 <Route path="/painel/identificacao-parceiros" element={<AdminConfiguracoes />} />
+                <Route path="/painel/configuracoes/ia-central" element={<AdminConfiguracoes />} />
                 <Route path="/painel/configuracoes" element={<AdminConfiguracoes />} />
                 <Route path="/painel/cupons" element={<MarketingCupons />} />
                 <Route path="/painel/clientes" element={<AdminClientes />} />

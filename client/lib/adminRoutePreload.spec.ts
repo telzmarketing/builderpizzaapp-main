@@ -11,6 +11,7 @@ describe("admin route preload coverage", () => {
       "/painel/painel-tv-config",
       "/painel/som",
       "/painel/identificacao-parceiros",
+      "/painel/configuracoes/ia-central",
       "/painel/configuracoes",
     ]));
   });
