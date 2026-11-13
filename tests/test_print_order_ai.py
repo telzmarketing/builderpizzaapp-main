@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 from backend.database import Base
 from backend.models.agente_whatsapp import AgenteWhatsAppAISettings
 from backend.models.tenant import Tenant
-from backend.services.print_order_ai import extract_print_order_with_vision
+from backend.services.print_order_ai import _normalize_response, extract_print_order_with_vision
 from backend.models.ai_credentials import TenantAICredential
 
 
@@ -165,3 +165,35 @@ def test_print_order_uses_central_provider_when_atendimento_remains_internal(mon
     assert reason is None
     assert parsed["parser"] == "vision-openai-v1"
     assert captured == {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.4, "max_tokens": 800}
+
+
+def test_99food_promotion_keeps_title_and_merges_following_half_flavors():
+    normalized = _normalize_response({
+        "platform": "99food",
+        "items": [
+            {"external_name": "Compre 1 Pizza e Ganhe 1 Guarana 2L", "quantity": 1},
+            {"external_name": "1/2 Calabresa", "quantity": 1},
+            {"external_name": "1/2 Mussarela", "quantity": 1},
+        ],
+    })
+
+    assert len(normalized["items"]) == 1
+    assert normalized["items"][0]["external_name"] == "Compre 1 Pizza e Ganhe 1 Guarana 2L"
+    assert normalized["items"][0]["flavor_names"] == ["Calabresa", "Mussarela"]
+
+
+def test_99food_non_flavor_items_are_not_absorbed_by_promotion():
+    normalized = _normalize_response({
+        "platform": "99food",
+        "items": [
+            {"external_name": "Compre 1 Pizza e Ganhe 1 Guarana 2L", "quantity": 1},
+            {"external_name": "1/2 Calabresa", "quantity": 1},
+            {"external_name": "Batata frita", "quantity": 1},
+            {"external_name": "1/2 Mussarela", "quantity": 1},
+        ],
+    })
+
+    assert [item["external_name"] for item in normalized["items"]] == [
+        "Compre 1 Pizza e Ganhe 1 Guarana 2L", "Batata frita", "1/2 Mussarela"
+    ]
+    assert normalized["items"][0]["flavor_names"] == ["Calabresa"]

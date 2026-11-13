@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPrintOrderMoney, PRINT_ORDER_FINANCIAL_FIELDS, PRINT_ORDER_REVIEW_FIELDS } from "./PrintOrder";
+import { formatPrintOrderMoney, parsePrintOrderFlavorNames, PRINT_ORDER_FINANCIAL_FIELDS, PRINT_ORDER_REVIEW_FIELDS } from "./PrintOrder";
 
 describe("Print Pedido review presentation", () => {
   it("exposes correctly labeled address and payment fields", () => {
@@ -22,5 +22,10 @@ describe("Print Pedido review presentation", () => {
     expect(formatPrintOrderMoney("38.79")).toBe("R$ 38,79");
     expect(formatPrintOrderMoney(-24.99)).toBe("-R$ 24,99");
     expect(formatPrintOrderMoney(null)).toBe("Não informado");
+  });
+
+  it("preserves each item's separate flavor names when building review data", () => {
+    expect(parsePrintOrderFlavorNames("Calabresa,  Mussarela ,")).toEqual(["Calabresa", "Mussarela"]);
+    expect(parsePrintOrderFlavorNames("")).toEqual([]);
   });
 });

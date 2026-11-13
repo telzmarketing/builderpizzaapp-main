@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from decimal import Decimal
 from typing import Any
 
@@ -68,13 +69,18 @@ de delivery e retorne SOMENTE um objeto JSON, sem markdown, com este contrato:
   "delivery_complement": null,
   "fulfillment_type": "delivery|pickup|unknown",
   "payment_method": "texto literal impresso, como Pago, ou null",
-  "items": [{"external_name": "nome completo do item", "quantity": 1, "unit_price": null, "total_price": null, "selected_size": null, "flavor_names": [], "confidence": null}],
+  "items": [{"external_name": "nome completo do item ou da promocao", "quantity": 1, "unit_price": null, "total_price": null, "selected_size": null, "flavor_names": [], "confidence": null}],
   "financials": {"subtotal": null, "delivery_fee": null, "service_fee": null, "store_discount": null, "platform_discount": null, "total_paid": null},
   "uncertain_fields": []
 }
 Regras: null quando nao estiver legivel; valores monetarios positivos mesmo quando
 impressos com sinal negativo em promocoes; nao transforme cabecalhos, observacoes
 ou nomes de colunas em itens; preserve o texto do item e todos os sabores.
+Para pedidos 99Food, uma promocao como "Compre 1 Pizza e Ganhe 1 Guarana 2L"
+continua sendo o nome do item principal e nao pode ser substituida por um item
+generico. As linhas seguintes "1/2 Calabresa" e "1/2 Mussarela" sao sabores da
+mesma pizza: informe-as em flavor_names, sem criar itens separados e sem perder
+o texto original da promocao.
 """.strip()
 
 
@@ -99,24 +105,63 @@ def _money(value: Any) -> Decimal | None:
         return None
 
 
-def _normalize_response(raw: dict[str, Any]) -> dict[str, Any]:
+def _fold_text(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    return "".join(char for char in text if not unicodedata.combining(char)).lower().strip()
+
+
+def _half_flavor_name(value: Any) -> str | None:
+    text = str(value or "").strip(" |:-")
+    folded = _fold_text(text)
+    if not re.match(r"^(?:1\s*/\s*2|meia)\b", folded):
+        return None
+    name = re.sub(r"^(?:1\s*/\s*2|meia)\s*", "", text, flags=re.I).strip(" |:-")
+    return name[:300] if len(name) >= 2 else None
+
+
+def _is_promotion_name(value: Any) -> bool:
+    folded = _fold_text(value)
+    return bool(re.search(r"\b(?:promocao|oferta|combo|compre|ganhe)\b", folded))
+
+
+def _merge_99food_promotion_flavors(items: list[dict[str, Any]], platform: Any) -> list[dict[str, Any]]:
+    if _fold_text(platform) != "99food":
+        return items
+    normalized: list[dict[str, Any]] = []
+    promotion: dict[str, Any] | None = None
+    for item in items:
+        half_flavor = _half_flavor_name(item.get("external_name"))
+        if promotion is not None and half_flavor:
+            if half_flavor not in promotion["flavor_names"]:
+                promotion["flavor_names"].append(half_flavor)
+            continue
+        normalized.append(item)
+        promotion = item if _is_promotion_name(item.get("external_name")) else None
+    return normalized
+
+
+def _normalize_response(raw: dict[str, Any], manual_platform: str | None = None) -> dict[str, Any]:
     financials = raw.get("financials") if isinstance(raw.get("financials"), dict) else raw
     items = raw.get("items") if isinstance(raw.get("items"), list) else []
     normalized_items = []
     for item in items:
         if not isinstance(item, dict) or not str(item.get("external_name") or item.get("name") or "").strip():
             continue
+        flavor_names = item.get("flavor_names") or []
+        if isinstance(flavor_names, str):
+            flavor_names = [flavor_names]
         normalized_items.append({
             "external_name": str(item.get("external_name") or item.get("name")).strip()[:300],
             "quantity": item.get("quantity") or 1,
             "unit_price": _money(item.get("unit_price")),
             "total_price": _money(item.get("total_price")),
             "selected_size": item.get("selected_size"),
-            "flavor_names": item.get("flavor_names") or [],
+            "flavor_names": [str(name).strip()[:300] for name in flavor_names if str(name).strip()][:8],
             "confidence": item.get("confidence"),
         })
+    platform = manual_platform or raw.get("platform")
     return {
-        "platform": raw.get("platform"),
+        "platform": platform,
         "external_order_number": raw.get("external_order_number") or raw.get("order_number"),
         "customer_name": raw.get("customer_name") or raw.get("customer"),
         "customer_phone": raw.get("customer_phone") or raw.get("phone"),
@@ -125,7 +170,7 @@ def _normalize_response(raw: dict[str, Any]) -> dict[str, Any]:
         "delivery_complement": raw.get("delivery_complement") or raw.get("complement"),
         "fulfillment_type": raw.get("fulfillment_type"),
         "payment_method": raw.get("payment_method") or raw.get("payment"),
-        "items": normalized_items,
+        "items": _merge_99food_promotion_flavors(normalized_items, platform),
         "financials": {key: _money(financials.get(key)) for key in (
             "subtotal", "delivery_fee", "service_fee", "store_discount", "platform_discount", "total_paid"
         )},
@@ -168,7 +213,7 @@ def extract_print_order_with_vision(db: Session, tenant_id: str, data: bytes, mi
     if response.error_reason or not response.content.strip():
         return None, response.error_reason or "resposta_multimodal_vazia"
     try:
-        parsed = VisionOrder.model_validate(_normalize_response(json.loads(_clean_json(response.content))))
+        parsed = VisionOrder.model_validate(_normalize_response(json.loads(_clean_json(response.content)), manual_platform))
     except (json.JSONDecodeError, ValidationError, TypeError, ValueError) as exc:
         return None, f"resposta_multimodal_invalida:{type(exc).__name__}"
     payload = parsed.model_dump(mode="json")
