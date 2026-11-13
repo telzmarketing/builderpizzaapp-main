@@ -106,10 +106,11 @@ class WhatsAppGatewayService:
     def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
         self._tenant_context = tenant_context
-        self._tenant_enabled = wave6_tenant_orm_enabled() or (
-            tenant_context is not None
-            and tenant_context.source == TenantSource.SUPPORT
-        )
+        # A tenant context supplied by a trusted route is authoritative for
+        # new Gateway records.  Panel routes provide TenantSource.PANEL;
+        # restricting this to SUPPORT made panel-created instances fall back
+        # to tenant-legacy-default and break the composite channel FK.
+        self._tenant_enabled = wave6_tenant_orm_enabled() or tenant_context is not None
 
     def _ownership_tenant_id(self) -> str:
         """Return the persisted owner for Gateway-owned records."""

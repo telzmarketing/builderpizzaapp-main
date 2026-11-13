@@ -1,4 +1,4 @@
-from backend.core.tenant_context import TenantSource, trusted_process_context
+from backend.core.tenant_context import TenantContext, TenantSource, trusted_process_context
 from backend.schemas.whatsapp_gateway import WhatsAppGatewayInstanceCreate
 from backend.services import whatsapp_gateway_service
 from backend.services.whatsapp_gateway_provider import WhatsAppProviderResult
@@ -39,3 +39,20 @@ def test_create_instance_assigns_context_tenant_when_wave6_enabled(monkeypatch):
     instance = service.create_instance(WhatsAppGatewayInstanceCreate(name="Principal"))
 
     assert instance.tenant_id == "tenant-a"
+
+
+def test_create_instance_assigns_panel_context_tenant_when_wave6_disabled(monkeypatch):
+    monkeypatch.setattr(whatsapp_gateway_service, "wave6_tenant_orm_enabled", lambda: False)
+    context = TenantContext(
+        tenant_id="tenant-panel",
+        source=TenantSource.PANEL,
+        actor_id="admin-a",
+        membership_id="membership-a",
+    )
+    service = whatsapp_gateway_service.WhatsAppGatewayService(FakeSession(), context)
+    monkeypatch.setattr(service, "_provider", lambda _provider: FakeProvider())
+
+    instance = service.create_instance(WhatsAppGatewayInstanceCreate(name="Painel"))
+
+    assert service._tenant_enabled is True
+    assert instance.tenant_id == "tenant-panel"
