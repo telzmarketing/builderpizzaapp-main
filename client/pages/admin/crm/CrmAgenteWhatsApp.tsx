@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import MediaUpload from "@/components/admin/MediaUpload";
 import WhatsAppAttendanceControls, { WhatsAppAttendanceBadge } from "@/components/admin/WhatsAppAttendanceControls";
+import WhatsAppOrderWorkspace from "@/components/admin/WhatsAppOrderWorkspace";
 import { whatsappAttendance } from "@/lib/whatsappAttendance";
 import OrderWhatsappNotificationSettingsPanel from "@/components/admin/OrderWhatsappNotificationSettingsPanel";
 import {
@@ -2885,7 +2886,9 @@ export default function CrmAgenteWhatsApp() {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-surface-00/40">
+              <div className="min-h-0 flex-1 flex flex-col xl:flex-row">
+              <div className="min-h-[520px] min-w-0 flex-1 flex flex-col">
+              <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-3 bg-surface-00/40">
                 {detailLoading && (
                   <div className="h-40 flex items-center justify-center text-stone">
                     <Loader2 size={22} className="animate-spin" />
@@ -2933,7 +2936,7 @@ export default function CrmAgenteWhatsApp() {
                           <audio
                             controls
                             preload="metadata"
-                            src={resolveAssetUrl(message.media_url)}
+                            src={resolveAssetUrl(message.media_url || message.media_storage_key)}
                             className="w-full min-w-[220px] max-w-full h-9 my-2"
                           />
                         )}
@@ -3033,6 +3036,14 @@ export default function CrmAgenteWhatsApp() {
                     {saving ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}
                   </button>
                 </div>
+              </div>
+              </div>
+              <WhatsAppOrderWorkspace
+                session={selected}
+                onCreated={async () => {
+                  await loadSessions(selected.id);
+                }}
+              />
               </div>
             </>
           )}
