@@ -11,6 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
+from backend.core.catalog_context import LEGACY_TENANT_ID
 from backend.core.tenant_context import TenantContext, TenantSource
 from backend.core.tenant_ownership import assign_tenant_on_create, scope_query_to_tenant
 from backend.core.wave6_tenant_orm import wave6_tenant_orm_enabled
@@ -109,6 +110,12 @@ class WhatsAppGatewayService:
             tenant_context is not None
             and tenant_context.source == TenantSource.SUPPORT
         )
+
+    def _ownership_tenant_id(self) -> str:
+        """Return the persisted owner for Gateway-owned records."""
+        if self._tenant_enabled and self._tenant_context is not None:
+            return self._tenant_context.tenant_id
+        return LEGACY_TENANT_ID
 
     def _scope(self, query, model):
         return scope_query_to_tenant(query, model, self._tenant_context, enabled=self._tenant_enabled)
@@ -442,9 +449,10 @@ class WhatsAppGatewayService:
         metadata: dict[str, Any] | None = None,
     ) -> WhatsAppGatewayLog:
         now = _now_utc()
+        persisted_tenant_id = self._ownership_tenant_id() if tenant_id == "default" else tenant_id
         log = WhatsAppGatewayLog(
             id=str(uuid.uuid4()),
-            tenant_id=tenant_id,
+            tenant_id=persisted_tenant_id,
             company_id=company_id,
             instance_id=instance_id,
             action=action,
@@ -507,7 +515,7 @@ class WhatsAppGatewayService:
         now = _now_utc()
         log = WhatsAppGatewayUpdateLog(
             id=str(uuid.uuid4()),
-            tenant_id="default",
+            tenant_id=self._ownership_tenant_id(),
             company_id="default",
             package_name=BAILEYS_PACKAGE,
             current_version=installed_version,
@@ -604,6 +612,8 @@ class WhatsAppGatewayService:
             action="update_confirmed",
             status="warning",
             message=f"Atualizacao Baileys confirmada manualmente para {target_version}. Aplicacao exige deploy controlado.",
+            tenant_id=check.tenant_id or self._ownership_tenant_id(),
+            company_id=check.company_id,
             metadata={
                 "check_id": check_id,
                 "confirmation_id": confirmation.id,
