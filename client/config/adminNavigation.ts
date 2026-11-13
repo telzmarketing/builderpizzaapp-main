@@ -158,6 +158,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
       { path: "/painel/whatsapp-gateway", icon: Server, label: "WhatsApp Gateway", permissions: ["whatsapp_gateway"] },
       { path: "/painel/usuarios", icon: Users, label: "Usuarios do Sistema", permissions: ["usuarios"] },
       { path: "/painel/lgpd", icon: Shield, label: "LGPD & Privacidade", permissions: ["configuracoes"] },
+      { path: "/painel/configuracoes", icon: Brain, label: "IA central", permissions: ["configuracoes"] },
       { path: "/painel/comprovantes-pedidos", icon: Printer, label: "Comprovantes de pedidos", permissions: ["configuracoes"] },
       { path: "/painel/etiquetas-expedicao", icon: Tag, label: "Etiquetas de expedição", permissions: ["configuracoes"] },
       { path: "/painel/etiquetas-insumos", icon: Package, label: "Etiquetas de insumos", permissions: ["configuracoes"] },

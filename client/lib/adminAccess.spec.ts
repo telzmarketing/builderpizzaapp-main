@@ -15,6 +15,15 @@ describe("admin navigation route matching", () => {
     expect(findAdminNavigationItem("/painel/salao/pagina")?.label).toBe("Pagina Salao");
   });
 
+  it("exposes the central AI configuration route to configuration admins", () => {
+    expect(findAdminNavigationGroup("/painel/configuracoes")?.label).toBe("Configuracoes");
+    expect(findAdminNavigationItem("/painel/configuracoes")).toMatchObject({
+      path: "/painel/configuracoes",
+      label: "IA central",
+      permissions: ["configuracoes"],
+    });
+  });
+
   it("resolves navigation aliases to their canonical module", () => {
     expect(findAdminNavigationGroup("/painel/cupons")?.label).toBe("Marketing");
     expect(findAdminNavigationItem("/painel/marketing/ads")?.label).toBe("Trafego Pago");
