@@ -1,7 +1,7 @@
 import TenantDomainsPanel from "@/components/admin/TenantDomainsPanel";
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Bell, BellOff, Check, Monitor, Printer, Eye, Settings2, Tags, Volume2, Globe, Ruler } from "lucide-react";
+import { Bell, BellOff, Check, Monitor, Printer, Eye, Settings2, Tags, Volume2, Globe, Ruler, KeyRound } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import LabelSettingsPanel from "@/components/admin/LabelSettingsPanel";
@@ -19,11 +19,11 @@ import {
   SOUND_OPTIONS, type OrderSoundType,
 } from "@/lib/orderSound";
 import { useApp } from "@/context/AppContext";
-import { kdsLabelsApi, type KdsLabelTemplate, type KdsLabelTemplateInput } from "@/lib/api";
+import { centralAIApi, kdsLabelsApi, type ApiCentralAICredential, type KdsLabelTemplate, type KdsLabelTemplateInput } from "@/lib/api";
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-type Tab = "comprovantes" | "etiquetas-expedicao" | "etiquetas-insumos" | "painel-tv" | "som" | "dominio-https" | "identificacao-parceiros";
+type Tab = "comprovantes" | "etiquetas-expedicao" | "etiquetas-insumos" | "painel-tv" | "som" | "dominio-https" | "identificacao-parceiros" | "ia-central";
 
 const dedicatedConfigurationRouteTabs: Record<string, Tab> = {
   "/painel/comprovantes-pedidos": "comprovantes",
@@ -162,6 +162,42 @@ function SuppliesLabelSettingsPanel() {
   </section>;
 }
 
+function CentralAISettingsPanel() {
+  const [credential, setCredential] = useState<ApiCentralAICredential | null>(null);
+  const [provider, setProvider] = useState<"openai" | "claude">("openai");
+  const [apiKey, setApiKey] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void centralAIApi.get().then((value) => {
+      setCredential(value);
+      if (value.provider) setProvider(value.provider);
+    }).catch((caught) => setError(caught instanceof Error ? caught.message : "Não foi possível carregar a credencial central."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    if (!apiKey.trim()) return;
+    setSaving(true); setFeedback(null); setError(null);
+    try {
+      const value = await centralAIApi.update({ provider, api_key: apiKey.trim() });
+      setCredential(value); setApiKey(""); setFeedback("Credencial central salva com segurança.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Não foi possível salvar a credencial central.");
+    } finally { setSaving(false); }
+  };
+
+  return <section className="space-y-6">
+    <div className="rounded-2xl border border-gold/30 bg-gold/10 p-6"><div className="flex items-start gap-3"><KeyRound className="mt-0.5 shrink-0 text-gold" size={20} /><div><h3 className="text-lg font-bold text-cream">Configuração central de IA</h3><p className="mt-1 text-sm text-parchment">Uma única credencial por tenant é compartilhada pelo Gestor IA, Atendimento e Print Pedido.</p><p className="mt-2 text-xs text-stone">Prompts, modelos, limites e permissões continuam separados em cada módulo. A chave nunca é devolvida pela API.</p></div></div></div>
+    {loading && <p className="text-sm text-stone">Carregando status da credencial...</p>}
+    {error && <div role="alert" className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">{error}</div>}
+    {!loading && <section className="rounded-2xl border border-surface-03 bg-surface-02 p-6"><div className="grid gap-4 md:grid-cols-3"><Field label="Provider central"><select className={cls} value={provider} onChange={(event) => setProvider(event.target.value as "openai" | "claude")}><option value="openai">OpenAI</option><option value="claude">Claude</option></select></Field><Field label="Status"><input className={cls} readOnly value={credential?.configured ? "Configurada" : "Não configurada"} /></Field><Field label="Preview mascarado"><input className={cls} readOnly value={credential?.key_preview ?? "Não configurada"} /></Field></div><div className="mt-4 rounded-xl border border-surface-03 bg-surface-01 p-4 text-xs text-stone">Modelo: definido separadamente em Gestor IA, Atendimento e Print Pedido conforme o módulo. Origem atual: <strong className="text-cream">{credential?.source ?? "none"}</strong>.</div><div className="mt-4"><Field label="Nova chave da API" hint="Deixe vazio para manter a credencial atual. O valor é enviado somente nesta gravação e nunca aparece depois."><input className={cls} type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={credential?.key_preview ?? "Cole a chave do provider selecionado"} autoComplete="new-password" /></Field></div><div className="mt-5 flex items-center gap-3"><button type="button" disabled={saving || !apiKey.trim()} onClick={() => void save()} className="rounded-xl bg-gold px-5 py-2.5 font-bold text-cream disabled:opacity-50">{saving ? "Salvando..." : "Salvar credencial central"}</button>{feedback && <span className="flex items-center gap-1 text-sm text-emerald-300"><Check size={15} />{feedback}</span>}</div></section>}
+  </section>;
+}
+
 export default function AdminConfiguracoes() {
   const { pathname } = useLocation();
   const { siteContent } = useApp();
@@ -266,6 +302,10 @@ export default function AdminConfiguracoes() {
               <Tags size={14} />
               Identificação de Parceiros
             </button>
+            <button type="button" onClick={() => setActiveTab("ia-central")} hidden={dedicatedTab !== null} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "ia-central" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}>
+              <KeyRound size={14} />
+              IA central
+            </button>
               </>
             )}
           </div>
@@ -277,6 +317,7 @@ export default function AdminConfiguracoes() {
             {activeTab === "etiquetas-insumos" && <SuppliesLabelSettingsPanel />}
             {activeTab === "painel-tv" && <OrderBoardSettingsPanel />}
             {activeTab === "identificacao-parceiros" && <PartnerIdentificationPanel />}
+            {activeTab === "ia-central" && <CentralAISettingsPanel />}
 
             {/* ── Aba Som ───────────────────────────────────────────────── */}
             {activeTab === "som" && (

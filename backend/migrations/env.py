@@ -11,6 +11,7 @@ from backend.database import Base
 # Import models so Alembic can detect metadata for autogenerate.
 from backend.models import (  # noqa: F401
     admin,
+    ai_credentials,
     agente_whatsapp,
     campaign,
     chatbot,
@@ -73,6 +74,7 @@ from backend.models import (  # noqa: F401
     kds_audit,
     production_vision,
     inventory_portion,
+    print_order,
 )
 
 config = context.config

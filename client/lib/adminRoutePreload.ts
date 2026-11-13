@@ -30,6 +30,7 @@ const routeLoaders: Array<[string, RouteLoader]> = [
   ["/painel/products", () => import("@/pages/admin/Products")],
   ["/painel/home-config", () => import("@/pages/admin/HomeConfig")],
   ["/painel/orders", () => import("@/pages/admin/Orders")],
+  ["/operacoes/print-pedido", () => import("@/pages/admin/PrintOrder")],
   ["/painel/kds/sala-motoboy", () => import("@/pages/OrderBoardTv")],
   ["/painel/kds", () => import("@/pages/admin/KdsOverview")],
   ["/painel/cozinha", () => import("@/pages/admin/Cozinha")],

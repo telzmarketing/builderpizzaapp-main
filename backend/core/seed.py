@@ -385,7 +385,7 @@ _ROLE_PERMISSIONS: dict = {
         "frete":            ["view", "edit"],
         "integracoes":      ["view", "manage"],
         "whatsapp_gateway": ["view", "create", "edit", "manage"],
-        "configuracoes":    ["view"],
+        "configuracoes":    ["view", "edit"],
         "usuarios":         ["view", "create", "edit"],
         "auditoria":        ["view"],
         "cozinha":          ["view", "edit"],

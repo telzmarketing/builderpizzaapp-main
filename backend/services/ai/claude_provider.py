@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+import base64
 
 from backend.config import get_ai_api_key
 from backend.services.ai.base import AIMessage, AIProvider, AIResponse
@@ -59,3 +60,37 @@ class ClaudeProvider(AIProvider):
         except Exception as exc:
             log.exception("Erro ao chamar Claude: %s", exc)
             return self._fallback(str(exc))
+
+    def generate_multimodal_json(
+        self,
+        system_prompt: str,
+        image_data: bytes,
+        mime_type: str,
+        temperatura: float = 0.0,
+        max_tokens: int = 2048,
+    ) -> AIResponse:
+        if not self._api_key:
+            return AIResponse(content="", provider=self.provider_name, model=self._model, error_reason="ANTHROPIC_API_KEY nao configurada")
+        try:
+            import anthropic
+
+            client = anthropic.Anthropic(api_key=self._api_key)
+            response = client.messages.create(
+                model=self._model,
+                max_tokens=max_tokens,
+                temperature=temperatura,
+                system=system_prompt,
+                messages=[{"role": "user", "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": base64.b64encode(image_data).decode("ascii")}},
+                    {"type": "text", "text": "Extraia a comanda desta imagem conforme o contrato. Retorne apenas JSON."},
+                ]}],
+                timeout=60,
+            )
+            usage = response.usage
+            content = "".join(getattr(block, "text", "") for block in response.content)
+            return AIResponse(content=content, tokens_input=usage.input_tokens, tokens_output=usage.output_tokens, provider=self.provider_name, model=self._model)
+        except ImportError:
+            return AIResponse(content="", provider=self.provider_name, model=self._model, error_reason="pacote 'anthropic' nao instalado")
+        except Exception as exc:
+            log.exception("Erro ao analisar imagem Print Pedido: %s", exc)
+            return AIResponse(content="", provider=self.provider_name, model=self._model, error_reason=str(exc))

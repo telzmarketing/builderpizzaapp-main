@@ -68,6 +68,17 @@ class AIProvider(ABC):
     def is_configured(self) -> bool:
         return False
 
+    def generate_multimodal_json(
+        self,
+        system_prompt: str,
+        image_data: bytes,
+        mime_type: str,
+        temperatura: float = 0.0,
+        max_tokens: int = 2048,
+    ) -> AIResponse:
+        """Optional vision contract; providers without vision fail closed."""
+        return AIResponse(content="", provider=self.provider_name, error_reason="multimodal_not_supported")
+
     def _fallback(self, reason: str = "") -> AIResponse:
         import logging
         if reason:

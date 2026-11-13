@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from typing import Literal
 
+from sqlalchemy.orm import object_session
+
 from backend.config import get_ai_api_key
+from backend.models.agente_whatsapp import AgenteWhatsAppAISettings
 from backend.models.chatbot import AIProviderEnum, ChatbotSettings
-from backend.services.ai.base import AIProvider
+from backend.services.ai.base import AIMessage, AIProvider, AIResponse
 from backend.services.ai.claude_provider import ClaudeProvider
 from backend.services.ai.openai_provider import OpenAIProvider
+from backend.services.ai.credentials import resolve_ai_credential
 
 ProviderName = Literal["claude", "openai"]
+AISettings = ChatbotSettings | AgenteWhatsAppAISettings
 
 DEFAULT_MODELS: dict[ProviderName, str] = {
     "claude": "claude-sonnet-4-20250514",
@@ -27,12 +32,39 @@ KNOWN_MODELS: dict[ProviderName, set[str]] = {
 }
 
 
-def _db_key(settings: ChatbotSettings, name: str) -> str:
-    """Read API key from DB settings (primary) or fall back to env."""
+class _UnavailableProvider(AIProvider):
+    """Explicitly disabled provider used by the Atendimento internal mode."""
+
+    @property
+    def provider_name(self) -> str:
+        return "internal"
+
+    def generate(
+        self,
+        system_prompt: str,
+        messages: list[AIMessage],
+        temperatura: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> AIResponse:
+        return AIResponse(content="", provider=self.provider_name, error_reason="provider_internal")
+
+
+def _is_atendimento_settings(settings: AISettings) -> bool:
+    return isinstance(settings, AgenteWhatsAppAISettings)
+
+
+def _db_key(settings: AISettings | None, name: str) -> str:
+    """Read the central tenant credential, then compatibility fallbacks."""
     if name == "ANTHROPIC_API_KEY":
         db_val = getattr(settings, "anthropic_api_key", None)
+        provider = "claude"
     else:
         db_val = getattr(settings, "openai_api_key", None)
+        provider = "openai"
+    session = object_session(settings) if settings is not None else None
+    tenant_id = getattr(settings, "tenant_id", None)
+    if session is not None and tenant_id:
+        return resolve_ai_credential(session, tenant_id, provider, legacy_key=db_val).api_key
     return (db_val or "").strip() or get_ai_api_key(name)
 
 
@@ -44,14 +76,23 @@ def _key_preview(key: str | None) -> str | None:
     return f"{key[:4]}...{key[-4:]}"
 
 
-def get_ai_provider(settings: ChatbotSettings) -> AIProvider:
-    """Return the selected AI provider, falling back to a configured provider."""
+def get_ai_provider(settings: AISettings) -> AIProvider:
+    """Resolve a provider from either legacy Chatbot or Atendimento settings.
+
+    Print Pedido intentionally passes AgenteWhatsAppAISettings here. The
+    Gestor IA has a separate settings/service path and is not included.
+    """
+    if _is_atendimento_settings(settings):
+        provider_name = settings.provider
+        if provider_name == "internal" or provider_name not in {"openai", "claude"}:
+            return _UnavailableProvider()
+        model = settings.model or DEFAULT_MODELS[provider_name]
+        return _provider_instance(provider_name, settings, model=model)
+
     provider_name = _select_provider(settings)
     model = _select_model(provider_name, settings.modelo_ia)
 
-    if provider_name == "openai":
-        return OpenAIProvider(model=model, api_key=_db_key(settings, "OPENAI_API_KEY"))
-    return ClaudeProvider(model=model, api_key=_db_key(settings, "ANTHROPIC_API_KEY"))
+    return _provider_instance(provider_name, settings, model=model)
 
 
 def check_provider_status(settings: ChatbotSettings) -> dict[str, bool | str | None]:
@@ -92,9 +133,16 @@ def _provider_value(settings: ChatbotSettings) -> ProviderName:
     return "openai" if value == "openai" else "claude"
 
 
-def _provider_instance(provider_name: ProviderName, settings: ChatbotSettings | None = None) -> AIProvider:
+def _provider_instance(
+    provider_name: str,
+    settings: AISettings | None = None,
+    *,
+    model: str | None = None,
+) -> AIProvider:
+    if provider_name == "internal":
+        return _UnavailableProvider()
     if provider_name == "openai":
         key = _db_key(settings, "OPENAI_API_KEY") if settings else ""
-        return OpenAIProvider(model=DEFAULT_MODELS["openai"], api_key=key)
+        return OpenAIProvider(model=model or DEFAULT_MODELS["openai"], api_key=key)
     key = _db_key(settings, "ANTHROPIC_API_KEY") if settings else ""
-    return ClaudeProvider(model=DEFAULT_MODELS["claude"], api_key=key)
+    return ClaudeProvider(model=model or DEFAULT_MODELS["claude"], api_key=key)

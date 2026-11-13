@@ -559,17 +559,23 @@ class GestorService:
         return "configurada" if len(value) <= 10 else f"{value[:3]}...{value[-4:]}"
 
     def ai_status(self) -> dict[str, Any]:
-        from backend.config import get_ai_api_key
+        from backend.services.ai.credentials import get_tenant_ai_credential, mask_ai_key, resolve_ai_credential
         settings = self.get_ai_settings()
-        openai_key = get_ai_api_key("OPENAI_API_KEY")
-        claude_key = get_ai_api_key("ANTHROPIC_API_KEY")
-        configured = settings.provider == "internal" or bool(openai_key if settings.provider == "openai" else claude_key)
+        openai = resolve_ai_credential(self.db, self.tenant_id, "openai")
+        claude = resolve_ai_credential(self.db, self.tenant_id, "claude")
+        selected = openai if settings.provider == "openai" else claude if settings.provider == "claude" else None
+        central = get_tenant_ai_credential(self.db, self.tenant_id)
+        configured = settings.provider == "internal" or bool(selected and selected.api_key)
         return {
             "provider": settings.provider, "configured": configured,
             "enabled": bool(settings.enabled), "model": settings.model,
-            "openai_configured": bool(openai_key), "claude_configured": bool(claude_key),
-            "openai_key_preview": self._secret_preview(openai_key),
-            "claude_key_preview": self._secret_preview(claude_key),
+            "openai_configured": bool(openai.api_key), "claude_configured": bool(claude.api_key),
+            "openai_key_preview": mask_ai_key(openai.api_key),
+            "claude_key_preview": mask_ai_key(claude.api_key),
+            "credential_source": selected.source if selected else ("central" if central else "none"),
+            "credential_provider": central.provider if central else (selected.provider if selected and selected.api_key else None),
+            "credential_preview": mask_ai_key(selected.api_key) if selected else None,
+            "centralized": True,
         }
 
     @staticmethod
@@ -625,11 +631,11 @@ class GestorService:
             raise GestorAIUnavailable("Gestor IA desabilitado para este tenant.", code="GestorAIDisabled")
         if settings.provider == "internal":
             return self._deterministic_plan(body.message, settings)
-        from backend.config import get_ai_api_key
         from backend.services.ai.base import AIMessage
         from backend.services.ai.claude_provider import ClaudeProvider
+        from backend.services.ai.credentials import resolve_ai_credential
         from backend.services.ai.openai_provider import OpenAIProvider
-        key = get_ai_api_key("OPENAI_API_KEY" if settings.provider == "openai" else "ANTHROPIC_API_KEY")
+        key = resolve_ai_credential(self.db, self.tenant_id, settings.provider).api_key
         if not key:
             raise GestorAIUnavailable(f"Provedor {settings.provider} nao configurado no secret manager.", code="GestorAIProviderNotConfigured")
         provider = OpenAIProvider(model=settings.model, api_key=key) if settings.provider == "openai" else ClaudeProvider(model=settings.model, api_key=key)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+import base64
 
 from backend.config import get_ai_api_key
 from backend.services.ai.base import AIMessage, AIProvider, AIResponse, AudioSpeechResponse, AudioTranscriptionResponse
@@ -61,6 +62,48 @@ class OpenAIProvider(AIProvider):
         except Exception as exc:
             log.exception("Erro ao chamar OpenAI: %s", exc)
             return self._fallback(str(exc))
+
+    def generate_multimodal_json(
+        self,
+        system_prompt: str,
+        image_data: bytes,
+        mime_type: str,
+        temperatura: float = 0.0,
+        max_tokens: int = 2048,
+    ) -> AIResponse:
+        if not self._api_key:
+            return AIResponse(content="", provider=self.provider_name, model=self._model, error_reason="OPENAI_API_KEY nao configurada")
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=self._api_key, timeout=60)
+            data_url = f"data:{mime_type};base64,{base64.b64encode(image_data).decode('ascii')}"
+            response = client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": "Extraia a comanda desta imagem conforme o contrato. Retorne apenas JSON."},
+                        {"type": "image_url", "image_url": {"url": data_url, "detail": "high"}},
+                    ]},
+                ],
+                temperature=temperatura,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+            )
+            usage = response.usage
+            return AIResponse(
+                content=response.choices[0].message.content or "",
+                tokens_input=usage.prompt_tokens if usage else 0,
+                tokens_output=usage.completion_tokens if usage else 0,
+                provider=self.provider_name,
+                model=self._model,
+            )
+        except ImportError:
+            return AIResponse(content="", provider=self.provider_name, model=self._model, error_reason="pacote 'openai' nao instalado")
+        except Exception as exc:
+            log.exception("Erro ao analisar imagem Print Pedido: %s", exc)
+            return AIResponse(content="", provider=self.provider_name, model=self._model, error_reason=str(exc))
 
     def transcribe_audio(
         self,

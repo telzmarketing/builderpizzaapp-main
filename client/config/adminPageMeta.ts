@@ -30,6 +30,7 @@ export const adminPageMeta: Record<string, PageMeta> = {
   "/painel/products/landing": { eyebrow: "Catalogo", title: "Landing Promocional", subtitle: "Pagina de conversao vinculada a promocao da pizza" },
   "/painel/home-config": { eyebrow: "Catalogo", title: "Catalogo da Home", subtitle: "Organizacao da vitrine da loja" },
   "/painel/orders": { eyebrow: "Operacoes", title: "Pedidos", subtitle: "Acompanhamento e gestão dos pedidos" },
+  "/operacoes/print-pedido": { eyebrow: "Operacoes", title: "Print Pedido", subtitle: "Captura, revisao e confirmacao de comandas" },
   "/painel/kds": { eyebrow: "KDS", title: "Painel Geral", subtitle: "Visão consolidada da cozinha, expedição e entregas" },
   "/painel/kds/visao-producao": { eyebrow: "KDS", title: "Registro de Produção", subtitle: "Câmeras, bancadas e sessões de produção" },
   "/painel/esfiha": { eyebrow: "KDS", title: "KDS Esfiha", subtitle: "Fila de produção e operação da estação esfiha" },

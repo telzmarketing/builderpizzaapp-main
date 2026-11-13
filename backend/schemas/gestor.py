@@ -271,6 +271,10 @@ class GestorAIProviderStatusOut(BaseModel):
     claude_configured: bool
     openai_key_preview: str | None = None
     claude_key_preview: str | None = None
+    credential_source: str = "none"
+    credential_provider: str | None = None
+    credential_preview: str | None = None
+    centralized: bool = True
 
 
 class GestorAIPlanIn(BaseModel):

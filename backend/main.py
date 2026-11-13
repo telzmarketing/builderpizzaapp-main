@@ -24,6 +24,8 @@ _logger = logging.getLogger(__name__)
 from backend.config import get_settings
 from backend.database import create_all_tables, SessionLocal, engine
 from backend.routes import products, orders, payments, shipping, coupons, loyalty, customers, promotions, admin, delivery, auth, admin_auth, campaigns, webhooks, store_operation
+from backend.routes import print_order as print_order_routes
+from backend.routes import ai_credentials as ai_credentials_routes
 from backend.routes import promotion_landings as promotion_landings_routes
 from backend.routes import chatbot as chatbot_routes, admin_chatbot as admin_chatbot_routes
 from backend.routes import upload as upload_routes
@@ -1372,6 +1374,7 @@ async def request_context_middleware(request: Request, call_next):
 app.include_router(products.router)
 app.include_router(catalog_global_routes.router)
 app.include_router(orders.router)
+app.include_router(print_order_routes.router)
 app.include_router(orders.admin_orders_router)
 app.include_router(payments.router)
 app.include_router(shipping.router)
@@ -1434,6 +1437,7 @@ app.include_router(partner_identification_routes.compat_router)
 app.include_router(products.router, prefix="/api")
 app.include_router(catalog_global_routes.router, prefix="/api")
 app.include_router(orders.router, prefix="/api")
+app.include_router(print_order_routes.router, prefix="/api")
 app.include_router(orders.admin_orders_router, prefix="/api")
 app.include_router(payments.router, prefix="/api")
 app.include_router(shipping.router, prefix="/api")
@@ -1479,6 +1483,7 @@ app.include_router(labels_routes.router, prefix="/api")
 app.include_router(order_board_routes.router, prefix="/api")
 app.include_router(order_board_routes.admin_router, prefix="/api")
 app.include_router(gestor_routes.router, prefix="/api")
+app.include_router(ai_credentials_routes.router, prefix="/api")
 app.include_router(customer_events_routes.router, prefix="/api")
 app.include_router(lgpd_routes.router, prefix="/api")
 app.include_router(lgpd_routes.admin_router, prefix="/api")

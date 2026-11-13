@@ -17,6 +17,7 @@ import {
   isPlatformSupportPanelPathAllowed,
   readPlatformSupportSession,
 } from "./lib/platformSupportSession";
+import { isLocalPrintOrderHomologationPath } from "./lib/localPrintOrderHomologation";
 
 const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
 const StoreSocialProofNotification = lazy(() => import("./components/StoreSocialProofNotification"));
@@ -441,6 +442,7 @@ const AdminGestor = lazy(() => import("./pages/admin/Gestor"));
 const AdminEmpresas = lazy(() => import("./pages/admin/Empresas"));
 const AdminProducts = lazy(() => import("./pages/admin/Products"));
 const AdminOrders = lazy(() => import("./pages/admin/Orders"));
+const PrintOrder = lazy(() => import("./pages/admin/PrintOrder"));
 const KdsOverview = lazy(() => import("./pages/admin/KdsOverview"));
 const KdsPdv = lazy(() => import("./pages/admin/KdsPdv"));
 const KdsAnalytics = lazy(() => import("./pages/admin/KdsAnalytics"));
@@ -650,6 +652,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/app/kds/analitico" element={<KdsAnalytics />} />
                 <Route path="/painel/preparo" element={<Preparation />} />
                 <Route path="/operacoes/novo-pedido" element={<ManualOrder />} />
+                <Route path="/operacoes/print-pedido" element={<PrintOrder />} />
                 <Route path="/painel/orders/novo" element={<FullPageRedirect to="/operacoes/novo-pedido" />} />
                 <Route path="/painel/bi-mobile" element={<AdminBIMobile />} />
                 <Route path="/painel/cozinha" element={<AdminCozinha />} />
@@ -765,6 +768,11 @@ export default function HostSurfaceGate() {
   const supportSessionId = supportSession?.session_id;
   const supportPathAllowed = !!supportSession
     && isPlatformSupportPanelPathAllowed(window.location.pathname);
+  const localPrintOrderHomologation = isLocalPrintOrderHomologationPath({
+    dev: import.meta.env.DEV,
+    hostname: window.location.hostname,
+    pathname: window.location.pathname,
+  });
   const platformPathAllowed = supportSession ? supportPathAllowed : (
     window.location.pathname === "/painel/login"
     || window.location.pathname === "/painel/trocar-senha"
@@ -789,6 +797,7 @@ export default function HostSurfaceGate() {
       "/painel/armazenamento-plataforma",
       "/painel/backups-plataforma",
     ].some((path) => window.location.pathname === path || window.location.pathname.startsWith(`${path}/`))
+    || localPrintOrderHomologation
   );
   const [hostSurface, setHostSurface] = useState<"loading" | "platform" | "store" | "unknown" | "unavailable">("loading");
   const isPlatform = hostSurface === "platform";

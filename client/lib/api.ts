@@ -119,7 +119,7 @@ function authHeaders(): HeadersInit {
 }
 
 function recoverUnauthorizedAdminSession(status: number, path: string): string | null {
-  const staffSurface = window.location.pathname.startsWith("/painel") || window.location.pathname === "/operacoes/novo-pedido";
+  const staffSurface = window.location.pathname.startsWith("/painel") || window.location.pathname === "/operacoes/novo-pedido" || window.location.pathname === "/operacoes/print-pedido";
   if (path.startsWith("/auth/") || !staffSurface) return null;
   if (!shouldInvalidateAdminSession(status, path)) return null;
   if (readPlatformSupportSession()) {
@@ -7534,6 +7534,18 @@ export interface ApiGestorAIProviderStatus {
   claude_configured: boolean;
   openai_key_preview?: string | null;
   claude_key_preview?: string | null;
+  credential_source?: string;
+  credential_provider?: string | null;
+  credential_preview?: string | null;
+  centralized?: boolean;
+}
+
+export interface ApiCentralAICredential {
+  provider: "openai" | "claude" | null;
+  configured: boolean;
+  key_preview: string | null;
+  source: "central" | "environment" | "legacy" | "none";
+  centralized: boolean;
 }
 
 export interface ApiGestorWhatsAppChannel {
@@ -7719,6 +7731,12 @@ export const gestorApi = {
   updateAutomation: (id: string, data: Partial<ApiGestorAutomation>) => patch<ApiGestorAutomation>(`/gestor/automations/${encodeURIComponent(id)}`, data),
   deleteAutomation: (id: string) => del<ApiGestorAutomation>(`/gestor/automations/${encodeURIComponent(id)}`),
   processAutomationEvents: (limit = 25) => post<ApiGestorAutomationProcess>(`/gestor/automations/events/process?limit=${limit}`, {}),
+};
+
+export const centralAIApi = {
+  get: () => get<ApiCentralAICredential>("/ai/credentials/central"),
+  update: (data: { provider: "openai" | "claude"; api_key: string }) =>
+    put<ApiCentralAICredential>("/ai/credentials/central", data),
 };
 
 export const whatsappGatewayApi = {
@@ -9605,3 +9623,125 @@ export const productRecipesApi = {
     return response.blob();
   },
 };
+
+// ── Print Pedido ─────────────────────────────────────────────────────────────
+
+export type PrintOrderPlatform = "ifood" | "99food" | "keeta" | "unknown";
+export type PrintOrderStatus = "awaiting_review" | "ready" | "imported" | "duplicate" | "error" | "cancelled";
+export type PrintOrderMatchStatus = "unmatched" | "review" | "matched";
+
+export interface ApiPrintOrderItem {
+  id?: string;
+  external_product_id?: string | null;
+  external_name: string;
+  product_id?: string | null;
+  quantity: number;
+  selected_size?: string | null;
+  flavor_names: string[];
+  customizations: Record<string, unknown>;
+  unit_price?: number | string | null;
+  total_price?: number | string | null;
+  match_status?: PrintOrderMatchStatus;
+  match_reason?: string | null;
+}
+
+export interface ApiPrintOrderImport {
+  id: string;
+  tenant_id: string;
+  platform: PrintOrderPlatform;
+  store_identifier?: string | null;
+  external_order_number: string | null;
+  status: PrintOrderStatus;
+  source_asset_id: string;
+  source_filename?: string | null;
+  source_content_type?: string | null;
+  order_id: string | null;
+  duplicate_of_id: string | null;
+  parser_version?: string | null;
+  review_notes: string[];
+  items: ApiPrintOrderItem[];
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  delivery_street?: string | null;
+  delivery_city?: string | null;
+  delivery_complement?: string | null;
+  fulfillment_type?: "delivery" | "pickup";
+  payment_method?: string | null;
+  printed_total?: number | string | null;
+  financials?: {
+    subtotal?: number | string | null;
+    delivery_fee?: number | string | null;
+    service_fee?: number | string | null;
+    store_discount?: number | string | null;
+    platform_discount?: number | string | null;
+    total_paid?: number | string | null;
+  };
+  reconciliation?: { status?: string; expected_total?: number | string | null; printed_total?: number | string | null; delta?: number | string | null };
+  created_at: string;
+}
+
+export interface ApiPrintOrderReviewItem {
+  external_name: string;
+  product_id?: string | null;
+  quantity: number;
+  selected_size?: string | null;
+  flavor_names: string[];
+  customizations: Record<string, unknown>;
+  unit_price?: number | string | null;
+  total_price?: number | string | null;
+}
+
+export interface ApiPrintOrderReviewInput {
+  platform?: PrintOrderPlatform | null;
+  store_identifier?: string | null;
+  external_order_number?: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  delivery_street?: string | null;
+  delivery_city?: string | null;
+  delivery_complement?: string | null;
+  fulfillment_type: "delivery" | "pickup";
+  payment_method?: string | null;
+  subtotal?: number | string | null;
+  delivery_fee?: number | string | null;
+  service_fee?: number | string | null;
+  store_discount?: number | string | null;
+  platform_discount?: number | string | null;
+  total_paid?: number | string | null;
+  printed_total?: number | string | null;
+  items: ApiPrintOrderReviewItem[];
+}
+
+export interface ApiPrintOrderMapping {
+  id?: string;
+  tenant_id?: string;
+  platform: PrintOrderPlatform;
+  external_product_id?: string | null;
+  external_name: string;
+  normalized_external_name?: string;
+  product_id: string;
+  variation: Record<string, unknown>;
+  status?: "approved" | "revoked";
+  created_at?: string;
+}
+
+export const printOrderApi = {
+  capture: (file: File, platform?: PrintOrderPlatform, extractedText?: string) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (platform) form.append("platform", platform);
+    if (extractedText?.trim()) form.append("extracted_text", extractedText.trim());
+    return postForm<ApiPrintOrderImport>("/operacoes/print-pedido/imports", form);
+  },
+  list: () => get<ApiPrintOrderImport[]>("/operacoes/print-pedido/imports"),
+  get: (importId: string) => get<ApiPrintOrderImport>(`/operacoes/print-pedido/imports/${encodeURIComponent(importId)}`),
+  review: (importId: string, body: ApiPrintOrderReviewInput) =>
+    patch<ApiPrintOrderImport>(`/operacoes/print-pedido/imports/${encodeURIComponent(importId)}`, body),
+  confirm: (importId: string, idempotencyKey: string) =>
+    request<ApiPrintOrderImport>("POST", `/operacoes/print-pedido/imports/${encodeURIComponent(importId)}/confirm`, undefined, { "Idempotency-Key": idempotencyKey }),
+  listMappings: () => get<ApiPrintOrderMapping[]>("/operacoes/print-pedido/mappings"),
+  createMapping: (body: Omit<ApiPrintOrderMapping, "id" | "tenant_id" | "normalized_external_name" | "status" | "created_at">) =>
+    post<ApiPrintOrderMapping>("/operacoes/print-pedido/mappings", body),
+};
+
+export const printPedidoApi = printOrderApi;

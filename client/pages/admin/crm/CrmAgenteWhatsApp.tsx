@@ -273,7 +273,6 @@ export default function CrmAgenteWhatsApp() {
   const [rolloutSettings, setRolloutSettings] = useState<ApiAgenteWhatsAppRolloutSettings | null>(null);
   const [aiProviderStatus, setAiProviderStatus] = useState<ApiAgenteWhatsAppAIProviderStatus | null>(null);
   const [aiTestResult, setAiTestResult] = useState<ApiAgenteWhatsAppAITest | null>(null);
-  const [aiKeys, setAiKeys] = useState({ openai_api_key: "", anthropic_api_key: "" });
   const [campaignForm, setCampaignForm] = useState({
     name: "",
     audience_type: "manual" as CampaignAudience,
@@ -995,25 +994,6 @@ export default function CrmAgenteWhatsApp() {
     }
   }
 
-  async function saveAIKeys() {
-    const payload: { openai_api_key?: string; anthropic_api_key?: string } = {};
-    if (aiKeys.openai_api_key.trim()) payload.openai_api_key = aiKeys.openai_api_key.trim();
-    if (aiKeys.anthropic_api_key.trim()) payload.anthropic_api_key = aiKeys.anthropic_api_key.trim();
-    if (!payload.openai_api_key && !payload.anthropic_api_key) return;
-    setAiSettingsSaving(true);
-    setError("");
-    try {
-      const status = await agenteWhatsAppApi.updateAIKeys(payload);
-      const settings = await agenteWhatsAppApi.getAISettings();
-      setAiProviderStatus(status);
-      setAiSettings(settings);
-      setAiKeys({ openai_api_key: "", anthropic_api_key: "" });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao salvar chaves da IA.");
-    } finally {
-      setAiSettingsSaving(false);
-    }
-  }
 
   async function testAISettings() {
     setAiSettingsSaving(true);
@@ -1686,35 +1666,9 @@ export default function CrmAgenteWhatsApp() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 pt-2 border-t border-surface-03">
-                <div>
-                  <label className="text-xs text-stone">OpenAI API Key</label>
-                  <input
-                    type="password"
-                    value={aiKeys.openai_api_key}
-                    onChange={(event) => setAiKeys((current) => ({ ...current, openai_api_key: event.target.value }))}
-                    placeholder={aiSettings.openai_key_preview || "Nao configurada"}
-                    className="mt-1 w-full h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-stone">Anthropic API Key</label>
-                  <input
-                    type="password"
-                    value={aiKeys.anthropic_api_key}
-                    onChange={(event) => setAiKeys((current) => ({ ...current, anthropic_api_key: event.target.value }))}
-                    placeholder={aiSettings.anthropic_key_preview || "Nao configurada"}
-                    className="mt-1 w-full h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold"
-                  />
-                </div>
-                <button
-                  onClick={saveAIKeys}
-                  disabled={aiSettingsSaving || (!aiKeys.openai_api_key.trim() && !aiKeys.anthropic_api_key.trim())}
-                  className="h-9 rounded-xl border border-gold/40 text-gold text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {aiSettingsSaving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                  Salvar chaves
-                </button>
+              <div className="rounded-xl border border-gold/25 bg-gold/5 p-3 text-xs text-stone">
+                A credencial da IA é centralizada no módulo Configurações e compartilhada com Atendimento, Gestor e Print Pedido. Este módulo mantém apenas comportamento, modelo e permissões.
+                <a className="mt-2 inline-flex font-semibold text-gold underline" href="/painel/configuracoes">Administrar credencial central</a>
               </div>
             </div>
 

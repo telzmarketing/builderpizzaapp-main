@@ -369,6 +369,10 @@ class AgenteWhatsAppAIProviderStatusOut(BaseModel):
     active: bool
     openai_key_preview: str | None = None
     anthropic_key_preview: str | None = None
+    credential_source: str = "none"
+    credential_provider: str | None = None
+    credential_preview: str | None = None
+    centralized: bool = True
 
 
 class AgenteWhatsAppChannelSettingsUpdate(BaseModel):

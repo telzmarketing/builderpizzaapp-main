@@ -11,6 +11,11 @@ def _now_utc():
     return datetime.now(timezone.utc)
 
 
+def agente_whatsapp_ai_settings_id(tenant_id: str) -> str:
+    """Return the canonical Atendimento AI settings id for a tenant."""
+    return "default" if tenant_id == "tenant-legacy-default" else f"agente-whatsapp-ai:{tenant_id}"
+
+
 class AgenteWhatsAppSession(Base):
     __tablename__ = "agente_whatsapp_sessions"
     tenant_id = wave6_tenant_column("agente_whatsapp_sessions")

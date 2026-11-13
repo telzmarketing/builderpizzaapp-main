@@ -16,10 +16,11 @@ from backend.models.agente_whatsapp import (
     AgenteWhatsAppContext,
     AgenteWhatsAppMessage,
     AgenteWhatsAppSession,
+    agente_whatsapp_ai_settings_id,
 )
 from backend.services.ai.base import AIMessage
-from backend.services.ai.claude_provider import ClaudeProvider
-from backend.services.ai.openai_provider import OpenAIProvider
+from backend.services.ai.factory import get_ai_provider
+from backend.services.ai.credentials import mask_ai_key, resolve_ai_credential
 from backend.services.agente_whatsapp_campaign_context_service import AgenteWhatsAppCampaignContextService
 from backend.services.agente_whatsapp_outbox_service import AgenteWhatsAppOutboxService
 from backend.services.agente_whatsapp_service import AgenteWhatsAppService
@@ -91,7 +92,7 @@ class AgenteWhatsAppAIService:
 
     @property
     def _settings_id(self) -> str:
-        return "default" if self._tenant_id == "tenant-legacy-default" else f"agente-whatsapp-ai:{self._tenant_id}"
+        return agente_whatsapp_ai_settings_id(self._tenant_id)
 
     def get_settings(self) -> AgenteWhatsAppAISettings:
         settings = self._db.query(AgenteWhatsAppAISettings).filter(
@@ -136,8 +137,8 @@ class AgenteWhatsAppAIService:
             "transfer_instructions": row.transfer_instructions or "",
             "forbidden_topics": row.forbidden_topics or "",
             "allowed_tools": {"mode": "public_customer_scope_v1", "tools": sorted(PUBLIC_ALLOWED_TOOLS)},
-            "openai_key_preview": _mask_key(row.openai_api_key) or _mask_key(get_ai_api_key("OPENAI_API_KEY")),
-            "anthropic_key_preview": _mask_key(row.anthropic_api_key) or _mask_key(get_ai_api_key("ANTHROPIC_API_KEY")),
+            "openai_key_preview": mask_ai_key(resolve_ai_credential(self._db, self._tenant_id, "openai", legacy_key=row.openai_api_key).api_key),
+            "anthropic_key_preview": mask_ai_key(resolve_ai_credential(self._db, self._tenant_id, "claude", legacy_key=row.anthropic_api_key).api_key),
             "updated_at": row.updated_at,
         }
 
@@ -159,21 +160,14 @@ class AgenteWhatsAppAIService:
         return self.serialize_settings(settings)
 
     def update_ai_keys(self, *, openai_api_key: str | None = None, anthropic_api_key: str | None = None) -> dict[str, Any]:
-        if not openai_api_key and not anthropic_api_key:
-            raise ValueError("Informe pelo menos uma chave de API.")
-        settings = self.get_settings()
-        if openai_api_key:
-            settings.openai_api_key = openai_api_key.strip()
-        if anthropic_api_key:
-            settings.anthropic_api_key = anthropic_api_key.strip()
-        settings.updated_at = datetime.now(timezone.utc)
-        self._db.flush()
-        return self.provider_status(settings)
+        raise ValueError("A credencial de IA agora é administrada exclusivamente em Configurações.")
 
     def provider_status(self, settings: AgenteWhatsAppAISettings | None = None) -> dict[str, Any]:
         row = settings or self.get_settings()
-        openai_key = (row.openai_api_key or "").strip() or get_ai_api_key("OPENAI_API_KEY")
-        anthropic_key = (row.anthropic_api_key or "").strip() or get_ai_api_key("ANTHROPIC_API_KEY")
+        openai = resolve_ai_credential(self._db, self._tenant_id, "openai", legacy_key=row.openai_api_key)
+        anthropic = resolve_ai_credential(self._db, self._tenant_id, "claude", legacy_key=row.anthropic_api_key)
+        openai_key = openai.api_key
+        anthropic_key = anthropic.api_key
         selected_key = anthropic_key if row.provider == "claude" else openai_key if row.provider == "openai" else "internal"
         return {
             "provider": row.provider,
@@ -182,8 +176,12 @@ class AgenteWhatsAppAIService:
             "openai": bool(openai_key),
             "claude": bool(anthropic_key),
             "active": row.provider == "internal" or bool(selected_key),
-            "openai_key_preview": _mask_key(openai_key),
-            "anthropic_key_preview": _mask_key(anthropic_key),
+            "openai_key_preview": mask_ai_key(openai_key),
+            "anthropic_key_preview": mask_ai_key(anthropic_key),
+            "credential_source": anthropic.source if row.provider == "claude" else openai.source if row.provider == "openai" else "none",
+            "credential_provider": "claude" if row.provider == "claude" else "openai" if row.provider == "openai" else None,
+            "credential_preview": mask_ai_key(selected_key if selected_key != "internal" else None),
+            "centralized": True,
         }
 
     def build_system_prompt(self, settings: AgenteWhatsAppAISettings | None = None) -> str:
@@ -241,9 +239,7 @@ class AgenteWhatsAppAIService:
         }
 
     def _provider_instance(self, settings: AgenteWhatsAppAISettings):
-        if settings.provider == "openai":
-            return OpenAIProvider(model=settings.model or "gpt-4o-mini", api_key=settings.openai_api_key or "")
-        return ClaudeProvider(model=settings.model or "claude-sonnet-4-20250514", api_key=settings.anthropic_api_key or "")
+        return get_ai_provider(settings)
 
     def respond(
         self,
