@@ -16,6 +16,7 @@ from backend.models.payment import Payment, PaymentStatus
 from backend.models.payment_config import PaymentGatewayConfig
 from backend.models.admin import AdminUser
 from backend.config import get_settings
+from backend.core.rbac_authorization import require_rbac_permission
 from backend.core.tenant_runtime import resolve_panel_tenant_context
 from backend.routes.admin_auth import get_current_admin
 from backend.schemas.payment_config import (
@@ -406,7 +407,12 @@ def _apply_update(config: PaymentGatewayConfig, data: dict) -> None:
 
 
 @router.get("/payment-gateway", response_model=PaymentGatewayConfigOut)
-def get_payment_gateway_config(request: Request, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
+def get_payment_gateway_config(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+    _payment_permission=Depends(require_rbac_permission("payments", "view")),
+):
     """Returns current gateway config (secret keys are masked)."""
     return _to_out(_get_or_create_config(db, _panel_tenant_id(request, db, admin)))
 
@@ -417,6 +423,7 @@ def update_payment_gateway_config(
     request: Request,
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
+    _payment_permission=Depends(require_rbac_permission("payments", "edit")),
 ):
     """
     Updates gateway config. Only non-null fields are written.
@@ -440,7 +447,12 @@ def update_payment_gateway_config(
 
 
 @router.get("/payment-gateways")
-def get_payment_gateways(request: Request, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
+def get_payment_gateways(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+    _payment_permission=Depends(require_rbac_permission("payments", "view")),
+):
     config = _get_or_create_config(db, _panel_tenant_id(request, db, admin))
     return {
         "routing": {
@@ -462,6 +474,7 @@ def update_payment_gateway_routing(
     request: Request,
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
+    _payment_permission=Depends(require_rbac_permission("payments", "edit")),
 ):
     config = _get_or_create_config(db, _panel_tenant_id(request, db, admin))
     data = body.model_dump(exclude_none=True)
@@ -486,6 +499,7 @@ def update_payment_gateway_provider(
     request: Request,
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
+    _payment_permission=Depends(require_rbac_permission("payments", "edit")),
 ):
     config = _get_or_create_config(db, _panel_tenant_id(request, db, admin))
     provider = _normalize_provider(provider)
@@ -548,6 +562,7 @@ def test_payment_gateway_provider(
     request: Request,
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
+    _payment_permission=Depends(require_rbac_permission("payments", "edit")),
 ):
     config = _get_or_create_config(db, _panel_tenant_id(request, db, admin))
     provider = _normalize_provider(provider)
@@ -572,7 +587,12 @@ def test_payment_gateway_provider(
 
 
 @router.get("/payment-gateways/health")
-def get_payment_gateways_health(request: Request, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
+def get_payment_gateways_health(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+    _payment_permission=Depends(require_rbac_permission("payments", "view")),
+):
     config = _get_or_create_config(db, _panel_tenant_id(request, db, admin))
     return {
         "mercado_pago": _provider_health(config, "mercado_pago"),

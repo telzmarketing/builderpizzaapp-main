@@ -63,7 +63,7 @@ def _db_key(settings: AISettings | None, name: str) -> str:
         provider = "openai"
     session = object_session(settings) if settings is not None else None
     tenant_id = getattr(settings, "tenant_id", None)
-    if session is not None and tenant_id:
+    if tenant_id:
         return resolve_ai_credential(session, tenant_id, provider, legacy_key=db_val).api_key
     return (db_val or "").strip() or get_ai_api_key(name)
 
@@ -142,7 +142,7 @@ def _provider_instance(
     if provider_name == "internal":
         return _UnavailableProvider()
     if provider_name == "openai":
-        key = _db_key(settings, "OPENAI_API_KEY") if settings else ""
+        key = _db_key(settings, "OPENAI_API_KEY") if settings else None
         return OpenAIProvider(model=model or DEFAULT_MODELS["openai"], api_key=key)
-    key = _db_key(settings, "ANTHROPIC_API_KEY") if settings else ""
+    key = _db_key(settings, "ANTHROPIC_API_KEY") if settings else None
     return ClaudeProvider(model=model or DEFAULT_MODELS["claude"], api_key=key)

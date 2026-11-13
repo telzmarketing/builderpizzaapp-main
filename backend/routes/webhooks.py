@@ -102,12 +102,15 @@ async def tenant_mercadopago_webhook(endpoint_key: str, request: Request, db: Se
     body = body or _payload_from_query(query_params)
     try:
         payload = WebhookPayload.model_validate(body)
-        service = _tenant_payment_service(db, endpoint_key, "mercado_pago")
-        return ok(service.process_webhook(payload, raw_body, x_signature, x_request_id, query_params))
     except DomainError as exc:
         return err(exc)
     except Exception:
         return err_msg("Payload de webhook invalido ou malformado.", code="WebhookParseError")
+    try:
+        service = _tenant_payment_service(db, endpoint_key, "mercado_pago")
+        return ok(service.process_webhook(payload, raw_body, x_signature, x_request_id, query_params))
+    except DomainError as exc:
+        return err(exc)
 
 @router.post("/asaas/{endpoint_key}")
 async def tenant_asaas_webhook(endpoint_key: str, request: Request, db: Session = Depends(get_db),

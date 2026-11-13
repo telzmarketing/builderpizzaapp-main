@@ -15,6 +15,7 @@ def test_checkout_uses_tenant_webhook_url_when_rollout_is_enabled():
     assert 'return f"{base_url}/api/webhooks/{provider_path}/{endpoint_key}"' in source
     assert '"notification_url": self._webhook_notification_url(PROVIDER_MERCADO_PAGO)' in source
     assert '"notification_url": f"{base_url}/api/payments/webhook"' not in source
+    assert '"notification_url": self._webhook_notification_url(PROVIDER_MERCADO_PAGO)' in source
 
 
 def test_webhook_catalog_can_return_endpoint_key_for_generation():

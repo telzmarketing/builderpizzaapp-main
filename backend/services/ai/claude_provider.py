@@ -11,9 +11,9 @@ log = logging.getLogger("chatbot.ai.claude")
 
 
 class ClaudeProvider(AIProvider):
-    def __init__(self, model: str = "claude-sonnet-4-20250514", api_key: str = ""):
+    def __init__(self, model: str = "claude-sonnet-4-20250514", api_key: str | None = None):
         self._model = model
-        self._api_key = api_key.strip() or get_ai_api_key("ANTHROPIC_API_KEY")
+        self._api_key = api_key.strip() if api_key is not None else get_ai_api_key("ANTHROPIC_API_KEY")
 
     @property
     def provider_name(self) -> str:

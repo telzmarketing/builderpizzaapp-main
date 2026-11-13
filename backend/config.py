@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     # Payments (placeholders — swap for real gateway keys)
     PAYMENT_GATEWAY: str = "mock"          # "mock" | "stripe" | "mercadopago"
     PAYMENT_PROVIDER: str = "mock"         # "mock" | "mercado_pago" | "mercadopago"
+    # Fernet-compatible master secret (or any high-entropy environment secret
+    # deterministically derived to a Fernet key by secret_encryption.py).
+    # Production fails closed when this is absent.
+    PAYMENT_SECRET_ENCRYPTION_KEY: str = ""
     PAYMENT_SECRET_KEY: str = "secret"
     PAYMENT_WEBHOOK_SECRET: str = "webhook_secret"
     MERCADO_PAGO_ACCESS_TOKEN: str = ""

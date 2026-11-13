@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from backend.config import PROJECT_ROOT, get_ai_api_key, get_settings
+from backend.config import PROJECT_ROOT, get_settings
 from backend.core.tenant_context import TenantContext
 from backend.core.wave6_tenant_context import wave6_tenant_id
 from backend.models.agente_whatsapp import (
@@ -19,6 +19,7 @@ from backend.models.agente_whatsapp import (
     AgenteWhatsAppMessage,
 )
 from backend.services.ai.openai_provider import OpenAIProvider
+from backend.services.ai.credentials import resolve_ai_credential
 from backend.services.agente_whatsapp_audio_settings_service import AgenteWhatsAppAudioSettingsService
 
 
@@ -150,6 +151,16 @@ class AgenteWhatsAppAudioService:
         self._tenant_context = tenant_context
         self._tenant_id = wave6_tenant_id(tenant_context)
 
+    @property
+    def _credential_tenant_id(self) -> str | None:
+        """Return a tenant only when this invocation has trusted context.
+
+        ``wave6_tenant_id`` intentionally supplies the historical seeded tenant
+        for context-free compatibility. That storage identity must not turn a
+        legacy invocation into a tenant-scoped credential lookup.
+        """
+        return self._tenant_context.tenant_id if self._tenant_context is not None else None
+
     def transcribe_message(self, message_id: str, *, force: bool = False) -> dict[str, Any]:
         message = self._db.query(AgenteWhatsAppMessage).filter(
             AgenteWhatsAppMessage.id == message_id,
@@ -276,8 +287,15 @@ class AgenteWhatsAppAudioService:
         ai_settings = self._db.query(AgenteWhatsAppAISettings).filter(
             AgenteWhatsAppAISettings.tenant_id == self._tenant_id,
         ).first()
-        api_key = ((ai_settings.openai_api_key if ai_settings else "") or get_ai_api_key("OPENAI_API_KEY")).strip()
-        provider = OpenAIProvider(api_key=api_key)
+        credential = resolve_ai_credential(
+            self._db,
+            self._credential_tenant_id,
+            "openai",
+            legacy_key=ai_settings.openai_api_key if ai_settings else None,
+        )
+        provider = OpenAIProvider(api_key=credential.api_key)
+        if not credential.configured:
+            raise ValueError(credential.error_reason or "Credencial de IA nao configurada.")
         result = provider.synthesize_speech(
             text=text_value,
             model=str(audio_settings["tts_model"]),
@@ -534,8 +552,23 @@ class AgenteWhatsAppAudioService:
         ai_settings = self._db.query(AgenteWhatsAppAISettings).filter(
             AgenteWhatsAppAISettings.tenant_id == self._tenant_id,
         ).first()
-        api_key = ((ai_settings.openai_api_key if ai_settings else "") or get_ai_api_key("OPENAI_API_KEY")).strip()
-        provider = OpenAIProvider(api_key=api_key)
+        credential = resolve_ai_credential(
+            self._db,
+            self._credential_tenant_id,
+            "openai",
+            legacy_key=ai_settings.openai_api_key if ai_settings else None,
+        )
+        provider = OpenAIProvider(api_key=credential.api_key)
+        if not credential.configured:
+            return {
+                "text": "",
+                "provider": provider.provider_name,
+                "model": self._settings.WHATSAPP_AUDIO_STT_MODEL,
+                "language": "pt",
+                "latencia_ms": 0,
+                "error": credential.error_reason or "Credencial de IA nao configurada.",
+                "low_confidence": True,
+            }
         primary_model = self._settings.WHATSAPP_AUDIO_STT_MODEL
         fallback_model = self._settings.WHATSAPP_AUDIO_STT_FALLBACK_MODEL
 

@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Index, Integer, Text
 from datetime import datetime, timezone
 from backend.database import Base
+from backend.services.secret_encryption import PaymentSecretType
 
 
 class PaymentGatewayConfig(Base):
@@ -11,9 +12,9 @@ class PaymentGatewayConfig(Base):
     Exactly one row belongs to each tenant.  The legacy tenant may keep the
     historical ``id='default'``; new rows use opaque identifiers.
 
-    Secret keys are stored as-is here (no encryption at rest).
-    In production, use a secrets manager (AWS Secrets Manager, Vault, etc.)
-    or encrypt the column with SQLAlchemy-Utils EncryptedType.
+    Secret fields use a versioned encrypted SQLAlchemy type. Legacy plaintext
+    rows are readable explicitly so the migration can be rolled out without
+    losing provider credentials; new writes never persist plaintext.
     """
     __tablename__ = "payment_gateway_config"
     __table_args__ = (
@@ -33,8 +34,8 @@ class PaymentGatewayConfig(Base):
     mp_enabled = Column(Boolean, default=True)
     mp_environment = Column(String(20), nullable=False, default="sandbox")
     mp_public_key = Column(String(300), nullable=True)
-    mp_access_token = Column(String(300), nullable=True)
-    mp_webhook_secret = Column(String(300), nullable=True)
+    mp_access_token = Column(PaymentSecretType(), nullable=True)
+    mp_webhook_secret = Column(PaymentSecretType(), nullable=True)
     mp_pix_enabled = Column(Boolean, default=True)
     mp_credit_card_enabled = Column(Boolean, default=True)
     mp_max_installments = Column(Integer, default=6)
@@ -44,8 +45,8 @@ class PaymentGatewayConfig(Base):
 
     asaas_enabled = Column(Boolean, default=False)
     asaas_environment = Column(String(20), nullable=False, default="sandbox")
-    asaas_api_key = Column(String(500), nullable=True)
-    asaas_webhook_token = Column(String(300), nullable=True)
+    asaas_api_key = Column(PaymentSecretType(), nullable=True)
+    asaas_webhook_token = Column(PaymentSecretType(), nullable=True)
     asaas_pix_enabled = Column(Boolean, default=False)
     asaas_credit_card_enabled = Column(Boolean, default=False)
     asaas_max_installments = Column(Integer, default=1)
@@ -57,8 +58,8 @@ class PaymentGatewayConfig(Base):
     pagarme_enabled = Column(Boolean, default=False)
     pagarme_environment = Column(String(20), nullable=False, default="sandbox")
     pagarme_public_key = Column(String(300), nullable=True)
-    pagarme_secret_key = Column(String(500), nullable=True)
-    pagarme_webhook_secret = Column(String(500), nullable=True)
+    pagarme_secret_key = Column(PaymentSecretType(), nullable=True)
+    pagarme_webhook_secret = Column(PaymentSecretType(), nullable=True)
     pagarme_pix_enabled = Column(Boolean, default=False)
     pagarme_credit_card_enabled = Column(Boolean, default=False)
     pagarme_max_installments = Column(Integer, default=1)
@@ -68,12 +69,12 @@ class PaymentGatewayConfig(Base):
 
     # ── Stripe ────────────────────────────────────────────────────────────────
     stripe_publishable_key = Column(String(300), nullable=True)
-    stripe_secret_key = Column(String(300), nullable=True)
-    stripe_webhook_secret = Column(String(300), nullable=True)
+    stripe_secret_key = Column(PaymentSecretType(), nullable=True)
+    stripe_webhook_secret = Column(PaymentSecretType(), nullable=True)
 
     # ── PagSeguro ─────────────────────────────────────────────────────────────
     pagseguro_email = Column(String(200), nullable=True)
-    pagseguro_token = Column(String(300), nullable=True)
+    pagseguro_token = Column(PaymentSecretType(), nullable=True)
 
     # ── PIX (chave avulsa, sem gateway específico) ───────────────────────────
     pix_key = Column(String(200), nullable=True)          # CPF, CNPJ, email, telefone ou aleatória

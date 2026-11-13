@@ -85,8 +85,10 @@ export default function AdminPagamentos() {
     bool(form.pagarme_enabled) && bool(form.pagarme_credit_card_enabled)
     && pagarmePublicKeyConfigured && pagarmeSecretKeyConfigured && pagarmeWebhookSecretConfigured;
   const pagarmeSupported = typeof config?.pagarme_enabled === "boolean";
-  const mpWebhookUrl = `${window.location.origin}/api/webhooks/mercadopago`;
-  const asaasWebhookUrl = `${window.location.origin}/api/webhooks/asaas`;
+  // Multi-tenant webhooks always require the server-owned opaque endpoint key.
+  // Never instruct an operator to register the legacy global endpoint.
+  const mpWebhookUrl = `${window.location.origin}/api/webhooks/mercadopago/{endpoint_key}`;
+  const asaasWebhookUrl = `${window.location.origin}/api/webhooks/asaas/{endpoint_key}`;
   const pagarmeWebhookUrl = `${window.location.origin}/api/webhooks/pagarme/{endpoint_key}`;
 
   const loadConfig = async () => {

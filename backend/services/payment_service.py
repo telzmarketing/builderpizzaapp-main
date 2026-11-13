@@ -119,8 +119,8 @@ def _load_config(db: Session, tenant_id: str | None = None) -> PaymentGatewayCon
     return config
 
 
-def _mp_token(config: PaymentGatewayConfig) -> str:
-    token = settings.MERCADO_PAGO_ACCESS_TOKEN or config.mp_access_token
+def _mp_token(config: PaymentGatewayConfig, *, tenant_scoped: bool = False) -> str:
+    token = config.mp_access_token if tenant_scoped else (settings.MERCADO_PAGO_ACCESS_TOKEN or config.mp_access_token)
     if not token:
         raise GatewayNotConfigured("mercado_pago", "MERCADO_PAGO_ACCESS_TOKEN")
     return token
@@ -325,7 +325,8 @@ class PaymentService:
 
     def public_key(self) -> dict[str, str]:
         cfg = self._cfg()
-        return {"public_key": settings.MERCADO_PAGO_PUBLIC_KEY or cfg.mp_public_key or ""}
+        public_key = cfg.mp_public_key if self._tenant_id else (settings.MERCADO_PAGO_PUBLIC_KEY or cfg.mp_public_key)
+        return {"public_key": public_key or ""}
 
     def accepted_methods(self) -> dict[str, Any]:
         cfg = self._cfg()
@@ -478,7 +479,7 @@ class PaymentService:
         body = self._build_mp_payment_body(order, payment, form_data, amount)
         idempotency_key = hashlib.sha256(f"{order.id}:{method.value}:{amount}:{json.dumps(form_data, sort_keys=True, default=str)}".encode()).hexdigest()
         _logger.info("Criando pagamento MP: order_id=%s method=%s amount=%.2f idempotency_key=%s", order.id, method.value, amount, idempotency_key[:16])
-        response = _mp_request("POST", "/v1/payments", _mp_token(cfg), body, idempotency_key=idempotency_key)
+        response = _mp_request("POST", "/v1/payments", _mp_token(cfg, tenant_scoped=bool(self._tenant_id)), body, idempotency_key=idempotency_key)
 
         mp_id = str(response.get("id", ""))
         _logger.info("Resposta MP: mp_payment_id=%s status=%s order_id=%s", mp_id, response.get("status"), order.id)
@@ -728,6 +729,7 @@ class PaymentService:
             "payer": {"email": email},
             "external_reference": order.external_reference or order.id,
             "metadata": {"order_id": order.id, "payment_id": payment.id},
+            "notification_url": self._webhook_notification_url(PROVIDER_MERCADO_PAGO),
         }
         if form_data.get("token"):
             body["token"] = form_data["token"]
@@ -984,7 +986,7 @@ class PaymentService:
                 return False
 
         try:
-            response = _mp_request("GET", f"/v1/payments/{payment.mercado_pago_payment_id}", _mp_token(self._cfg()))
+            response = _mp_request("GET", f"/v1/payments/{payment.mercado_pago_payment_id}", _mp_token(self._cfg(), tenant_scoped=bool(self._tenant_id)))
         except DomainError as exc:
             _logger.warning(
                 "Nao foi possivel sincronizar pagamento Mercado Pago: payment_id=%s mp_payment_id=%s error=%s",
@@ -1209,6 +1211,10 @@ class PaymentService:
                 "ALERTA: Discrepância de valor no webhook — payment_id=%s payment.amount=%.2f mp_amount=%.2f mp_payment_id=%s",
                 payment.id, payment.amount, mp_amount, mp_payment_id,
             )
+            event.processed_at = datetime.now(timezone.utc)
+            event.processing_status = "rejected_amount_mismatch"
+            self._db.commit()
+            return {"status": "rejected", "reason": "payment_amount_mismatch"}
 
         payment.mercado_pago_payment_id = mp_payment_id
         payment.provider_payment_id = mp_payment_id
@@ -1322,6 +1328,10 @@ class PaymentService:
                 float(asaas_amount),
                 provider_payment_id,
             )
+            event.processed_at = datetime.now(timezone.utc)
+            event.processing_status = "rejected_amount_mismatch"
+            self._db.commit()
+            return {"status": "rejected", "reason": "payment_amount_mismatch"}
 
         payment.provider = PROVIDER_ASAAS
         payment.gateway = PROVIDER_ASAAS
@@ -1515,7 +1525,7 @@ class PaymentService:
                 "Provedor de pagamento indisponivel para checkout.",
                 code="PaymentGatewayNotImplemented",
             )
-        token = _mp_token(cfg)
+        token = _mp_token(cfg, tenant_scoped=bool(self._tenant_id))
         payment = self._pending_payment(
             order,
             PaymentCreate(order_id=order.id, amount=order.total, payment_method=method),
@@ -1668,7 +1678,7 @@ class PaymentService:
             response = _mp_request(
                 "PUT",
                 f"/v1/payments/{provider_payment_id}",
-                _mp_token(self._cfg()),
+                _mp_token(self._cfg(), tenant_scoped=bool(self._tenant_id)),
                 {"status": "cancelled"},
                 idempotency_key=hashlib.sha256(f"{payment.id}:cancel:{reason or ''}".encode()).hexdigest(),
             )
@@ -1723,12 +1733,12 @@ class PaymentService:
             refund_response = _mp_request(
                 "POST",
                 f"/v1/payments/{provider_payment_id}/refunds",
-                _mp_token(self._cfg()),
+                _mp_token(self._cfg(), tenant_scoped=bool(self._tenant_id)),
                 {},
                 idempotency_key=hashlib.sha256(f"{payment.id}:refund:{refund_value:.2f}".encode()).hexdigest(),
             )
             try:
-                payment_response = _mp_request("GET", f"/v1/payments/{provider_payment_id}", _mp_token(self._cfg()))
+                payment_response = _mp_request("GET", f"/v1/payments/{provider_payment_id}", _mp_token(self._cfg(), tenant_scoped=bool(self._tenant_id)))
             except DomainError:
                 payment_response = {}
             payment.provider_status = payment_response.get("status") or "refunded"

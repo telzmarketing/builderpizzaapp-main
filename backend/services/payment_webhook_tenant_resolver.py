@@ -33,6 +33,8 @@ def parse_endpoint_catalog(raw_catalog: str) -> dict[str, PaymentWebhookEndpoint
         raise PaymentWebhookTenantResolutionError("Catalogo de webhooks invalido.") from exc
     if not isinstance(payload, dict):
         raise PaymentWebhookTenantResolutionError("Catalogo de webhooks invalido.")
+    if not payload:
+        raise PaymentWebhookTenantResolutionError("Catalogo de webhooks nao configurado.")
     result: dict[str, PaymentWebhookEndpoint] = {}
     bindings: set[tuple[str, str]] = set()
     for endpoint_key, item in payload.items():
@@ -64,6 +66,8 @@ class PaymentWebhookTenantResolver:
         raise PaymentWebhookTenantResolutionError("Endpoint de webhook nao configurado para o tenant.")
 
     def resolve(self, endpoint_key: str, provider: str) -> PaymentWebhookEndpoint:
+        if not isinstance(endpoint_key, str) or not _KEY_RE.fullmatch(endpoint_key):
+            raise PaymentWebhookTenantResolutionError()
         binding = self._catalog.get(endpoint_key)
         if binding is None or binding.provider != (provider or "").strip().lower():
             raise PaymentWebhookTenantResolutionError()

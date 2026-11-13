@@ -16,6 +16,7 @@ class ResolvedAICredential:
     provider: str
     api_key: str
     source: str
+    error_reason: str = ""
 
     @property
     def configured(self) -> bool:
@@ -42,19 +43,39 @@ def resolve_ai_credential(
     *,
     legacy_key: str | None = None,
 ) -> ResolvedAICredential:
-    """Resolve the shared credential, preserving env/legacy compatibility.
+    """Resolve the shared credential with an explicit tenant isolation boundary.
 
     Once a tenant has a centralized credential, a provider mismatch fails
-    closed instead of silently using a second module-specific credential.
-    Before migration/configuration, the existing environment and legacy
-    module values remain read-only fallbacks.
+    closed instead of silently using a second module-specific credential. Any
+    tenant context must have a usable central credential; environment and
+    module-local values are compatibility fallbacks only when no tenant
+    context is present.
     """
-    if db is not None and tenant_id:
+    normalized_tenant_id = (tenant_id or "").strip()
+    if normalized_tenant_id:
+        if db is None:
+            return ResolvedAICredential(
+                provider=provider,
+                api_key="",
+                source="tenant-context-without-db",
+                error_reason="Credencial central de IA nao configurada para este tenant.",
+            )
         central = get_tenant_ai_credential(db, tenant_id)
-        if central is not None:
-            if central.provider != provider:
-                return ResolvedAICredential(provider=provider, api_key="", source="central-mismatch")
-            return ResolvedAICredential(provider=provider, api_key=(central.api_key or "").strip(), source="central")
+        if central is None or not (central.api_key or "").strip():
+            return ResolvedAICredential(
+                provider=provider,
+                api_key="",
+                source="tenant-missing",
+                error_reason="Credencial central de IA nao configurada para este tenant.",
+            )
+        if central.provider != provider:
+            return ResolvedAICredential(
+                provider=provider,
+                api_key="",
+                source="central-mismatch",
+                error_reason="Provider de IA nao corresponde a credencial central do tenant.",
+            )
+        return ResolvedAICredential(provider=provider, api_key=central.api_key.strip(), source="central")
 
     env_name = "OPENAI_API_KEY" if provider == "openai" else "ANTHROPIC_API_KEY"
     env_key = get_ai_api_key(env_name)

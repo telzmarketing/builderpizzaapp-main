@@ -73,6 +73,8 @@ def create_payment(
     db: Session = Depends(get_db),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
+    idempotency = None
+    claim = None
     try:
         tenant_id = _public_tenant_id(request, db)
         order = db.query(Order).filter(Order.id == body.order_id, Order.tenant_id == tenant_id).first()
@@ -98,6 +100,23 @@ def create_payment(
         idempotency.complete(claim.record, payment.id)
         return created(payment, "Pagamento iniciado. Aguardando confirmacao.")
     except DomainError as exc:
+        if idempotency is not None and claim is not None:
+            try:
+                payment = db.query(Payment).filter(
+                    Payment.order_id == body.order_id,
+                    Payment.tenant_id == tenant_id,
+                ).first()
+                if payment and (payment.provider_payment_id or payment.mercado_pago_payment_id):
+                    idempotency.recover_completed(
+                        idempotency_key or "",
+                        "payment.create",
+                        body.model_dump(mode="json"),
+                        payment.id,
+                    )
+                else:
+                    idempotency.abandon(claim.record)
+            except Exception:
+                db.rollback()
         return err(exc)
 
 
@@ -123,6 +142,8 @@ def create_asaas_credit_card_payment(
     db: Session = Depends(get_db),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
+    idempotency = None
+    claim = None
     try:
         tenant_id = _public_tenant_id(request, db)
         order = db.query(Order).filter(Order.id == body.order_id, Order.tenant_id == tenant_id).first()
@@ -148,6 +169,23 @@ def create_asaas_credit_card_payment(
         idempotency.complete(claim.record, payment.id)
         return created(payment, "Pagamento ASAAS cartao iniciado. Aguardando confirmacao.")
     except DomainError as exc:
+        if idempotency is not None and claim is not None:
+            try:
+                payment = db.query(Payment).filter(
+                    Payment.order_id == body.order_id,
+                    Payment.tenant_id == tenant_id,
+                ).first()
+                if payment and payment.provider_payment_id:
+                    idempotency.recover_completed(
+                        idempotency_key or "",
+                        "payment.asaas.credit_card",
+                        body.model_dump(mode="json"),
+                        payment.id,
+                    )
+                else:
+                    idempotency.abandon(claim.record)
+            except Exception:
+                db.rollback()
         return err(exc)
 
 

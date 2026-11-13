@@ -198,7 +198,7 @@ class AsaasGateway:
             return self._client
         config = self._config()
         return AsaasClient(
-            settings.ASAAS_API_KEY or config.asaas_api_key,
+            config.asaas_api_key,
             environment=config.asaas_environment,
         )
 
