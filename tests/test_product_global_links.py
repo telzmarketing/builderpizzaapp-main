@@ -2,20 +2,33 @@
 from __future__ import annotations
 
 import importlib.util
+import importlib
 from io import StringIO
 from pathlib import Path
 
 import pytest
+import backend.models
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from pydantic import ValidationError
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from backend.models.product import ProductCrustType, ProductSize
-from backend.schemas.catalog_global import ProductOptionAssociationCreate, ProductSizeAssociationCreate
+from backend.models.catalog_global import PizzaGlobalCrust
+from backend.schemas.catalog_global import GlobalCatalogCreate, ProductOptionAssociationCreate, ProductSizeAssociationCreate
+from backend.routes.catalog_global import _create, _delete
+from backend.core.tenant_context import TenantContext, TenantSource
 from backend.schemas.product import ProductCrustTypeOut, ProductSizeOut
 
 
 ROOT = Path(__file__).parents[1]
+
+
+for _module in (ROOT / "backend" / "models").glob("*.py"):
+    if _module.name != "__init__.py":
+        importlib.import_module(f"backend.models.{_module.stem}")
 
 
 def _migration():
@@ -63,3 +76,20 @@ def test_migration_is_expand_only_and_chained_to_global_catalog():
     assert "price_addition_override" in sql
     assert "DROP TABLE" not in sql
     assert "DROP TABLE" not in sql.upper()
+
+
+def test_global_crust_create_and_soft_delete_use_the_catalog_routes():
+    engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
+    PizzaGlobalCrust.__table__.create(engine)
+    context = TenantContext(tenant_id="tenant-a", source=TenantSource.JOB)
+    with Session(engine) as db:
+        created = _create(
+            db, PizzaGlobalCrust,
+            GlobalCatalogCreate(name="Catupiry", price_addition=14),
+            context, "global-crust",
+        )
+        assert created.id.startswith("global-crust-")
+        assert created.tenant_id == "tenant-a"
+        _delete(db, PizzaGlobalCrust, created.id, context)
+        assert db.get(PizzaGlobalCrust, created.id).active is False
+    engine.dispose()

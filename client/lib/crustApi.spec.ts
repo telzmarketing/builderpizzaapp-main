@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { crustApi } from "./api";
+import { crustApi, globalCatalogApi } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -46,5 +46,12 @@ describe("massas e bordas no contrato de catálogo", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(input);
     expect(fetchMock.mock.calls[1][1].method).toBe("PUT");
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ option_kind: kind, price_addition: 15 });
+  });
+
+  it("remove uma borda global pelo endpoint de exclusao logica", async () => {
+    const fetchMock = mockApi();
+    await globalCatalogApi.crusts.remove("global-crust-1");
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/catalog\/pizza-crusts\/global-crust-1$/);
+    expect(fetchMock.mock.calls[0][1].method).toBe("DELETE");
   });
 });

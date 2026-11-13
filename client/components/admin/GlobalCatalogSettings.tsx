@@ -12,6 +12,7 @@ export default function GlobalCatalogSettings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", description: "", price_addition: "", sort_order: "0", is_default: false });
   const api = globalCatalogApi[kind];
 
@@ -38,6 +39,15 @@ export default function GlobalCatalogSettings() {
     try { const updated = await api.update(item.id, { active: !item.active } as never); setItems((current) => current.map((x) => x.id === item.id ? updated : x)); }
     catch (e) { setError(e instanceof Error ? e.message : "Nao foi possivel atualizar."); }
   };
+  const remove = async (item: ApiGlobalCatalogItem) => {
+    if (!window.confirm(`Remover ${item.name}?`)) return;
+    setDeletingId(item.id); setError("");
+    try {
+      await api.remove(item.id);
+      setItems((current) => current.filter((x) => x.id !== item.id));
+    } catch (e) { setError(e instanceof Error ? e.message : "Nao foi possivel remover."); }
+    finally { setDeletingId(null); }
+  };
   const title = useMemo(() => labels[kind], [kind]);
   return <section className="mt-6 rounded-xl border border-surface-03 bg-surface-02 p-5 space-y-4">
     <div><h3 className="text-cream font-bold">Configurações Gerais do Catálogo</h3><p className="text-stone text-sm">Cadastros globais reutilizáveis por pizzas, sem alterar produtos ou pedidos existentes.</p></div>
@@ -51,6 +61,6 @@ export default function GlobalCatalogSettings() {
     {kind === "sizes" && <label className="flex items-center gap-2 text-sm text-parchment"><input type="checkbox" checked={form.is_default} onChange={(e) => setForm({ ...form, is_default: e.target.checked })} /> Definir como tamanho padrão</label>}
     {error && <div role="alert" className="rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>}
     {saved && <div role="status" className="flex items-center gap-2 text-sm text-emerald-300"><Check size={15} /> Cadastro salvo.</div>}
-    {loading ? <div className="flex items-center gap-2 text-stone"><Loader2 size={16} className="animate-spin" /> Carregando...</div> : items.length === 0 ? <p className="text-sm text-stone">Nenhum cadastro global ainda.</p> : <div className="space-y-2">{items.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-lg border border-surface-03 bg-surface-01 p-3"><div className="min-w-0 flex-1"><p className={`font-bold ${item.active ? "text-cream" : "text-stone line-through"}`}>{item.name}</p><p className="text-xs text-stone">{item.description || "Sem descrição"}{kind !== "sizes" ? ` · + R$ ${(item.price_addition || 0).toFixed(2)}` : item.is_default ? " · padrão" : ""}</p></div><button type="button" onClick={() => void toggle(item)} className="text-xs text-stone hover:text-gold">{item.active ? "Inativar" : "Ativar"}</button><X size={14} className="text-stone/40" /></div>)}</div>}
+    {loading ? <div className="flex items-center gap-2 text-stone"><Loader2 size={16} className="animate-spin" /> Carregando...</div> : items.length === 0 ? <p className="text-sm text-stone">Nenhum cadastro global ainda.</p> : <div className="space-y-2">{items.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-lg border border-surface-03 bg-surface-01 p-3"><div className="min-w-0 flex-1"><p className={`font-bold ${item.active ? "text-cream" : "text-stone line-through"}`}>{item.name}</p><p className="text-xs text-stone">{item.description || "Sem descrição"}{kind !== "sizes" ? ` · + R$ ${(item.price_addition || 0).toFixed(2)}` : item.is_default ? " · padrão" : ""}</p></div><button type="button" onClick={() => void toggle(item)} className="text-xs text-stone hover:text-gold">{item.active ? "Inativar" : "Ativar"}</button><button type="button" aria-label={`Remover ${item.name}`} disabled={deletingId === item.id} onClick={() => void remove(item)} className="text-stone/60 hover:text-red-300 disabled:opacity-50"><X size={14} /></button></div>)}</div>}
   </section>;
 }
