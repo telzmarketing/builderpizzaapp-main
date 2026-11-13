@@ -207,7 +207,10 @@ class WhatsAppGatewayService:
 
     def connect_instance(self, instance_id: str) -> dict[str, Any]:
         instance = self._require_instance(instance_id)
-        result = self._provider(instance.provider).connect_instance(instance_id=instance.id)
+        result = self._provider(instance.provider).connect_instance(
+            instance_id=instance.id,
+            tenant_id=instance.tenant_id,
+        )
         self._apply_runtime_result(instance, result, fallback_status="connecting")
         self._log_runtime_result(instance, "instance_connect", result)
         self._db.flush()
@@ -267,7 +270,10 @@ class WhatsAppGatewayService:
 
     def restart_instance(self, instance_id: str) -> dict[str, Any]:
         instance = self._require_instance(instance_id)
-        result = self._provider(instance.provider).restart_instance(instance_id=instance.id)
+        result = self._provider(instance.provider).restart_instance(
+            instance_id=instance.id,
+            tenant_id=instance.tenant_id,
+        )
         self._apply_runtime_result(instance, result, fallback_status="connecting")
         self._log_runtime_result(instance, "instance_restart", result)
         self._db.flush()

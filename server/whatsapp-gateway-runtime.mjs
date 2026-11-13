@@ -63,6 +63,7 @@ function logRuntime(event, payload = {}) {
 function baseState(instanceId) {
   return {
     instanceId,
+    tenantId: null,
     status: "disconnected",
     qrCode: null,
     qrCodeDataUrl: null,
@@ -88,6 +89,7 @@ function getState(instanceId) {
 function publicState(state) {
   return {
     instance_id: state.instanceId,
+    tenant_id: state.tenantId,
     status: state.status,
     qr_code: state.qrCode,
     qr_code_data_url: state.qrCodeDataUrl,
@@ -300,12 +302,15 @@ function numericValue(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-async function storeInboundMedia(item, media, messageType, providerMessageId) {
+async function storeInboundMedia(item, media, messageType, providerMessageId, state) {
   if (!media || !["audio"].includes(messageType)) {
     return { media_url: media?.url || null, media_storage_key: null, media_size_bytes: numericValue(media?.fileLength) };
   }
   try {
-    const buffer = await downloadMediaMessage(item, "buffer", {}, { logger });
+    // Baileys may return a Uint8Array-like value depending on the runtime.
+    // Convert it before signature inspection; otherwise Uint8Array#toString()
+    // makes valid OGG voice notes look like an unknown binary format.
+    const buffer = Buffer.from(await downloadMediaMessage(item, "buffer", {}, { logger }));
     if (!buffer || !buffer.length) {
       return { media_url: media.url || null, media_storage_key: null, media_size_bytes: numericValue(media.fileLength) };
     }
@@ -315,7 +320,11 @@ async function storeInboundMedia(item, media, messageType, providerMessageId) {
       filename: media.fileName,
     });
     if (!mimetype) throw new Error("Audio Baileys invalido ou formato nao identificado.");
-    const dir = path.join(projectRoot, "uploads", "agente-whatsapp-audio");
+    const tenantId = String(state.tenantId || "").trim();
+    if (!tenantId || tenantId.includes("/") || tenantId.includes("\\") || tenantId === "." || tenantId === "..") {
+      throw new Error("Tenant da instancia ausente para armazenamento de audio.");
+    }
+    const dir = path.join(projectRoot, "uploads", tenantId);
     await fs.mkdir(dir, { recursive: true });
     const filename = `${providerMessageId}-${randomUUID()}.${mediaExtension(mimetype)}`;
     const absolutePath = path.join(dir, filename);
@@ -330,7 +339,10 @@ async function storeInboundMedia(item, media, messageType, providerMessageId) {
     };
   } catch (error) {
     return {
-      media_url: media.url || null,
+      // Never hand the API Baileys' encrypted media URL after a local
+      // decrypt/write failure. The API cannot download that URL without the
+      // authenticated socket and would report a misleading MIME error.
+      media_url: null,
       media_storage_key: null,
       media_download_error: error instanceof Error ? error.message : String(error),
       media_mime_type: media.mimetype || null,
@@ -340,7 +352,7 @@ async function storeInboundMedia(item, media, messageType, providerMessageId) {
   }
 }
 
-async function extractInboundMessage(item) {
+async function extractInboundMessage(item, state) {
   const key = item?.key || {};
   if (key.fromMe) return null;
   const remoteJid = inboundRemoteJid(item);
@@ -392,7 +404,7 @@ async function extractInboundMessage(item) {
   ].filter(([, value]) => value);
   if (mediaEntries.length) {
     const [messageType, media] = mediaEntries[0];
-    const storedMedia = await storeInboundMedia(item, media, messageType, providerMessageId);
+    const storedMedia = await storeInboundMedia(item, media, messageType, providerMessageId, state);
     return {
       id: providerMessageId,
       remote_jid: remoteJid,
@@ -494,6 +506,7 @@ async function connectInstance(instanceId, body = {}) {
   state.startedAt = nowIso();
   state.lastSeenAt = nowIso();
   state.lastError = null;
+  state.tenantId = textValue(body.tenant_id, state.tenantId);
   state.qrCode = null;
   state.qrCodeDataUrl = null;
   if (!body.reconnect) state.reconnectAttempts = 0;
@@ -520,7 +533,7 @@ async function connectInstance(instanceId, body = {}) {
   socket.ev.on("creds.update", saveCreds);
   socket.ev.on("messages.upsert", async ({ messages }) => {
     for (const item of messages || []) {
-      const inbound = await extractInboundMessage(item);
+      const inbound = await extractInboundMessage(item, state);
       if (!inbound) continue;
       await postBackendEvent({
         event_type: "message_received",

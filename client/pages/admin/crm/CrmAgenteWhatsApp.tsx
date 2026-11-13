@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -26,6 +26,8 @@ import {
   XCircle,
 } from "lucide-react";
 import MediaUpload from "@/components/admin/MediaUpload";
+import WhatsAppAttendanceControls, { WhatsAppAttendanceBadge } from "@/components/admin/WhatsAppAttendanceControls";
+import { whatsappAttendance } from "@/lib/whatsappAttendance";
 import OrderWhatsappNotificationSettingsPanel from "@/components/admin/OrderWhatsappNotificationSettingsPanel";
 import {
   agenteWhatsAppApi,
@@ -321,6 +323,12 @@ export default function CrmAgenteWhatsApp() {
   const [newPhone, setNewPhone] = useState("");
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailSessionId, setDetailSessionId] = useState<string | null>(null);
+  const detailRequest = useRef(0);
+  const controlRevision = useRef(0);
+  const actionInProgress = useRef(false);
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
   const [outboxLoading, setOutboxLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
@@ -343,6 +351,7 @@ export default function CrmAgenteWhatsApp() {
   const [dismissedPopupAlertId, setDismissedPopupAlertId] = useState<string | null>(null);
 
   const selected = sessions.find((session) => session.id === selectedId) ?? null;
+  const canSendHuman = whatsappAttendance(selected).canSendHuman && detailSessionId === selectedId;
   const channelProvider = channelSettings?.active_provider === "baileys" ? "baileys" : "official";
   const connectedGatewayInstances = gatewayInstances.filter((instance) => instance.status === "connected");
   const selectedAutomation = automationTemplates.find((item) => item.key === automationForm.key) ?? automationTemplates[0] ?? null;
@@ -386,6 +395,7 @@ export default function CrmAgenteWhatsApp() {
   }, [messages]);
 
   async function loadSessions(preferredId?: string | null) {
+    const revision = controlRevision.current;
     setError("");
     setLoading(true);
     try {
@@ -419,6 +429,7 @@ export default function CrmAgenteWhatsApp() {
         whatsappGatewayApi.listInstances().catch(() => []),
         agenteWhatsAppApi.listInternalAlerts({ status: "active", limit: 30 }).catch(() => []),
       ]);
+      if (revision !== controlRevision.current) return;
       setDashboard(dash);
       setSessions(rows);
       setOperationalMetrics(liveMetrics);
@@ -430,7 +441,8 @@ export default function CrmAgenteWhatsApp() {
       setChannelSettings(channelPayload);
       setGatewayInstances(gatewayPayload);
       setInternalAlerts(internalAlertsPayload);
-      const nextId = preferredId ?? selectedId ?? rows[0]?.id ?? null;
+      const nextId = preferredId ?? selectedIdRef.current ?? rows[0]?.id ?? null;
+      selectedIdRef.current = nextId;
       setSelectedId(nextId);
       if (nextId) await loadDetail(nextId);
       else {
@@ -445,13 +457,17 @@ export default function CrmAgenteWhatsApp() {
   }
 
   async function loadDetail(sessionId: string) {
+    const request = ++detailRequest.current;
+    const revision = controlRevision.current;
     setDetailLoading(true);
     try {
       const [detail, guardrails] = await Promise.all([
         agenteWhatsAppApi.getSession(sessionId),
         agenteWhatsAppApi.aiGuardrails(sessionId).catch(() => null),
       ]);
+      if (request !== detailRequest.current || revision !== controlRevision.current || selectedIdRef.current !== sessionId) return;
       setMessages(detail.messages);
+      setDetailSessionId(detail.session.id);
       setAiGuardrails(guardrails);
       setSessions((current) => current.map((session) => (
         session.id === detail.session.id
@@ -464,9 +480,11 @@ export default function CrmAgenteWhatsApp() {
           : session
       )));
     } catch (err) {
+      if (request !== detailRequest.current || selectedIdRef.current !== sessionId) return;
+      setDetailSessionId(null);
       setError(err instanceof Error ? err.message : "Falha ao carregar conversa.");
     } finally {
-      setDetailLoading(false);
+      if (request === detailRequest.current) setDetailLoading(false);
     }
   }
 
@@ -500,6 +518,8 @@ export default function CrmAgenteWhatsApp() {
   useEffect(() => {
     loadSessions();
     const interval = window.setInterval(() => {
+      if (actionInProgress.current) return;
+      const revision = controlRevision.current;
       agenteWhatsAppApi.listConversations({
         status: filter === "all" ? undefined : filter,
         search: search.trim() || undefined,
@@ -507,7 +527,9 @@ export default function CrmAgenteWhatsApp() {
         date_from: periodFrom || undefined,
         date_to: periodTo || undefined,
         limit: 120,
-      }).then(setSessions).catch(() => {});
+      }).then((rows) => {
+        if (revision === controlRevision.current) setSessions(rows);
+      }).catch(() => {});
       agenteWhatsAppApi.operationalMetrics().then(setOperationalMetrics).catch(() => {});
       agenteWhatsAppApi.listInternalAlerts({ status: "active", limit: 30 }).then(setInternalAlerts).catch(() => {});
       agenteWhatsAppApi.audioMetrics(7)
@@ -525,10 +547,17 @@ export default function CrmAgenteWhatsApp() {
   }, [selectedId]);
 
   async function updateSession(data: Partial<Pick<ApiAgenteWhatsAppConversation, "status" | "ai_enabled" | "automation_blocked">>) {
-    if (!selected) return;
+    if (!selected || actionInProgress.current) return;
+    actionInProgress.current = true;
+    controlRevision.current += 1;
     setSaving(true);
+    setError("");
     try {
-      const updated = await agenteWhatsAppApi.updateSession(selected.id, data);
+      const updated = await (data.status === "human" && data.ai_enabled === false
+        ? agenteWhatsAppApi.assumeSession(selected.id)
+        : data.status === "open" && data.ai_enabled === true
+          ? agenteWhatsAppApi.returnSessionToAI(selected.id)
+          : agenteWhatsAppApi.updateSession(selected.id, data));
       setSessions((current) => current.map((session) => session.id === updated.id ? {
         ...session,
         ...updated,
@@ -536,7 +565,11 @@ export default function CrmAgenteWhatsApp() {
       } : session));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao atualizar conversa.");
+      setDetailSessionId(null);
+      await loadDetail(selected.id);
     } finally {
+      controlRevision.current += 1;
+      actionInProgress.current = false;
       setSaving(false);
     }
   }
@@ -566,11 +599,13 @@ export default function CrmAgenteWhatsApp() {
 
   async function assumeHandoffAlert(alert: ApiAgenteWhatsAppInternalAlert) {
     const sessionId = alertPayloadSessionId(alert);
-    if (!sessionId) return;
+    if (!sessionId || actionInProgress.current) return;
+    actionInProgress.current = true;
+    controlRevision.current += 1;
     setSaving(true);
     setError("");
     try {
-      await agenteWhatsAppApi.updateSession(sessionId, { status: "human", ai_enabled: false });
+      await agenteWhatsAppApi.assumeSession(sessionId);
       await agenteWhatsAppApi.acknowledgeInternalAlert(alert.id).catch(() => null);
       setInternalAlerts((current) => current.filter((item) => item.id !== alert.id));
       setModuleTab("conversations");
@@ -579,20 +614,21 @@ export default function CrmAgenteWhatsApp() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao assumir atendimento.");
     } finally {
+      controlRevision.current += 1;
+      actionInProgress.current = false;
       setSaving(false);
     }
   }
 
   async function sendReply() {
-    if (!selected || !reply.trim()) return;
+    if (!selected || !reply.trim() || saving || detailLoading || !canSendHuman || actionInProgress.current) return;
+    actionInProgress.current = true;
+    controlRevision.current += 1;
     setSaving(true);
+    setError("");
     try {
-      await agenteWhatsAppApi.addMessage(selected.id, {
-        direction: "outbound",
-        sender_type: "human",
-        message_type: "text",
+      await agenteWhatsAppApi.sendHumanMessage(selected.id, {
         body: reply.trim(),
-        provider_status: "queued",
         raw_payload: { source: "crm_agente_whatsapp" },
       });
       await agenteWhatsAppApi.processOutbox(10).catch(() => null);
@@ -603,7 +639,10 @@ export default function CrmAgenteWhatsApp() {
       await loadDetail(selected.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao registrar resposta.");
+      await loadDetail(selected.id);
     } finally {
+      controlRevision.current += 1;
+      actionInProgress.current = false;
       setSaving(false);
     }
   }
@@ -2788,13 +2827,7 @@ export default function CrmAgenteWhatsApp() {
                     <span className="text-[11px] text-stone shrink-0">{fmtDate(session.last_message_at || session.updated_at)}</span>
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-2">
-                    <span className={`text-[11px] border rounded-full px-2 py-0.5 ${
-                      session.attendance_mode === "human"
-                        ? "border-blue-500/30 bg-blue-500/10 text-blue-300"
-                        : "border-green-500/30 bg-green-500/10 text-green-300"
-                    }`}>
-                      {session.attendance_mode === "human" ? "Humano" : "IA"}
-                    </span>
+                    <WhatsAppAttendanceBadge session={session} />
                     {session.unread_count > 0 && (
                       <span className="rounded-full bg-gold px-2 py-0.5 text-[11px] font-bold text-black">
                         {session.unread_count} nao lida(s)
@@ -2824,36 +2857,23 @@ export default function CrmAgenteWhatsApp() {
                     <span className={`text-xs border rounded-full px-2 py-0.5 ${statusClasses[selected.status]}`}>
                       {statusLabels[selected.status]}
                     </span>
-                    <span className={`text-xs border rounded-full px-2 py-0.5 ${
-                      selected.ai_enabled ? "border-green-500/30 text-green-300 bg-green-500/10" : "border-purple-500/30 text-purple-300 bg-purple-500/10"
-                    }`}>
-                      {selected.ai_enabled ? "IA ativa" : "IA pausada"}
-                    </span>
                   </div>
                   <p className="text-sm text-stone mt-1">{selected.phone} · {selected.provider}</p>
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    onClick={() => updateSession({ status: "human", ai_enabled: false })}
-                    disabled={saving}
-                    className="px-3 py-2 rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-300 text-xs font-semibold flex items-center gap-1 disabled:opacity-50"
-                  >
-                    <UserRound size={14} /> Assumir
-                  </button>
+                  <WhatsAppAttendanceControls
+                    session={selected}
+                    busy={saving || detailLoading}
+                    onAssume={() => updateSession({ status: "human", ai_enabled: false, automation_blocked: true })}
+                    onReturnToAI={() => updateSession({ status: "open", ai_enabled: true, automation_blocked: false })}
+                  />
                   <button
                     onClick={() => updateSession({ status: "ai_paused", ai_enabled: false, automation_blocked: true })}
                     disabled={saving}
                     className="px-3 py-2 rounded-xl border border-purple-500/30 bg-purple-500/10 text-purple-300 text-xs font-semibold flex items-center gap-1 disabled:opacity-50"
                   >
                     <PauseCircle size={14} /> Pausar IA
-                  </button>
-                  <button
-                    onClick={() => updateSession({ status: "open", ai_enabled: true, automation_blocked: false })}
-                    disabled={saving}
-                    className="px-3 py-2 rounded-xl border border-green-500/30 bg-green-500/10 text-green-300 text-xs font-semibold flex items-center gap-1 disabled:opacity-50"
-                  >
-                    <Bot size={14} /> Devolver IA
                   </button>
                   <button
                     onClick={() => updateSession({ status: "closed", ai_enabled: false })}
@@ -2993,10 +3013,12 @@ export default function CrmAgenteWhatsApp() {
                     value={reply}
                     onChange={(event) => setReply(event.target.value)}
                     rows={2}
-                    placeholder="Mensagem"
+                    placeholder={canSendHuman ? "Mensagem" : "Assuma a conversa para responder"}
+                    disabled={saving || detailLoading || !canSendHuman}
+                    aria-label="Mensagem humana no WhatsApp"
                     className="flex-1 bg-surface-03 border border-surface-03 rounded-xl px-3 py-2 text-sm text-cream outline-none resize-none focus:border-gold"
                     onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
+                      if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                         event.preventDefault();
                         sendReply();
                       }
@@ -3004,7 +3026,8 @@ export default function CrmAgenteWhatsApp() {
                   />
                   <button
                     onClick={sendReply}
-                    disabled={saving || !reply.trim()}
+                    disabled={saving || detailLoading || !canSendHuman || !reply.trim()}
+                    aria-label="Enviar mensagem humana"
                     className="w-12 rounded-xl bg-gold text-black flex items-center justify-center disabled:opacity-50"
                   >
                     {saving ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}

@@ -34,10 +34,10 @@ class BaileysProvider:
             data={"instance_id": instance_id, "name": name, "installed_version": self._package_version},
         )
 
-    def connect_instance(self, *, instance_id: str) -> WhatsAppProviderResult:
+    def connect_instance(self, *, instance_id: str, tenant_id: str | None = None) -> WhatsAppProviderResult:
         if not self._package_version:
             return self._runtime_pending("connect_instance")
-        return self._runtime.connect_instance(instance_id=instance_id)
+        return self._runtime.connect_instance(instance_id=instance_id, tenant_id=tenant_id)
 
     def get_qr_code(self, *, instance_id: str) -> WhatsAppProviderResult:
         if not self._package_version:
@@ -64,10 +64,10 @@ class BaileysProvider:
             return self._runtime_pending("delete_instance")
         return self._runtime.delete_instance(instance_id=instance_id)
 
-    def restart_instance(self, *, instance_id: str) -> WhatsAppProviderResult:
+    def restart_instance(self, *, instance_id: str, tenant_id: str | None = None) -> WhatsAppProviderResult:
         if not self._package_version:
             return self._runtime_pending("restart_instance")
-        return self._runtime.restart_instance(instance_id=instance_id)
+        return self._runtime.restart_instance(instance_id=instance_id, tenant_id=tenant_id)
 
     def send_text_message(self, *, instance_id: str, phone: str, text: str) -> WhatsAppProviderResult:
         if not self._package_version:

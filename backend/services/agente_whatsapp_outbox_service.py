@@ -836,8 +836,8 @@ class AgenteWhatsAppOutboxService:
             self._db.query(AgenteWhatsAppChannelSettings)
             .filter(
                 AgenteWhatsAppChannelSettings.tenant_id == self._tenant_id,
-                AgenteWhatsAppChannelSettings.id == "default",
             )
+            .order_by(AgenteWhatsAppChannelSettings.updated_at.desc())
             .first()
         )
         return settings.whatsapp_gateway_instance_id if settings else None

@@ -18,8 +18,8 @@ class WhatsAppGatewayRuntimeClient:
     def health(self) -> WhatsAppProviderResult:
         return self._request("GET", "/health")
 
-    def connect_instance(self, *, instance_id: str, name: str | None = None) -> WhatsAppProviderResult:
-        return self._request("POST", f"/instances/{instance_id}/connect", {"name": name})
+    def connect_instance(self, *, instance_id: str, name: str | None = None, tenant_id: str | None = None) -> WhatsAppProviderResult:
+        return self._request("POST", f"/instances/{instance_id}/connect", {"name": name, "tenant_id": tenant_id})
 
     def get_qr_code(self, *, instance_id: str) -> WhatsAppProviderResult:
         return self._request("GET", f"/instances/{instance_id}/qrcode")
@@ -36,8 +36,8 @@ class WhatsAppGatewayRuntimeClient:
     def delete_instance(self, *, instance_id: str) -> WhatsAppProviderResult:
         return self._request("DELETE", f"/instances/{instance_id}")
 
-    def restart_instance(self, *, instance_id: str, name: str | None = None) -> WhatsAppProviderResult:
-        return self._request("POST", f"/instances/{instance_id}/restart", {"name": name})
+    def restart_instance(self, *, instance_id: str, name: str | None = None, tenant_id: str | None = None) -> WhatsAppProviderResult:
+        return self._request("POST", f"/instances/{instance_id}/restart", {"name": name, "tenant_id": tenant_id})
 
     def send_text_message(self, *, instance_id: str, phone: str, text: str) -> WhatsAppProviderResult:
         return self._request(

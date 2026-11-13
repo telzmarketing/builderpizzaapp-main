@@ -1125,26 +1125,29 @@ def add_message(
     session = service.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Sessao nao encontrada.")
-    message = service.add_message(
-        session,
-        direction=body.direction,
-        sender_type=body.sender_type,
-        provider=body.provider,
-        message_type=body.message_type,
-        body=body.body,
-        media_url=body.media_url,
-        media_storage_key=body.media_storage_key,
-        media_mime_type=body.media_mime_type,
-        media_duration_ms=body.media_duration_ms,
-        media_size_bytes=body.media_size_bytes,
-        provider_message_id=body.provider_message_id,
-        quoted_provider_message_id=body.quoted_provider_message_id,
-        response_to_message_id=body.response_to_message_id,
-        campaign_id=body.campaign_id,
-        campaign_delivery_id=body.campaign_delivery_id,
-        provider_status=body.provider_status,
-        raw_payload=body.raw_payload,
-    )
+    try:
+        message = service.add_message(
+            session,
+            direction=body.direction,
+            sender_type=body.sender_type,
+            provider=body.provider,
+            message_type=body.message_type,
+            body=body.body,
+            media_url=body.media_url,
+            media_storage_key=body.media_storage_key,
+            media_mime_type=body.media_mime_type,
+            media_duration_ms=body.media_duration_ms,
+            media_size_bytes=body.media_size_bytes,
+            provider_message_id=body.provider_message_id,
+            quoted_provider_message_id=body.quoted_provider_message_id,
+            response_to_message_id=body.response_to_message_id,
+            campaign_id=body.campaign_id,
+            campaign_delivery_id=body.campaign_delivery_id,
+            provider_status=body.provider_status,
+            raw_payload=body.raw_payload,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     db.commit()
     db.refresh(message)
     return service.serialize_message(message)

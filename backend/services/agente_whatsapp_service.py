@@ -1140,6 +1140,11 @@ class AgenteWhatsAppService:
     ) -> AgenteWhatsAppMessage:
         if session.tenant_id != self._tenant_id:
             raise ValueError("Sessao nao pertence a empresa atual.")
+        if direction == "outbound" and sender_type == "human":
+            if session.status != "human" or session.ai_enabled:
+                raise ValueError(
+                    "Assuma a conversa e desative a IA antes de enviar uma mensagem humana."
+                )
         if provider_message_id:
             existing = (
                 self._db.query(AgenteWhatsAppMessage)

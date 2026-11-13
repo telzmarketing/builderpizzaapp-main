@@ -1,4 +1,5 @@
 import { clearAdminSession, shouldInvalidateAdminSession } from "./adminSession";
+import { requireWhatsAppHumanAttendance } from "./whatsappAttendance";
 import { rememberPwaContext } from "./motoboyPwa";
 import { buildPlatformTenantListQuery } from "./platformMaster";
 import { notifyOrderArchived } from "./orderArchive";
@@ -8034,6 +8035,23 @@ export const agenteWhatsAppApi = {
   }) => post<ApiAgenteWhatsAppSession>("/agente-whatsapp/sessions", data),
   getSession: (sessionId: string) =>
     get<ApiAgenteWhatsAppSessionDetail>(`/agente-whatsapp/sessions/${sessionId}`),
+  assumeSession: (sessionId: string) => agenteWhatsAppApi.updateSession(sessionId, {
+    status: "human", ai_enabled: false, automation_blocked: true,
+  }),
+  returnSessionToAI: (sessionId: string) => agenteWhatsAppApi.updateSession(sessionId, {
+    status: "open", ai_enabled: true, automation_blocked: false,
+  }),
+  sendHumanMessage: async (sessionId: string, data: {
+    body: string;
+    raw_payload?: Record<string, unknown>;
+  }): Promise<ApiAgenteWhatsAppMessage> => {
+    // Recheck persisted control: another screen may have returned this session to AI.
+    const detail = await agenteWhatsAppApi.getSession(sessionId);
+    requireWhatsAppHumanAttendance(detail.session);
+    return agenteWhatsAppApi.addMessage(sessionId, {
+      ...data, direction: "outbound", sender_type: "human", message_type: "text", provider_status: "queued",
+    });
+  },
   updateSession: (sessionId: string, data: Partial<Pick<
     ApiAgenteWhatsAppSession,
     "status" | "current_intent" | "assigned_admin_id" | "ai_enabled" | "automation_blocked"

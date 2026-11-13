@@ -159,7 +159,10 @@ class Settings(BaseSettings):
     WHATSAPP_CAMPAIGN_CONTEXT_ENABLED: bool = True
     WHATSAPP_CAMPAIGN_CONTEXT_WINDOW_HOURS: int = 72
     WHATSAPP_CAMPAIGN_PRIORITY_WINDOW_HOURS: int = 24
-    WHATSAPP_AI_AUTO_REPLY_ENABLED: bool = False
+    # The customer-facing WhatsApp agent is an active product capability. Keep
+    # the environment variable as an explicit kill switch, but do not silently
+    # disable every inbound reply when a deployment omits the variable.
+    WHATSAPP_AI_AUTO_REPLY_ENABLED: bool = True
     WHATSAPP_AUDIO_OUTPUT_ENABLED: bool = False
     WHATSAPP_AUDIO_TTS_WORKER_ENABLED: bool = True
     WHATSAPP_AUDIO_TEXT_FALLBACK_ENABLED: bool = True
