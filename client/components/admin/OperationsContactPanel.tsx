@@ -5,6 +5,7 @@ import { Sheet, SheetClose, SheetDescription, SheetOverlay, SheetPortal, SheetTi
 import { chatbotAdminApi, type ChatbotConversation, type ChatbotMessage } from "@/lib/chatbotApi";
 import { agenteWhatsAppApi, resolveAssetUrl, type ApiAgenteWhatsAppConversation, type ApiAgenteWhatsAppMessage } from "@/lib/api";
 import WhatsAppAttendanceControls, { WhatsAppAttendanceBadge } from "./WhatsAppAttendanceControls";
+import WhatsAppOrderWorkspace from "./WhatsAppOrderWorkspace";
 import { whatsappAttendance } from "@/lib/whatsappAttendance";
 
 type Channel = "chatbot" | "whatsapp";
@@ -197,7 +198,7 @@ export default function OperationsContactPanel() {
           <SheetOverlay />
           <SheetPrimitive.Content
             onCloseAutoFocus={(event) => { event.preventDefault(); triggerRef.current?.focus(); }}
-            className="fixed inset-y-0 right-0 z-50 flex h-dvh w-full max-w-md flex-col overflow-hidden border-l border-surface-03 bg-surface-00 text-parchment shadow-2xl outline-none"
+            className="fixed inset-y-0 right-0 z-50 flex h-dvh w-full max-w-[min(100vw,1280px)] flex-col overflow-hidden border-l border-surface-03 bg-surface-00 text-parchment shadow-2xl outline-none"
           >
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-surface-03 p-4 pt-[max(1rem,env(safe-area-inset-top))]">
           <div className="min-w-0"><SheetTitle className="font-black text-cream">Atendimento</SheetTitle><SheetDescription className="text-xs text-stone">{loading ? "Atualizando..." : `${items.length} conversa(s)`}</SheetDescription></div>
@@ -224,7 +225,8 @@ export default function OperationsContactPanel() {
             </button>)}
           </div>
         ) : (
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+            <div className="min-w-0 flex min-h-0 flex-1 flex-col">
             <div className="space-y-3 border-b border-surface-03 p-3">
               <div className="flex items-center gap-2">
                 <button type="button" onClick={resetConversation} className="text-sm text-gold">Voltar</button>
@@ -245,6 +247,8 @@ export default function OperationsContactPanel() {
               <input value={draft} disabled={!canReply} aria-label="Mensagem de atendimento" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) void send(); }} className="min-w-0 flex-1 rounded-lg border border-surface-03 bg-surface-02 px-3 py-2 text-sm text-cream disabled:opacity-50" placeholder={canReply ? "Responder..." : "Assuma a conversa para responder"} />
               <button type="button" onClick={() => void send()} disabled={!canReply || !draft.trim()} aria-label="Enviar mensagem humana" className="rounded-lg bg-gold p-2 text-black disabled:opacity-50"><Send size={16} /></button>
             </div>
+          </div>
+          {selectedWhatsApp && <WhatsAppOrderWorkspace session={selectedWhatsApp} />}
           </div>
         )}
           </SheetPrimitive.Content>

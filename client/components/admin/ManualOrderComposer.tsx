@@ -112,7 +112,7 @@ function emptyDraft(): Draft {
   };
 }
 
-function draftStorageKey() {
+function draftStorageKey(scope = "") {
   const user = readStoredAdminSession() as ReturnType<
     typeof readStoredAdminSession
   > & { tenant_id?: string };
@@ -124,13 +124,13 @@ function draftStorageKey() {
   const session = Array.from(token)
     .reduce((hash, value) => (hash * 31 + value.charCodeAt(0)) >>> 0, 0)
     .toString(36);
-  return `telz:manual-order:${window.location.hostname}:${tenant}:${user?.id || "operator"}:${session}`;
+  return `telz:manual-order:${window.location.hostname}:${tenant}:${user?.id || "operator"}:${session}${scope ? `:${scope}` : ""}`;
 }
 
-function readDraft(): Draft {
+function readDraft(scope = ""): Draft {
   try {
     const saved = JSON.parse(
-      sessionStorage.getItem(draftStorageKey()) || "null",
+      sessionStorage.getItem(draftStorageKey(scope)) || "null",
     ) as Draft | null;
     if (saved?.key && Array.isArray(saved.lines))
       return { ...emptyDraft(), ...saved };
@@ -143,14 +143,20 @@ function readDraft(): Draft {
 export default function ManualOrderComposer({
   onCreated,
   mode = "default",
+  initialCustomer = null,
+  storageScope = "",
+  defaultStep,
 }: {
   onCreated?: (order: ApiOrder) => void;
-  mode?: "default" | "pos";
+  mode?: "default" | "pos" | "embedded";
+  initialCustomer?: ApiCustomer | null;
+  storageScope?: string;
+  defaultStep?: 0 | 1 | 2;
 }) {
-  const [draft, setDraft] = useState<Draft>(readDraft);
-  const [storageKey] = useState(draftStorageKey);
+  const [draft, setDraft] = useState<Draft>(() => readDraft(storageScope));
+  const [storageKey] = useState(() => draftStorageKey(storageScope));
   const [sessionChanged, setSessionChanged] = useState(false);
-  const [step, setStep] = useState(mode === "pos" ? 1 : 0);
+  const [step, setStep] = useState<number>(mode === "pos" ? 1 : (defaultStep ?? 0));
   const [catalog, setCatalog] = useState<ApiProduct[]>([]);
   const [customers, setCustomers] = useState<ApiCustomer[]>([]);
   const [flavorConfig, setFlavorConfig] = useState<MultiFlavorsConfig | null>(
@@ -180,6 +186,7 @@ export default function ManualOrderComposer({
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const submitting = useRef(false);
+  const seededCustomer = useRef(false);
   const allowed = useMemo(() => {
     try {
       return canCreateManualOrder(
@@ -193,6 +200,23 @@ export default function ManualOrderComposer({
   const patch = (values: Partial<Draft>) =>
     setDraft((current) => ({ ...current, ...values }));
 
+  useEffect(() => {
+    if (!initialCustomer || seededCustomer.current || draft.customer) return;
+    const address = initialCustomer.addresses?.find((value) => value.is_default) || initialCustomer.addresses?.[0];
+    patch({
+      customer: { id: initialCustomer.id, name: initialCustomer.name, phone: initialCustomer.phone },
+      phone: initialCustomer.phone || "",
+      street: address ? [address.street, address.number].filter(Boolean).join(", ") : "",
+      city: address?.city || "",
+      neighborhood: address?.neighborhood || "",
+      zip: address?.zip_code || "",
+      complement: address?.complement || "",
+    });
+    setCustomers((current) => current.some((item) => item.id === initialCustomer.id) ? current : [...current, initialCustomer]);
+    setStep(defaultStep ?? 1);
+    seededCustomer.current = true;
+  }, [initialCustomer, draft.customer, defaultStep]);
+
   async function load() {
     setLoading(true);
     setLoadError("");
@@ -201,7 +225,7 @@ export default function ManualOrderComposer({
       customersApi.list(),
       productsApi.getMultiFlavorsConfig(),
     ]);
-    if (draftStorageKey() !== storageKey) {
+    if (draftStorageKey(storageScope) !== storageKey) {
       setSessionChanged(true);
       return;
     }
@@ -226,7 +250,7 @@ export default function ManualOrderComposer({
     if (allowed) void load();
   }, [allowed]);
   useEffect(() => {
-    if (created || draftStorageKey() !== storageKey) return;
+    if (created || draftStorageKey(storageScope) !== storageKey) return;
     try {
       sessionStorage.setItem(storageKey, JSON.stringify(draft));
     } catch {
@@ -384,7 +408,7 @@ export default function ManualOrderComposer({
     setStep(1);
   }
   async function createCustomer() {
-    if (draftStorageKey() !== storageKey) {
+    if (draftStorageKey(storageScope) !== storageKey) {
       setSessionChanged(true);
       return;
     }
@@ -406,7 +430,7 @@ export default function ManualOrderComposer({
     }
   }
   async function submit() {
-    if (draftStorageKey() !== storageKey) {
+    if (draftStorageKey(storageScope) !== storageKey) {
       setSessionChanged(true);
       return;
     }
