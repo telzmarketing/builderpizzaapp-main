@@ -54,6 +54,40 @@ def _safe_int(value: Any) -> int | None:
         return None
 
 
+def _first_text(*values: Any) -> str:
+    for value in values:
+        normalized = str(value or "").strip()
+        if normalized:
+            return normalized
+    return ""
+
+
+def _baileys_contact_value(item: dict[str, Any]) -> str:
+    """Resolve the real contact value without accepting tenant metadata."""
+    fields = item.get("fields") if isinstance(item.get("fields"), dict) else {}
+    remote = _first_text(
+        item.get("remote_jid"),
+        item.get("remoteJid"),
+        item.get("from"),
+    )
+    alternate = _first_text(
+        item.get("remote_jid_alt"),
+        item.get("remoteJidAlt"),
+        fields.get("remote_jid_alt"),
+        fields.get("remoteJidAlt"),
+        item.get("phone_number"),
+    )
+    phone = _first_text(item.get("phone"))
+    if remote.endswith("@lid"):
+        return alternate or phone or remote
+    return phone or alternate or remote
+
+
+def _baileys_phone(item: dict[str, Any]) -> str:
+    contact = _baileys_contact_value(item)
+    return normalize_phone(contact.split("@", 1)[0])
+
+
 class AgenteWhatsAppService:
     def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
@@ -1307,8 +1341,8 @@ class AgenteWhatsAppService:
         if item.get("from_me") is True:
             return {"received": 0, "duplicates": 0, "status_updates": 0, "ignored": 1}
 
-        remote = item.get("remote_jid") or item.get("from") or item.get("phone")
-        phone = normalize_phone(str(remote).split("@", 1)[0] if remote else "")
+        remote = _baileys_contact_value(item)
+        phone = _baileys_phone(item)
         provider_message_id = item.get("id") or item.get("message_id")
         if not phone or not provider_message_id:
             return {"received": 0, "duplicates": 0, "status_updates": 0, "ignored": 1}

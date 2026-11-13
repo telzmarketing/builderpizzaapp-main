@@ -118,6 +118,34 @@ function jidToPhone(jid) {
   return String(jid || "").split("@", 1)[0] || null;
 }
 
+function textValue(...values) {
+  for (const value of values) {
+    const normalized = String(value || "").trim();
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+function inboundRemoteJid(item) {
+  const key = item?.key || {};
+  const remoteJid = textValue(key.remoteJid, item?.remoteJid);
+  if (!remoteJid || !remoteJid.endsWith("@lid")) return remoteJid || "";
+
+  // Baileys may expose the real contact JID separately when remoteJid is a
+  // privacy-preserving @lid identifier. Never trust arbitrary payload fields;
+  // only use the documented key/item/fields equivalents and fall back safely.
+  return (
+    textValue(
+      key.remoteJidAlt,
+      key.remote_jid_alt,
+      item?.remoteJidAlt,
+      item?.remote_jid_alt,
+      item?.fields?.remoteJidAlt,
+      item?.fields?.remote_jid_alt,
+    ) || remoteJid
+  );
+}
+
 function assertConnected(state) {
   if (!state.socket || state.status !== "connected") {
     return fail("not_connected", "Instancia Baileys nao esta conectada.", publicState(state));
@@ -245,7 +273,7 @@ async function storeInboundMedia(item, media, messageType, providerMessageId) {
 async function extractInboundMessage(item) {
   const key = item?.key || {};
   if (key.fromMe) return null;
-  const remoteJid = key.remoteJid || item?.remoteJid || "";
+  const remoteJid = inboundRemoteJid(item);
   if (!remoteJid || remoteJid.endsWith("@broadcast")) return null;
 
   const message = unwrapMessage(item?.message);
