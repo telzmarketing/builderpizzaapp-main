@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-import { configureBiMobileWorker, configureMotoboyWorker, configurePwaWorker, consumePwaContextTarget, getPwaApp, getPwaEntryApp, isBiMobilePath, isMotoboyPath, isPwaEntryPath, KDS_PWA_KEYS, PWA_CONTEXT_STORAGE_KEY, pwaScopeForPath, readPwaContext, rememberPwaContext } from "./motoboyPwa";
+import { configureBiMobileWorker, configureMotoboyWorker, configurePwaWorker, consumePwaContextTarget, getPwaApp, getPwaEntryApp, isBiMobilePath, isMotoboyPath, isPwaEntryPath, KDS_PWA_KEYS, PWA_CONTEXT_STORAGE_KEY, pwaScopeForPath, readPwaContext, rememberPwaContext, resolveAdminLoginTarget } from "./motoboyPwa";
 import { canShowPwaInstallButton, hasRecordedPwaInstallation, PWA_INSTALL_DELAY_MS } from "@/components/PwaInstallButton";
 
 const origin = "https://pizza.example";
@@ -111,6 +111,29 @@ describe("KDS PWA entries", () => {
     expect(consumePwaContextTarget(storage)).toBe("/painel/kds/pdv?station=front#orders");
     expect(storage.getItem(PWA_CONTEXT_STORAGE_KEY)).toBeNull();
     expect(consumePwaContextTarget(storage)).toBeNull();
+  });
+
+  it("persists the BI Mobile route through admin login", () => {
+    const storage = memoryStorage();
+
+    expect(rememberPwaContext("/painel/bi-mobile", "?period=today", "#revenue", storage))
+      .toBe("/painel/bi-mobile?period=today#revenue");
+    expect(readPwaContext(storage)).toEqual({
+      appKey: "bi-mobile",
+      pathname: "/painel/bi-mobile",
+      search: "?period=today",
+      hash: "#revenue",
+    });
+    expect(consumePwaContextTarget(storage)).toBe("/painel/bi-mobile?period=today#revenue");
+    expect(storage.getItem(PWA_CONTEXT_STORAGE_KEY)).toBeNull();
+  });
+
+  it("prefers a PWA route over the platform dashboard after admin login", () => {
+    const storage = memoryStorage();
+    rememberPwaContext("/painel/bi-mobile", "", "", storage);
+
+    expect(resolveAdminLoginTarget("/painel/plataforma", false, storage)).toBe("/painel/bi-mobile");
+    expect(resolveAdminLoginTarget("/painel/plataforma", false, storage)).toBe("/painel/plataforma");
   });
 
   it("does not persist storefront or arbitrary routes as a login redirect", () => {

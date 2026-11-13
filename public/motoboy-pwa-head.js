@@ -27,7 +27,7 @@
   }
   function rememberPwaContext(path) {
     var app = appFor(path);
-    if (!app || app[0].indexOf("kds-") !== 0 || !window.localStorage) return;
+    if (!app || app[0] === "storefront" || app[0] === "motoboy" || !window.localStorage) return;
     try {
       window.localStorage.setItem("telz:pwa-context", JSON.stringify({
         appKey: app[0],

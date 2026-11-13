@@ -43,8 +43,11 @@ export type PwaContext = {
 type StorageReader = Pick<Storage, "getItem">;
 type StorageWriter = Pick<Storage, "setItem">;
 
-function isKdsPwaKey(value: unknown): value is PwaAppKey {
-  return typeof value === "string" && KDS_PWA_KEYS.includes(value as PwaAppKey);
+function isOperationalPwaKey(value: unknown): value is PwaAppKey {
+  return typeof value === "string"
+    && value !== "storefront"
+    && value !== "motoboy"
+    && PWA_APPS.some((app) => app.key === value);
 }
 
 function suffix(value: string | undefined, prefix: "?" | "#") {
@@ -56,8 +59,8 @@ function pwaTarget(context: PwaContext) {
 }
 
 /**
- * Saves only an internal KDS route. This survives the login redirect and a
- * full reload, but cannot be used as an arbitrary external redirect.
+ * Saves an internal operational PWA route. This survives the login redirect
+ * and a full reload, but cannot be used as an arbitrary external redirect.
  */
 export function rememberPwaContext(
   pathname: string,
@@ -66,7 +69,7 @@ export function rememberPwaContext(
   storage: StorageWriter = localStorage,
 ): string | null {
   const app = getPwaApp(pathname);
-  if (!app || !isKdsPwaKey(app.key)) return null;
+  if (!app || !isOperationalPwaKey(app.key)) return null;
 
   const context: PwaContext = {
     appKey: app.key,
@@ -87,7 +90,7 @@ export function readPwaContext(storage: StorageReader = localStorage): PwaContex
     const raw = storage.getItem(PWA_CONTEXT_STORAGE_KEY);
     if (!raw) return null;
     const context = JSON.parse(raw) as Partial<PwaContext>;
-    if (!isKdsPwaKey(context.appKey) || typeof context.pathname !== "string") return null;
+    if (!isOperationalPwaKey(context.appKey) || typeof context.pathname !== "string") return null;
     if (getPwaApp(context.pathname)?.key !== context.appKey) return null;
     return {
       appKey: context.appKey,
@@ -110,6 +113,15 @@ export function consumePwaContextTarget(
     // Ignore storage failures; the login flow can still use its normal target.
   }
   return context ? pwaTarget(context) : null;
+}
+
+export function resolveAdminLoginTarget(
+  fallbackTarget: string,
+  passwordChangeRequired: boolean,
+  storage: StorageReader & Pick<Storage, "removeItem"> = localStorage,
+) {
+  if (passwordChangeRequired) return "/painel/trocar-senha";
+  return consumePwaContextTarget(storage) ?? fallbackTarget;
 }
 
 export function clearPwaContext(storage: Pick<Storage, "removeItem"> = localStorage) {

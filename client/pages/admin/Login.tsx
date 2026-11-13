@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { adminAuthApi } from "@/lib/api";
 import { consumeAdminPasswordChanged } from "@/lib/adminSession";
-import { consumePwaContextTarget } from "@/lib/motoboyPwa";
+import { resolveAdminLoginTarget } from "@/lib/motoboyPwa";
 import { adminLandingPath } from "@/lib/platformHost";
 import TelzLogo from "@/components/TelzLogo";
 
@@ -39,9 +39,7 @@ export default function AdminLogin() {
       localStorage.setItem("admin_user", JSON.stringify(admin));
       const passwordChangeRequired = password_change_required || admin.force_password_change;
       const fallbackTarget = adminLandingPath(window.location.hostname);
-      const target = passwordChangeRequired
-        ? "/painel/trocar-senha"
-        : (fallbackTarget === "/painel" ? consumePwaContextTarget() : null) ?? fallbackTarget;
+      const target = resolveAdminLoginTarget(fallbackTarget, passwordChangeRequired);
       navigate(target, { replace: true });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "E-mail ou senha incorretos.");
