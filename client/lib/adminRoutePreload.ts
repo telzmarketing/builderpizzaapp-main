@@ -48,6 +48,13 @@ const routeLoaders: Array<[string, RouteLoader]> = [
   ["/painel/chatbot", () => import("@/pages/admin/AdminChatbot")],
   ["/painel/aparencia", () => import("@/pages/admin/Aparencia")],
   ["/painel/lgpd", () => import("@/pages/admin/AdminLgpd")],
+  ["/painel/comprovantes-pedidos", () => import("@/pages/admin/AdminConfiguracoes")],
+  ["/painel/etiquetas-expedicao", () => import("@/pages/admin/AdminConfiguracoes")],
+  ["/painel/etiquetas-insumos", () => import("@/pages/admin/AdminConfiguracoes")],
+  ["/painel/dominio", () => import("@/pages/admin/AdminConfiguracoes")],
+  ["/painel/painel-tv-config", () => import("@/pages/admin/AdminConfiguracoes")],
+  ["/painel/som", () => import("@/pages/admin/AdminConfiguracoes")],
+  ["/painel/identificacao-parceiros", () => import("@/pages/admin/AdminConfiguracoes")],
   ["/painel/configuracoes", () => import("@/pages/admin/AdminConfiguracoes")],
   ["/painel/cupons", () => import("@/pages/admin/marketing/MarketingCupons")],
   ["/painel/clientes", () => import("@/pages/admin/AdminClientes")],
@@ -59,6 +66,8 @@ const routeLoaders: Array<[string, RouteLoader]> = [
   ["/painel/logistica", () => import("@/pages/admin/logistica/AdminLogistica")],
   ["/painel", () => import("@/pages/admin/Dashboard")],
 ];
+
+export const adminPreloadRoutes = routeLoaders.map(([route]) => route);
 
 export function preloadAdminRoute(path: string) {
   const match = routeLoaders.find(([route]) => path === route || path.startsWith(`${route}/`));

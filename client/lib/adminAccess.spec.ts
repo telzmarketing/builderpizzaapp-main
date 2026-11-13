@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { filterAdminNavigation, findAdminNavigationGroup, findAdminNavigationItem, firstAllowedAdminPath } from "./adminAccess";
+import { getDedicatedConfigurationTab, isAggregateConfigurationRoute } from "@/pages/admin/AdminConfiguracoes";
 import type { ApiEffectivePermissions } from "./api";
 
 describe("admin navigation route matching", () => {
+  it("keeps the aggregate configuration page distinct from dedicated submodule routes", () => {
+    expect(isAggregateConfigurationRoute("/painel/configuracoes")).toBe(true);
+    expect(isAggregateConfigurationRoute("/painel/comprovantes-pedidos")).toBe(false);
+    expect(getDedicatedConfigurationTab("/painel/comprovantes-pedidos")).toBe("comprovantes");
+    expect(getDedicatedConfigurationTab("/painel/etiquetas-expedicao")).toBe("etiquetas-expedicao");
+    expect(getDedicatedConfigurationTab("/painel/etiquetas-insumos")).toBe("etiquetas-insumos");
+    expect(getDedicatedConfigurationTab("/painel/dominio")).toBe("dominio-https");
+    expect(getDedicatedConfigurationTab("/painel/painel-tv-config")).toBe("painel-tv");
+    expect(getDedicatedConfigurationTab("/painel/som")).toBe("som");
+    expect(getDedicatedConfigurationTab("/painel/identificacao-parceiros")).toBe("identificacao-parceiros");
+  });
   it("keeps the preparation station behind existing inventory access", () => {
     expect(findAdminNavigationItem("/painel/preparo")?.permissions).toEqual(["inventory"]);
   });

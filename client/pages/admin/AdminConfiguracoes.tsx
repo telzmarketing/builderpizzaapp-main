@@ -39,6 +39,10 @@ export function getDedicatedConfigurationTab(pathname: string): Tab | null {
   return dedicatedConfigurationRouteTabs[pathname] ?? null;
 }
 
+export function isAggregateConfigurationRoute(pathname: string): boolean {
+  return pathname === "/painel/configuracoes";
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function Field({
@@ -202,7 +206,7 @@ export default function AdminConfiguracoes() {
   const { pathname } = useLocation();
   const { siteContent } = useApp();
   const dedicatedTab = getDedicatedConfigurationTab(pathname);
-  const isDomainRoute = pathname === "/painel/dominio";
+  const isAggregateRoute = isAggregateConfigurationRoute(pathname);
   const routeTab: Tab = dedicatedTab ?? "comprovantes";
   const [activeTab, setActiveTab] = useState<Tab>(routeTab);
   const [settings, setSettings] = useState<PrinterSettings>(loadPrinterSettings);
@@ -251,16 +255,11 @@ export default function AdminConfiguracoes() {
             <AdminTopActions />
           </div>
 
-          {/* Tabs */}
-          <div className="px-4 sm:px-8 pt-4 flex flex-wrap gap-2">
-            {isDomainRoute ? (
-              <button type="button" onClick={() => setActiveTab("dominio-https")} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "dominio-https" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}><Globe size={14} /> Dominio e HTTPS</button>
-            ) : (
-              <>
-            <button type="button" onClick={() => setActiveTab("dominio-https")} hidden={dedicatedTab !== null && dedicatedTab !== "dominio-https"} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "dominio-https" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}><Globe size={14} /> Dominio e HTTPS</button>
+          {/* Submódulos só ficam navegáveis por esta barra na página agregadora. */}
+          {isAggregateRoute && <div className="px-4 sm:px-8 pt-4 flex flex-wrap gap-2">
+            <button type="button" onClick={() => setActiveTab("dominio-https")} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "dominio-https" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}><Globe size={14} /> Dominio e HTTPS</button>
             <button
               onClick={() => setActiveTab("comprovantes")}
-              hidden={dedicatedTab !== null && dedicatedTab !== "comprovantes"}
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "comprovantes" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
             >
               <Printer size={14} />
@@ -269,17 +268,15 @@ export default function AdminConfiguracoes() {
             <button
               type="button"
               onClick={() => setActiveTab("etiquetas-expedicao")}
-              hidden={dedicatedTab !== null && dedicatedTab !== "etiquetas-expedicao"}
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "etiquetas-expedicao" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
             >
               <Tags size={14} />
               Etiquetas de expedição
             </button>
-            <button type="button" onClick={() => setActiveTab("etiquetas-insumos")} hidden={dedicatedTab !== null && dedicatedTab !== "etiquetas-insumos"} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "etiquetas-insumos" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}><Tags size={14} /> Etiquetas de insumos</button>
+            <button type="button" onClick={() => setActiveTab("etiquetas-insumos")} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "etiquetas-insumos" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}><Tags size={14} /> Etiquetas de insumos</button>
             <button
               type="button"
               onClick={() => setActiveTab("painel-tv")}
-              hidden={dedicatedTab !== null && dedicatedTab !== "painel-tv"}
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "painel-tv" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
             >
               <Monitor size={14} />
@@ -287,7 +284,6 @@ export default function AdminConfiguracoes() {
             </button>
             <button
               onClick={() => setActiveTab("som")}
-              hidden={dedicatedTab !== null && dedicatedTab !== "som"}
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "som" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
             >
               <Volume2 size={14} />
@@ -296,19 +292,16 @@ export default function AdminConfiguracoes() {
             <button
               type="button"
               onClick={() => setActiveTab("identificacao-parceiros")}
-              hidden={dedicatedTab !== null && dedicatedTab !== "identificacao-parceiros"}
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "identificacao-parceiros" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
             >
               <Tags size={14} />
               Identificação de Parceiros
             </button>
-            <button type="button" onClick={() => setActiveTab("ia-central")} hidden={dedicatedTab !== null} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "ia-central" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}>
+            <button type="button" onClick={() => setActiveTab("ia-central")} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "ia-central" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}>
               <KeyRound size={14} />
               IA central
             </button>
-              </>
-            )}
-          </div>
+          </div>}
 
           <div className="p-8 space-y-8 max-w-5xl">
 
