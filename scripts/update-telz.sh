@@ -645,6 +645,12 @@ schema_is_rollback_compatible() {
     "20261027_bi_mobile_analytics_indexes:20261027_logistics_settings_tenant_key")
       return 0
       ;;
+    "20261113_marketplace_settlements:20261112_tenant_ai_credentials")
+      return 0
+      ;;
+    "20261112_tenant_ai_credentials:20261113_marketplace_settlements")
+      return 0
+      ;;
     *)
       return 1
       ;;

@@ -117,6 +117,8 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20261026_order_driver_delivery_fee:20261027_kds_dispatch_unit_completion",
         "20261027_kds_dispatch_unit_completion:20261027_bi_mobile_analytics_indexes",
         "20261027_bi_mobile_analytics_indexes:20261027_logistics_settings_tenant_key",
+        "20261113_marketplace_settlements:20261112_tenant_ai_credentials",
+        "20261112_tenant_ai_credentials:20261113_marketplace_settlements",
     }
 
     sources = {
@@ -190,6 +192,8 @@ def test_schema_predicates_allow_reviewed_recovery_and_reject_unknown_pairs():
             ("20261027_bi_mobile_analytics_indexes", "20261027_logistics_settings_tenant_key", 0),
             ("20261027_logistics_settings_tenant_key", "20261027_bi_mobile_analytics_indexes", 1),
             ("20261026_order_driver_delivery_fee", "20261027_bi_mobile_analytics_indexes", 1),
+            ("20261113_marketplace_settlements", "20261112_tenant_ai_credentials", 0),
+            ("20261112_tenant_ai_credentials", "20261113_marketplace_settlements", 0),
             ("unknown", "20261017_runtime_schema", 1),
         )
         for code, database, expected in cases:
