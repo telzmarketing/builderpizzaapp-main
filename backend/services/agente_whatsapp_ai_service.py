@@ -64,7 +64,10 @@ def _json_load(value: str | None) -> dict[str, Any]:
 def _json_dump(value: dict[str, Any] | None) -> str:
     import json
 
-    return json.dumps(value or {}, ensure_ascii=False)
+    # AI results include operational timestamps from the guardrails/context
+    # snapshot.  They are persisted in JSON event/context columns, so the
+    # worker must never fail only because SQLAlchemy returned a datetime.
+    return json.dumps(value or {}, ensure_ascii=False, default=str)
 
 
 def _mask_key(value: str | None) -> str | None:

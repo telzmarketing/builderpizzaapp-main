@@ -32,7 +32,10 @@ from backend.services.customer_identity_service import CustomerIdentityService, 
 
 
 def _json_dump(value: dict[str, Any] | None) -> str:
-    return json.dumps(value or {}, ensure_ascii=False)
+    # Event payloads may contain datetime values from AI guardrails and
+    # message snapshots.  Persist them as ISO-compatible strings instead of
+    # allowing the WhatsApp worker to die during an otherwise valid reply.
+    return json.dumps(value or {}, ensure_ascii=False, default=str)
 
 
 def _json_load(value: str | None) -> dict[str, Any]:
