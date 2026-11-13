@@ -31,8 +31,22 @@ def _list(db, model, context):
 
 
 def _create(db, model, body, context, prefix):
-    resource = model(id=f"{prefix}-{uuid.uuid4().hex}", **body.model_dump())
-    assign_catalog_tenant(resource, context)
+    values = body.model_dump()
+    if isinstance(values.get("name"), str):
+        values["name"] = values["name"].strip()
+    # Soft-deleted global options still occupy the tenant/name unique key.
+    # Reuse the historical row so existing product links and audit history keep
+    # pointing to the same catalog identity when an option is recreated.
+    resource = catalog_query(db, model, context).filter(model.name == values["name"]).with_for_update().first()
+    if resource is not None:
+        if resource.active:
+            raise HTTPException(status_code=409, detail="Ja existe um cadastro com este nome neste tenant.")
+        for key, value in values.items():
+            setattr(resource, key, value)
+        resource.active = True
+    else:
+        resource = model(id=f"{prefix}-{uuid.uuid4().hex}", **values)
+        assign_catalog_tenant(resource, context)
     db.add(resource)
     try:
         db.commit()

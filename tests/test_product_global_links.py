@@ -92,4 +92,15 @@ def test_global_crust_create_and_soft_delete_use_the_catalog_routes():
         assert created.tenant_id == "tenant-a"
         _delete(db, PizzaGlobalCrust, created.id, context)
         assert db.get(PizzaGlobalCrust, created.id).active is False
+
+        recreated = _create(
+            db, PizzaGlobalCrust,
+            GlobalCatalogCreate(name="Catupiry", description="Reativada", price_addition=16),
+            context, "global-crust",
+        )
+        assert recreated.id == created.id
+        assert recreated.active is True
+        assert recreated.description == "Reativada"
+        assert recreated.price_addition == 16
+        assert db.query(PizzaGlobalCrust).filter(PizzaGlobalCrust.tenant_id == "tenant-a").count() == 1
     engine.dispose()
