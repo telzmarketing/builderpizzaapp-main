@@ -165,7 +165,11 @@ class WhatsAppGatewayService:
         now = _now_utc()
         instance = WhatsAppGatewayInstance(
             id=str(uuid.uuid4()),
-            tenant_id=(payload.tenant_id or "default") if not self._tenant_enabled else None,
+            tenant_id=(
+                payload.tenant_id
+                if payload.tenant_id and payload.tenant_id != "default"
+                else self._ownership_tenant_id()
+            ) if not self._tenant_enabled else None,
             company_id=payload.company_id or "default",
             name=payload.name.strip(),
             phone_number=(payload.phone_number or "").strip() or None,
