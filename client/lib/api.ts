@@ -7487,6 +7487,17 @@ export interface ApiWhatsAppGatewayDeleteResponse {
 
 export type ApiGestorAIProvider = "internal" | "openai" | "claude";
 
+export interface ApiAIModel {
+  id: string;
+  name: string;
+}
+
+export interface ApiAIModels {
+  provider: "openai" | "claude";
+  models: ApiAIModel[];
+  source: "provider" | "empty";
+}
+
 export interface ApiGestorDashboard {
   tenant_id?: string;
   generated_at?: string | null;
@@ -7682,6 +7693,7 @@ export const gestorApi = {
   updateAISettings: (data: Partial<Omit<ApiGestorAISettings, "id" | "tenant_id" | "updated_at">>) =>
     put<ApiGestorAISettings>("/gestor/ai/settings", data),
   getAIStatus: () => get<ApiGestorAIProviderStatus>("/gestor/ai/status"),
+  getAIModels: (provider: "openai" | "claude") => get<ApiAIModels>(`/gestor/ai/models?provider=${provider}`),
   getChannel: () => get<ApiGestorWhatsAppChannel | null>("/gestor/whatsapp/channel"),
   listGatewayInstances: () => get<ApiGestorWhatsAppGatewayInstance[]>("/gestor/whatsapp/gateway-instances"),
   updateChannel: (data: {
@@ -7737,6 +7749,10 @@ export const centralAIApi = {
   get: () => get<ApiCentralAICredential>("/ai/credentials/central"),
   update: (data: { provider: "openai" | "claude"; api_key: string }) =>
     put<ApiCentralAICredential>("/ai/credentials/central", data),
+  listModels: (provider?: "openai" | "claude") =>
+    get<{ provider: "openai" | "claude"; models: Array<{ id: string; name: string; provider: "openai" | "claude"; owned_by?: string | null; created_at?: string | null }>; credential_source: "central" }>(
+      `/ai/credentials/central/models${provider ? `?provider=${encodeURIComponent(provider)}` : ""}`,
+    ),
 };
 
 export const whatsappGatewayApi = {
@@ -7853,6 +7869,7 @@ export const agenteWhatsAppApi = {
   updateAISettings: (data: Partial<ApiAgenteWhatsAppAISettings>) =>
     put<ApiAgenteWhatsAppAISettings>("/agente-whatsapp/ai/settings", data),
   aiProviderStatus: () => get<ApiAgenteWhatsAppAIProviderStatus>("/agente-whatsapp/ai/settings/status"),
+  aiModels: (provider: "openai" | "claude") => get<ApiAIModels>(`/agente-whatsapp/ai/settings/models?provider=${provider}`),
   updateAIKeys: (data: { openai_api_key?: string; anthropic_api_key?: string }) =>
     put<ApiAgenteWhatsAppAIProviderStatus>("/agente-whatsapp/ai/settings/keys", data),
   testAISettings: (message?: string) =>
