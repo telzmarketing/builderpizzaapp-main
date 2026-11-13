@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as SheetPrimitive from "@radix-ui/react-dialog";
-import { MessageCircle, Phone, Send, X, RefreshCw } from "lucide-react";
+import { MessageCircle, Phone, Send, X, RefreshCw, Volume2 } from "lucide-react";
 import { Sheet, SheetClose, SheetDescription, SheetOverlay, SheetPortal, SheetTitle } from "@/components/ui/sheet";
 import { chatbotAdminApi, type ChatbotConversation, type ChatbotMessage } from "@/lib/chatbotApi";
-import { agenteWhatsAppApi, type ApiAgenteWhatsAppConversation, type ApiAgenteWhatsAppMessage } from "@/lib/api";
+import { agenteWhatsAppApi, resolveAssetUrl, type ApiAgenteWhatsAppConversation, type ApiAgenteWhatsAppMessage } from "@/lib/api";
 import WhatsAppAttendanceControls, { WhatsAppAttendanceBadge } from "./WhatsAppAttendanceControls";
 import { whatsappAttendance } from "@/lib/whatsappAttendance";
 
@@ -235,6 +235,8 @@ export default function OperationsContactPanel() {
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
               {detailLoading && <p role="status" className="text-xs text-stone">Carregando conversa...</p>}
               {messages.map((message) => <div key={message.id} className={`rounded-xl p-2 text-sm ${("sender" in message ? message.sender === "visitor" : message.direction === "inbound") ? "bg-surface-02 text-parchment" : "ml-8 bg-gold/15 text-cream"}`}>
+                {"message_type" in message && message.message_type === "audio" && (message.media_url || message.media_storage_key) && <div className="mb-1 flex items-center gap-1 text-[11px] text-gold"><Volume2 size={12} /> Áudio</div>}
+                {"message_type" in message && message.message_type === "audio" && (message.media_url || message.media_storage_key) && <audio controls preload="metadata" src={resolveAssetUrl(message.media_url || message.media_storage_key)} className="my-2 h-9 w-full min-w-[220px] max-w-full" />}
                 {"mensagem" in message ? message.mensagem : (message.body || (message.message_type === "audio" ? "Áudio" : "Mídia"))}
                 {"provider_status" in message && message.direction === "outbound" && <p className="mt-1 text-[10px] text-stone">{message.error || message.provider_status || "Status de entrega não confirmado"}</p>}
               </div>)}
