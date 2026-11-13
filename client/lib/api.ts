@@ -1271,6 +1271,37 @@ export interface ApiCustomerDeliveryLocation {
   max_age_seconds: number;
 }
 
+export type MarketplaceProvider = "partner_99" | "ifood" | "keeta";
+export type MarketplaceSettlementStatus = "expected" | "partially_received" | "received" | "divergent" | "cancelled" | "quarantined";
+
+export interface ApiMarketplaceSettlementInput {
+  provider: MarketplaceProvider;
+  gross_amount: number;
+  store_discount_amount?: number;
+  marketplace_discount_amount?: number;
+  delivery_fee?: number;
+  service_fee?: number;
+  commission_amount?: number;
+  tax_amount?: number;
+  expected_net_amount: number;
+  received_net_amount?: number;
+  status?: MarketplaceSettlementStatus;
+  external_settlement_reference?: string;
+  notes?: string;
+}
+
+export interface ApiMarketplaceSettlement extends ApiMarketplaceSettlementInput {
+  id: string;
+  order_id: string;
+  expected_net_amount: number;
+  received_net_amount: number;
+  variance_amount: number;
+  status: MarketplaceSettlementStatus;
+  external_settlement_reference?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface KdsOrderItem {
   product_type?: string | null;
   is_drink?: boolean;
@@ -6109,6 +6140,19 @@ export const ordersApi = {
     );
   },
 
+  history: (params?: { status?: OrderStatus; order_origin?: string; search?: string; date_from?: string; date_to?: string; include_archived?: boolean; offset?: number; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.order_origin) qs.set("order_origin", params.order_origin);
+    if (params?.search) qs.set("search", params.search);
+    if (params?.date_from) qs.set("date_from", params.date_from);
+    if (params?.date_to) qs.set("date_to", params.date_to);
+    if (params?.include_archived) qs.set("include_archived", "true");
+    if (params?.offset) qs.set("offset", String(params.offset));
+    qs.set("limit", String(params?.limit ?? 100));
+    return request<ApiOrder[]>("GET", `/orders/history?${qs.toString()}`);
+  },
+
   get: (id: string) =>
     request<ApiOrder>("GET", `/orders/${id}`, undefined, orderAccessHeaders(id)),
 
@@ -6139,6 +6183,19 @@ export const ordersApi = {
 
   updateWhatsappNotifications: (body: ApiOrderWhatsappNotificationSettings) =>
     put<ApiOrderWhatsappNotificationConfig>("/orders/new-order-whatsapp-notifications", body),
+};
+
+export const marketplaceSettlementsApi = {
+  list: (params?: { order_id?: string; provider?: MarketplaceProvider; status?: MarketplaceSettlementStatus }) => {
+    const qs = new URLSearchParams();
+    if (params?.order_id) qs.set("order_id", params.order_id);
+    if (params?.provider) qs.set("provider", params.provider);
+    if (params?.status) qs.set("status", params.status);
+    const query = qs.toString();
+    return get<ApiMarketplaceSettlement[]>(`/gestao/marketplace-settlements${query ? `?${query}` : ""}`);
+  },
+  create: (orderId: string, body: ApiMarketplaceSettlementInput, idempotencyKey: string) =>
+    request<ApiMarketplaceSettlement>("POST", `/gestao/marketplace-settlements/orders/${encodeURIComponent(orderId)}`, body, { "Idempotency-Key": idempotencyKey }),
 };
 
 export const manualOrdersApi = {

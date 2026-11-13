@@ -11,6 +11,8 @@ from backend.services.print_order_service import (
     normalize_print_text,
     parse_print_text,
     print_order_external_reference,
+    resolve_safe_catalog_match,
+    resolve_flavor_candidates,
 )
 
 def test_deterministic_parser_detects_platform_number_and_items_without_claiming_ai():
@@ -82,6 +84,29 @@ def test_confirmation_preserves_operational_boundaries():
     assert "OrderCmvSnapshotService" in Path("backend/services/order_service.py").read_text(encoding="utf-8")
     assert "KdsProductionService(self.db, self.tenant_context).initialize_order" in Path("backend/services/kds_service.py").read_text(encoding="utf-8")
     assert 'if status != "preparing"' in Path("backend/services/inventory_service.py").read_text(encoding="utf-8")
+
+
+def test_catalog_auto_match_accepts_only_unique_exact_name_or_approved_alias():
+    products = [_catalog_product("p1", "Pizza Calabresa"), _catalog_product("p2", "Pizza Mussarela")]
+    assert resolve_safe_catalog_match("pizza calabresa", products) == ("p1", "matched", "exact_catalog_name")
+    assert resolve_safe_catalog_match("pizza inexistente", products) == (None, "unmatched", None)
+    assert resolve_safe_catalog_match("nome externo", products, "p2") == ("p2", "matched", "approved_mapping")
+
+
+def test_catalog_auto_match_keeps_ambiguous_name_in_review():
+    products = [_catalog_product("p1", "Pizza Calabresa"), _catalog_product("p2", "Pizza Calabresa")]
+    assert resolve_safe_catalog_match("pizza calabresa", products) == (None, "review", "ambiguous_exact_catalog_name")
+
+
+def test_flavor_candidates_resolve_half_prefixes_and_keep_ambiguity_for_review():
+    products = [_catalog_product("calabresa", "Calabresa"), _catalog_product("mussarela", "Mussarela"), _catalog_product("duplicate", "Mussarela")]
+    assert resolve_flavor_candidates(["1/2 Calabresa", "1/2 Mussarela"], products) == {"1/2 Calabresa": ["calabresa"], "1/2 Mussarela": ["mussarela", "duplicate"]}
+    assert resolve_flavor_candidates(["Calabresa", "Mussarela"], products) == {"Calabresa": ["calabresa"], "Mussarela": ["mussarela", "duplicate"]}
+
+
+def test_parser_splits_comma_separated_flavors():
+    parsed = parse_print_text("iFood\nPedido #ABC-123\nPizza: Calabresa, Mussarela")
+    assert parsed["items"][0]["flavor_names"] == ["Calabresa", "Mussarela"]
 
 
 KEETA_REAL_OCR_TEXT = """Keeta

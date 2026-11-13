@@ -27,6 +27,7 @@ import {
   Shield,
   ShoppingBag,
   ShoppingCart,
+  History,
   Store,
   Sparkles,
   Tag,
@@ -82,6 +83,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     label: "Operacoes",
     children: [
       { path: "/painel/orders", aliases: ["/operacoes/novo-pedido"], icon: ShoppingBag, label: "Pedidos", permissions: ["pedidos"] },
+      { path: "/painel/orders/historico", icon: History, label: "Histórico de Pedidos", permissions: ["pedidos"] },
       { path: "/operacoes/print-pedido", icon: Printer, label: "Print Pedido", permissions: ["pedidos"] },
       { path: "/painel/salao", icon: ClipboardList, label: "Salao & Reservas", permissions: ["pedidos"] },
       { path: "/painel/logistica", icon: Route, label: "Logistica", permissions: ["entregas", "motoboys"] },

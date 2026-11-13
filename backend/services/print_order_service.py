@@ -43,9 +43,44 @@ def normalize_print_text(value: str | None) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", raw)).strip()
 
 
+def catalog_name_variants(value: str | None) -> set[str]:
+    normalized = normalize_print_text(value)
+    if not normalized:
+        return set()
+    variants = {
+        normalized,
+        re.sub(r"^(?:1\s+2|meia)\s+", "", normalized),
+        re.sub(r"^pizza\s+", "", normalized),
+    }
+    return {variant for variant in variants if variant}
+
+
 def print_order_external_reference(tenant_id: str, platform: str, external_order_number: str) -> str:
     """Stable reference shared by concurrent confirmations of one partner order."""
     return f"print-pedido:{tenant_id}:{normalize_print_text(platform)}:{normalize_print_text(external_order_number)}"
+
+
+def resolve_safe_catalog_match(normalized_name: str, products: list, approved_product_id: str | None = None) -> tuple[str | None, str, str | None]:
+    """Return a match only for an approved alias or one exact active product."""
+    if approved_product_id:
+        approved = next((product for product in products if product.id == approved_product_id and getattr(product, "active", True)), None)
+        if approved:
+            return approved.id, "matched", "approved_mapping"
+    candidates = [product for product in products if getattr(product, "active", True) and catalog_name_variants(product.name) & catalog_name_variants(normalized_name)]
+    if len(candidates) == 1:
+        return candidates[0].id, "matched", "exact_catalog_name"
+    if len(candidates) > 1:
+        return None, "review", "ambiguous_exact_catalog_name"
+    return None, "unmatched", None
+
+
+def resolve_flavor_candidates(flavor_names: list[str], products: list) -> dict[str, list[str]]:
+    """Return exact flavor candidates as evidence; never chooses a product."""
+    active = [product for product in products if getattr(product, "active", True)]
+    return {
+        name: [product.id for product in active if catalog_name_variants(product.name) & catalog_name_variants(name)]
+        for name in flavor_names if normalize_print_text(name)
+    }
 
 
 def build_print_order_cart_item(item, catalog_products: list[Product], *, selected_size_id: str | None = None,
@@ -133,8 +168,10 @@ def parse_print_text(text: str | None, manual_platform: str | None = None) -> di
         if normalize_print_text(name) in ignored or len(name) < 2 or not re.search(r"[A-Za-zÀ-ÿ]", name):
             continue
         flavor_names: list[str] = []
-        if re.search(r"(?:meia|1\s*/\s*2)", name, re.I):
-            parts = re.split(r"\s*(?:/|\+|\be\b)\s*", re.sub(r"(?:meia|1\s*/\s*2)\s*", "", name, flags=re.I), maxsplit=2)
+        if re.search(r"(?:meia|1\s*/\s*2|,)", name, re.I):
+            flavor_text = re.sub(r"(?:meia|1\s*/\s*2)\s*", "", name, flags=re.I)
+            flavor_text = re.sub(r"^(?:pizza|sabores?)\s*[:\-]\s*", "", flavor_text, flags=re.I)
+            parts = re.split(r"\s*(?:/|\+|,|\be\b)\s*", flavor_text, maxsplit=7)
             flavor_names = [part.strip(" -:") for part in parts if len(part.strip(" -:")) >= 2]
         items.append({"external_name": name[:300], "normalized_name": normalize_print_text(name)[:300], "quantity": int(match.group(1) or 1), "flavor_names": flavor_names})
     notes = []
@@ -326,8 +363,10 @@ def _parse_item_block(lines: list[str]) -> list[dict]:
         if len(name) < 2 or not re.search(r"[A-Za-zÀ-ÿ]", name):
             continue
         flavor_names: list[str] = []
-        if re.search(r"(?:meia|1\s*/\s*2)", name, re.I):
-            parts = re.split(r"\s*(?:/|\+|\be\b)\s*", re.sub(r"(?:meia|1\s*/\s*2)\s*", "", name, flags=re.I), maxsplit=2)
+        if re.search(r"(?:meia|1\s*/\s*2|,)", name, re.I):
+            flavor_text = re.sub(r"(?:meia|1\s*/\s*2)\s*", "", name, flags=re.I)
+            flavor_text = re.sub(r"^(?:pizza|sabores?)\s*[:\-]\s*", "", flavor_text, flags=re.I)
+            parts = re.split(r"\s*(?:/|\+|,|\be\b)\s*", flavor_text, maxsplit=7)
             flavor_names = [part.strip(" -:") for part in parts if len(part.strip(" -:")) >= 2]
         items.append({"external_name": name, "normalized_name": normalize_print_text(name)[:300], "quantity": entry["quantity"], "flavor_names": flavor_names})
     return items
@@ -356,8 +395,10 @@ def parse_print_text(text: str | None, manual_platform: str | None = None) -> di
             if normalize_print_text(name) in ignored or len(name) < 2 or not re.search(r"[A-Za-zÀ-ÿ]", name):
                 continue
             flavor_names: list[str] = []
-            if re.search(r"(?:meia|1\s*/\s*2)", name, re.I):
-                parts = re.split(r"\s*(?:/|\+|\be\b)\s*", re.sub(r"(?:meia|1\s*/\s*2)\s*", "", name, flags=re.I), maxsplit=2)
+            if re.search(r"(?:meia|1\s*/\s*2|,)", name, re.I):
+                flavor_text = re.sub(r"(?:meia|1\s*/\s*2)\s*", "", name, flags=re.I)
+                flavor_text = re.sub(r"^(?:pizza|sabores?)\s*[:\-]\s*", "", flavor_text, flags=re.I)
+                parts = re.split(r"\s*(?:/|\+|,|\be\b)\s*", flavor_text, maxsplit=7)
                 flavor_names = [part.strip(" -:") for part in parts if len(part.strip(" -:")) >= 2]
             items.append({"external_name": name[:300], "normalized_name": normalize_print_text(name)[:300], "quantity": int(match.group(1) or 1), "flavor_names": flavor_names})
     fulfillment_type = _extract_fulfillment_type(lines)
@@ -409,8 +450,23 @@ class PrintOrderService:
 
     def _apply_mapping(self, row: PrintOrderItem, platform: str) -> None:
         mapping = self.db.query(PrintOrderCatalogMapping).filter_by(tenant_id=self.tenant_id, platform=platform, normalized_external_name=row.normalized_name, status="approved").first()
-        if mapping:
-            row.product_id, row.match_status, row.match_reason = mapping.product_id, "matched", "approved_mapping"
+        products = self.db.query(Product).filter(Product.tenant_id == self.tenant_id, Product.active.is_(True)).all()
+        row.product_id, row.match_status, row.match_reason = resolve_safe_catalog_match(
+            row.normalized_name, products, mapping.product_id if mapping else None,
+        )
+        if row.product_id is None and row.flavor_names:
+            candidates = resolve_flavor_candidates(row.flavor_names, products)
+            resolved = [ids[0] for ids in candidates.values() if len(ids) == 1]
+            if candidates and len(resolved) == len(candidates) and len(resolved) == len(row.flavor_names):
+                row.product_id = resolved[0]
+                row.match_status = "matched"
+                row.match_reason = "exact_catalog_flavor_names"
+            elif candidates:
+                customizations = dict(row.customizations or {})
+                customizations["catalog_flavor_candidates"] = candidates
+                row.customizations = customizations
+                row.match_status = "review"
+                row.match_reason = "flavor_candidates_pending"
 
     async def capture(self, file: UploadFile, platform: str | None, extracted_text: str | None) -> PrintOrderImport:
         content_type = (file.content_type or "").lower().strip()
@@ -567,10 +623,10 @@ class PrintOrderService:
             flavor_products = []
             for flavor_name in flavor_names:
                 normalized = normalize_print_text(flavor_name)
-                flavor = next((candidate for candidate in product_rows.values() if normalize_print_text(candidate.name) == normalized), None)
+                flavor = next((candidate for candidate in product_rows.values() if catalog_name_variants(candidate.name) & catalog_name_variants(normalized)), None)
                 if flavor is None:
                     flavor = self.db.query(Product).filter(Product.tenant_id == self.tenant_id, Product.active.is_(True)).all()
-                    flavor = next((candidate for candidate in flavor if normalize_print_text(candidate.name) == normalized), None)
+                    flavor = next((candidate for candidate in flavor if catalog_name_variants(candidate.name) & catalog_name_variants(normalized)), None)
                 if flavor is None:
                     raise DomainError(f"Sabor '{flavor_name}' não foi mapeado no catálogo.", code="PrintOrderFlavorMappingRequired")
                 flavor_products.append(flavor)

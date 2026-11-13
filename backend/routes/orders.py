@@ -421,6 +421,11 @@ def list_orders(
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
     sales_channel: str | None = Query(default=None),
+    order_origin: str | None = Query(default=None, pattern="^(own|partner_99|ifood|keeta)$"),
+    partner_order_number: str | None = Query(default=None),
+    search: str | None = Query(default=None, max_length=120),
+    include_archived: bool = Query(default=False),
+    offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
@@ -444,11 +449,36 @@ def list_orders(
             date_from=date_from,
             date_to=date_to,
             sales_channel=sales_channel,
+            order_origin=order_origin,
+            partner_order_number=partner_order_number,
+            search=search,
+            include_archived=include_archived,
             limit=limit,
+            offset=offset,
         )
         return ok(_serialize_orders(db, orders))
     except DomainError as exc:
         return err(exc)
+
+
+@router.get("/history")
+def historical_orders(
+    request: Request,
+    status: OrderStatus | None = Query(default=None),
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    order_origin: str | None = Query(default=None, pattern="^(own|partner_99|ifood|keeta)$"),
+    search: str | None = Query(default=None, max_length=120),
+    include_archived: bool = Query(default=False),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    return list_orders(
+        request=request, status=status, customer_id=None, date_from=date_from, date_to=date_to,
+        sales_channel=None, order_origin=order_origin, partner_order_number=None, search=search,
+        include_archived=include_archived, offset=offset, limit=limit, db=db,
+    )
 
 
 @router.get("/reports/operational")

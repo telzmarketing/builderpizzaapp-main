@@ -442,6 +442,7 @@ const AdminGestor = lazy(() => import("./pages/admin/Gestor"));
 const AdminEmpresas = lazy(() => import("./pages/admin/Empresas"));
 const AdminProducts = lazy(() => import("./pages/admin/Products"));
 const AdminOrders = lazy(() => import("./pages/admin/Orders"));
+const OrderHistory = lazy(() => import("./pages/admin/OrderHistory"));
 const PrintOrder = lazy(() => import("./pages/admin/PrintOrder"));
 const KdsOverview = lazy(() => import("./pages/admin/KdsOverview"));
 const KdsPdv = lazy(() => import("./pages/admin/KdsPdv"));
@@ -672,6 +673,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/products" element={<AdminProducts />} />
                 <Route path="/painel/products/landing/:productId/:promotionId" element={<PromotionalLandingEditor />} />
                 <Route path="/painel/orders" element={<AdminOrders />} />
+                <Route path="/painel/orders/historico" element={<OrderHistory />} />
                 <Route path="/painel/salao" element={<AdminSalao />} />
                 <Route path="/painel/fidelidade" element={<AdminFidelidade />} />
                 <Route path="/painel/conteudo" element={<AdminConteudo />} />

@@ -46,6 +46,7 @@ MASTER_CENTRAL_MIGRATION_TABLES = frozenset({
     "print_order_imports",
     "print_order_items",
     "print_order_catalog_mappings",
+    "marketplace_settlements",
     "tenant_ai_credentials",
     "tenant_domain_certificate_jobs",
 })
@@ -69,7 +70,7 @@ def create_all_tables():
         promotion_landing_page, salao, salao_page, whatsapp_gateway, marketing_intelligence, gestao, inventory, cmv, finance,
         tenant, tenant_domain, membership, platform_rbac, platform_audit, order_board,
         platform_saas, platform_operations, idempotency, label, upload_asset, partner_identification,
-        tenant_domain_ssl, exit_popup, inventory_traceability, preparation, kds_production, kds_audit, production_vision, catalog_global, inventory_portion, print_order,
+        tenant_domain_ssl, exit_popup, inventory_traceability, preparation, kds_production, kds_audit, production_vision, catalog_global, inventory_portion, print_order, marketplace_settlement,
     )
     from backend.routes import whatsapp_marketing as whatsapp_marketing_routes  # noqa: F401
     from backend.routes import automations as automations_routes  # noqa: F401

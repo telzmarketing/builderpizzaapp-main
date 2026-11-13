@@ -25,6 +25,7 @@ from backend.config import get_settings
 from backend.database import create_all_tables, SessionLocal, engine
 from backend.routes import products, orders, payments, shipping, coupons, loyalty, customers, promotions, admin, delivery, auth, admin_auth, campaigns, webhooks, store_operation
 from backend.routes import print_order as print_order_routes
+from backend.routes import marketplace_settlements as marketplace_settlement_routes
 from backend.routes import ai_credentials as ai_credentials_routes
 from backend.routes import promotion_landings as promotion_landings_routes
 from backend.routes import chatbot as chatbot_routes, admin_chatbot as admin_chatbot_routes
@@ -1429,6 +1430,7 @@ app.include_router(gestao_routes.router)
 app.include_router(inventory_routes.router)
 app.include_router(cmv_routes.router)
 app.include_router(finance_routes.router)
+app.include_router(marketplace_settlement_routes.router)
 app.include_router(fiscal_routes.router)
 app.include_router(partner_identification_routes.router)
 app.include_router(partner_identification_routes.compat_router)
@@ -1508,6 +1510,7 @@ app.include_router(recipe_composition_routes.router, prefix="/api")
 app.include_router(recipe_composition_routes.public_router, prefix="/api")
 app.include_router(cmv_routes.router, prefix="/api")
 app.include_router(finance_routes.router, prefix="/api")
+app.include_router(marketplace_settlement_routes.router, prefix="/api")
 app.include_router(fiscal_routes.router, prefix="/api")
 app.include_router(partner_identification_routes.router, prefix="/api")
 app.include_router(partner_identification_routes.compat_router, prefix="/api")

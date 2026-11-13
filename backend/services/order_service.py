@@ -1621,21 +1621,34 @@ class OrderService:
         date_from: datetime | None = None,
         date_to: datetime | None = None,
         sales_channel: str | None = None,
+        order_origin: str | None = None,
+        partner_order_number: str | None = None,
+        search: str | None = None,
+        include_archived: bool = False,
         limit: int = 50,
+        offset: int = 0,
     ) -> list[Order]:
         q = self._tenant_query(Order).options(joinedload(Order.items).joinedload(OrderItem.flavors))
-        q = q.filter(Order.archived_at.is_(None))
+        if not include_archived:
+            q = q.filter(Order.archived_at.is_(None))
         if status:
             q = q.filter(Order.status == OrderStatus(status))
         if customer_id:
             q = q.filter(Order.customer_id == customer_id)
         if sales_channel:
             q = q.filter(Order.sales_channel == sales_channel)
+        if order_origin:
+            q = q.filter(Order.order_origin == order_origin)
+        if partner_order_number:
+            q = q.filter(Order.partner_order_number.ilike(f"%{partner_order_number.strip()}%"))
+        if search:
+            term = f"%{search.strip()}%"
+            q = q.filter((Order.order_code.ilike(term)) | (Order.partner_order_number.ilike(term)) | (Order.delivery_name.ilike(term)) | (Order.delivery_phone.ilike(term)))
         if date_from:
             q = q.filter(Order.created_at >= date_from)
         if date_to:
             q = q.filter(Order.created_at <= date_to)
-        return q.order_by(Order.created_at.desc()).limit(limit).all()
+        return q.order_by(Order.created_at.desc()).offset(offset).limit(limit).all()
 
     def recalculate_total(self, order_id: str) -> Order:
         """
