@@ -65,7 +65,7 @@ export default function WhatsAppOrderWorkspace({
   }, [customer, tab]);
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-surface-03 bg-surface-00 text-cream" aria-label="Pedido do cliente">
+    <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-l border-surface-03 bg-surface-00 text-cream" aria-label="Pedido do cliente">
       <header className="shrink-0 border-b border-surface-03 p-3">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
@@ -90,7 +90,7 @@ export default function WhatsAppOrderWorkspace({
         </nav>
       </header>
       {tab === "history" ? (
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-3">
           {!customer && <p className="rounded-xl bg-amber-500/10 p-3 text-sm text-amber-200">Cliente ainda não identificado pelo telefone.</p>}
           {historyError && <p role="alert" className="rounded-xl bg-red-500/10 p-3 text-sm text-red-200">{historyError}</p>}
           {customer && !orders.length && !historyError && <p className="py-8 text-center text-sm text-stone">Nenhum pedido anterior encontrado.</p>}
@@ -103,7 +103,7 @@ export default function WhatsAppOrderWorkspace({
           ))}
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <ManualOrderComposer
             key={`${session.id}:${tab}`}
             mode="embedded"

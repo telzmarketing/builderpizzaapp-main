@@ -1087,7 +1087,7 @@ export default function CrmAgenteWhatsApp() {
   const activeModuleTab = moduleTab as string;
 
   return (
-    <div className="space-y-5">
+    <div className="flex min-h-0 flex-col gap-5">
       {error && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           <span>{error}</span>
@@ -2707,8 +2707,8 @@ export default function CrmAgenteWhatsApp() {
       )}
 
       {activeModuleTab === "conversations" && (
-      <div className="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-4 min-h-[640px]">
-        <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden flex flex-col min-h-[640px]">
+      <div className="grid h-[calc(100dvh-13rem)] min-h-0 max-h-[calc(100dvh-13rem)] grid-cols-1 gap-4 overflow-hidden xl:grid-cols-[380px_minmax(0,1fr)]">
+        <section className="h-full min-h-0 bg-surface-02 border border-surface-03 rounded-xl overflow-hidden flex flex-col">
           <div className="p-4 border-b border-surface-03 space-y-3">
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
@@ -2786,7 +2786,7 @@ export default function CrmAgenteWhatsApp() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             {loading && (
               <div className="h-48 flex items-center justify-center text-stone">
                 <Loader2 size={22} className="animate-spin" />
@@ -2841,7 +2841,7 @@ export default function CrmAgenteWhatsApp() {
           </div>
         </section>
 
-        <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden min-h-[640px] flex flex-col">
+        <section className="h-full min-h-0 bg-surface-02 border border-surface-03 rounded-xl overflow-hidden flex flex-col">
           {!selected && (
             <div className="flex-1 flex flex-col items-center justify-center text-stone gap-3">
               <MessageCircle size={32} />
@@ -2886,9 +2886,9 @@ export default function CrmAgenteWhatsApp() {
                 </div>
               </div>
 
-              <div className="min-h-0 flex-1 flex flex-col xl:flex-row">
-              <div className="min-h-[520px] min-w-0 flex-1 flex flex-col">
-              <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-3 bg-surface-00/40">
+              <div className="min-h-0 flex-1 flex flex-col overflow-hidden xl:flex-row">
+              <div className="min-h-0 min-w-0 flex-1 flex flex-col overflow-hidden">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 space-y-3 bg-surface-00/40">
                 {detailLoading && (
                   <div className="h-40 flex items-center justify-center text-stone">
                     <Loader2 size={22} className="animate-spin" />
