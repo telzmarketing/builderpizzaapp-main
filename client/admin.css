@@ -23,6 +23,15 @@
   flex: 0 0 auto;
 }
 
+/* Print Pedido is installed on the operator phone. Keep its fixed install
+ * affordance out of desktop admin chrome while retaining safe-area spacing on
+ * narrow screens. */
+@media (min-width: 768px) {
+  .pwa-install-anchor-mobile-only {
+    display: none;
+  }
+}
+
 .pwa-install-anchor-banner {
   top: auto;
   right: max(0.75rem, env(safe-area-inset-right));

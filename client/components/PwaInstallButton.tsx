@@ -1,5 +1,6 @@
 import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { getPwaApp, getPwaEntryApp, type PwaAppKey } from "@/lib/motoboyPwa";
 
 type BeforeInstallPromptEvent = Event & {
@@ -25,9 +26,9 @@ function recordPwaInstallation(appKey: PwaAppKey, storage: Storage = localStorag
   try { storage.setItem(installedStorageKey(appKey), "1"); } catch { /* storage can be unavailable */ }
 }
 
-function isStandaloneMode() {
+function isStandaloneMode(mediaQuery?: MediaQueryList) {
   const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
-  return window.matchMedia("(display-mode: standalone)").matches || navigatorWithStandalone.standalone === true;
+  return (mediaQuery ?? window.matchMedia("(display-mode: standalone)")).matches || navigatorWithStandalone.standalone === true;
 }
 
 export function canShowPwaInstallButton(pathname: string, only?: readonly PwaAppKey[]) {
@@ -38,8 +39,9 @@ export function canShowPwaInstallButton(pathname: string, only?: readonly PwaApp
   return !!app && (entryApp?.key === app.key || canonicalInstallable || legacyInstallable) && (!only || only.includes(app.key));
 }
 
-export default function PwaInstallButton({ only, pathname, hideOnKds = false, inline = false, delayMs = 0, variant = "compact" }: { only?: readonly PwaAppKey[]; pathname?: string; hideOnKds?: boolean; inline?: boolean; delayMs?: number; variant?: "compact" | "banner" } = {}) {
-  const currentPathname = pathname ?? (typeof window === "undefined" ? "" : window.location.pathname);
+export default function PwaInstallButton({ only, pathname, hideOnKds = false, inline = false, mobileOnly = false, delayMs = 0, variant = "compact" }: { only?: readonly PwaAppKey[]; pathname?: string; hideOnKds?: boolean; inline?: boolean; mobileOnly?: boolean; delayMs?: number; variant?: "compact" | "banner" } = {}) {
+  const location = useLocation();
+  const currentPathname = pathname ?? location.pathname;
   const app = getPwaApp(currentPathname);
   const allowed = canShowPwaInstallButton(currentPathname, only);
   const isKds = app?.key.startsWith("kds-") === true;
@@ -49,7 +51,9 @@ export default function PwaInstallButton({ only, pathname, hideOnKds = false, in
   const [delayElapsed, setDelayElapsed] = useState(delayMs === 0);
 
   useEffect(() => {
-    setInstalled(allowed && (isStandaloneMode() || (app ? hasRecordedPwaInstallation(app.key) : false)));
+    const standaloneMedia = window.matchMedia("(display-mode: standalone)");
+    const refreshInstalledState = () => setInstalled(allowed && (isStandaloneMode(standaloneMedia) || (app ? hasRecordedPwaInstallation(app.key) : false)));
+    refreshInstalledState();
     setDelayElapsed(delayMs === 0);
     setShowInstructions(false);
     if (!allowed) { setPrompt(null); return; }
@@ -63,9 +67,21 @@ export default function PwaInstallButton({ only, pathname, hideOnKds = false, in
       setInstalled(true);
       setPrompt(null);
     };
+    const onDisplayModeChange = () => {
+      if (standaloneMedia.matches) {
+        setInstalled(true);
+        setPrompt(null);
+      } else {
+        refreshInstalledState();
+      }
+    };
+    standaloneMedia.addEventListener?.("change", onDisplayModeChange);
+    standaloneMedia.addListener?.(onDisplayModeChange);
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
     window.addEventListener("appinstalled", onInstalled);
     return () => {
+      standaloneMedia.removeEventListener?.("change", onDisplayModeChange);
+      standaloneMedia.removeListener?.(onDisplayModeChange);
       window.removeEventListener("beforeinstallprompt", onBeforeInstall);
       window.removeEventListener("appinstalled", onInstalled);
       if (timer !== undefined) window.clearTimeout(timer);
@@ -74,7 +90,7 @@ export default function PwaInstallButton({ only, pathname, hideOnKds = false, in
 
   if (!allowed || installed || !delayElapsed || !app || (hideOnKds && isKds)) return null;
   return (
-    <div className={`pwa-install-anchor${inline ? " pwa-install-anchor-inline" : ""}${variant === "banner" ? " pwa-install-anchor-banner" : ""}`} data-pwa-app={app.key}>
+    <div className={`pwa-install-anchor${inline ? " pwa-install-anchor-inline" : ""}${mobileOnly ? " pwa-install-anchor-mobile-only" : ""}${variant === "banner" ? " pwa-install-anchor-banner" : ""}`} data-pwa-app={app.key}>
       {variant === "banner" && <div className="pwa-install-message" role="status">Instale a loja no seu celular para acessar mais rápido.</div>}
       <button type="button" onClick={() => {
         const current = prompt;

@@ -27,6 +27,7 @@ const PWA_APPS: Record<string, PwaApp> = {
   "/": { key: "storefront", scope: "/", cachePrefix: "telz-storefront" },
   "/motoboy/": { key: "motoboy", scope: "/motoboy/", cachePrefix: "telz-motoboy" },
   "/painel/bi-mobile/": { key: "bi-mobile", scope: "/painel/bi-mobile/", cachePrefix: "telz-bi-mobile" },
+  "/operacoes/print-pedido/": { key: "print-pedido", scope: "/operacoes/print-pedido/", cachePrefix: "telz-print-pedido" },
   "/app/kds/principal/": { key: "kds-principal", scope: "/app/kds/principal/", cachePrefix: "telz-kds-principal" },
   "/app/kds/pizzaiolo/": { key: "kds-pizzaiolo", scope: "/app/kds/pizzaiolo/", cachePrefix: "telz-kds-pizzaiolo" },
   "/app/kds/esfiha/": { key: "kds-esfiha", scope: "/app/kds/esfiha/", cachePrefix: "telz-kds-esfiha" },
@@ -70,6 +71,7 @@ const APP_PRECACHE_PATTERNS: Record<string, RegExp[]> = {
   ],
   motoboy: [/^\/assets\/Motoboy-[^/]+\.js$/],
   "bi-mobile": [/^\/assets\/Bi(?:Mobile|Dashboard)-[^/]+\.js$/],
+  "print-pedido": [/^\/assets\/PrintOrder-[^/]+\.js$/],
   "kds-principal": [
     /^\/assets\/KdsOverview-[^/]+\.js$/,
     /^\/assets\/(?:KdsBrandLogo|KdsSessionActions|kds)-[^/]+\.js$/,

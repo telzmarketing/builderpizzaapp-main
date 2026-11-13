@@ -1,5 +1,6 @@
 (function () {
   var apps = [
+    ["/operacoes/print-pedido", "print-pedido", "Print Pedido"],
     ["/painel/kds/pdv", "kds-pdv", "KDS PDV"],
     ["/painel/kds/analitico", "kds-analitico", "KDS Analítico"],
     ["/painel/kds", "kds-principal", "KDS Principal"],

@@ -2,7 +2,7 @@ import { isPublicSalesPath } from "./tracking";
 
 export type PwaAppKey =
   | "storefront" | "motoboy" | "bi-mobile" | "kds-principal" | "kds-pizzaiolo" | "kds-preparo"
-  | "kds-esfiha" | "kds-expedicao" | "kds-motoboys" | "kds-pdv" | "kds-analitico";
+  | "kds-esfiha" | "kds-expedicao" | "kds-motoboys" | "kds-pdv" | "kds-analitico" | "print-pedido";
 
 export type PwaAppDefinition = {
   key: PwaAppKey;
@@ -25,6 +25,7 @@ export const PWA_APPS: readonly PwaAppDefinition[] = [
   { key: "kds-motoboys", scope: "/app/kds/motoboys/", entryPath: "/app/kds/motoboys/", aliasScope: "/tv/motoboys/", canonicalPaths: ["/tv/motoboys"], label: "KDS Motoboys" },
   { key: "kds-pdv", scope: "/app/kds/pdv/", entryPath: "/app/kds/pdv/", aliasScope: "/painel/kds/pdv/", canonicalPaths: ["/painel/kds/pdv"], label: "KDS PDV" },
   { key: "kds-analitico", scope: "/app/kds/analitico/", entryPath: "/app/kds/analitico/", aliasScope: "/painel/kds/analitico/", canonicalPaths: ["/painel/kds/analitico"], label: "KDS Analítico" },
+  { key: "print-pedido", scope: "/operacoes/print-pedido/", entryPath: "/operacoes/print-pedido/", canonicalPaths: ["/operacoes/print-pedido"], label: "Print Pedido" },
 ];
 
 export const KDS_PWA_KEYS = PWA_APPS.filter((app) => app.key.startsWith("kds-")).map((app) => app.key) as PwaAppKey[];
@@ -180,7 +181,7 @@ export async function configurePwaWorker(pathname: string, container: ServiceWor
   const entryApp = getPwaEntryApp(pathname);
   const registrations = await container.getRegistrations();
   const legacy = registrations.filter((registration) => isLegacyMotoboyWorker(registration, origin));
-  const canRegister = app && (entryApp?.key === app.key || app.key === "storefront" || app.key === "motoboy" || app.key === "bi-mobile");
+  const canRegister = app && (entryApp?.key === app.key || app.key === "storefront" || app.key === "motoboy" || app.key === "bi-mobile" || app.key === "print-pedido");
   if (!canRegister) {
     await Promise.all(legacy.map(async (registration) => { await registration.update(); await retireLegacyWorker(registration); }));
     return null;

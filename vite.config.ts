@@ -51,6 +51,7 @@ export default defineConfig(({ mode }) => ({
           "assets/index-*.css",
           "assets/Motoboy-*.js",
           "assets/Bi*.js",
+          "assets/PrintOrder-*.js",
           "assets/Cozinha-*.js",
           "assets/Preparation-*.js",
           "assets/Expedicao-*.js",

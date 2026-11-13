@@ -39,7 +39,7 @@ def test_all_supported_pwa_manifests_have_unique_installation_boundaries():
     assert set(PWA_MANIFESTS) == {
         "storefront",
         "motoboy", "bi-mobile", "kds-principal", "kds-pizzaiolo", "kds-esfiha",
-        "kds-preparo", "kds-expedicao", "kds-motoboys", "kds-pdv",
+        "kds-preparo", "kds-expedicao", "kds-motoboys", "kds-pdv", "print-pedido",
         "kds-analitico",
     }
 
@@ -118,3 +118,16 @@ def test_unknown_manifest_app_is_rejected_without_fallback():
 
     assert raised.value.http_status == 400
     assert raised.value.code == "InvalidManifestApp"
+
+
+def test_print_pedido_manifest_isolated_to_its_operational_route():
+    service = SiteConfigService(None)
+    service.read = lambda _request: ({"brand": {}}, None, SiteIdentity(tenant_id="tenant-1"))
+
+    manifest = service.manifest(object(), app="print-pedido")
+
+    assert manifest["id"] == "/operacoes/print-pedido"
+    assert manifest["start_url"] == "/operacoes/print-pedido/"
+    assert manifest["scope"] == "/operacoes/print-pedido/"
+    assert manifest["name"] == "Print Pedido"
+    assert manifest["orientation"] == "portrait"

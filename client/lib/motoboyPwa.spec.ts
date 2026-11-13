@@ -62,6 +62,8 @@ describe("Motoboy installation ownership", () => {
     expect(nodes.find((node) => node.rel === "manifest")?.href).toBe("/api/site-config/manifest.webmanifest?app=storefront");
     window.updateMotoboyPwaHead!("/motoboy/");
     expect(nodes.find((node) => node.rel === "manifest")?.href).toBe("/api/site-config/manifest.webmanifest?app=motoboy");
+    window.updateMotoboyPwaHead!("/operacoes/print-pedido/");
+    expect(nodes.find((node) => node.rel === "manifest")?.href).toBe("/api/site-config/manifest.webmanifest?app=print-pedido");
     window.updateMotoboyPwaHead!("/checkout");
     expect(nodes.find((node) => node.rel === "manifest")?.href).toBe("/api/site-config/manifest.webmanifest?app=storefront");
   });
@@ -144,6 +146,14 @@ describe("KDS PWA entries", () => {
     expect(canShowPwaInstallButton("/painel/orders", KDS_PWA_KEYS)).toBe(false);
   });
 
+  it("owns an isolated Print Pedido installation boundary", async () => {
+    expect(getPwaApp("/operacoes/print-pedido")?.key).toBe("print-pedido");
+    expect(canShowPwaInstallButton("/operacoes/print-pedido", ["print-pedido"])).toBe(true);
+    const container = { getRegistrations: vi.fn().mockResolvedValue([]), register: vi.fn().mockResolvedValue({}) };
+    await configurePwaWorker("/operacoes/print-pedido", container as unknown as ServiceWorkerContainer, origin);
+    expect(container.register).toHaveBeenCalledWith("/sw.js", { scope: "/operacoes/print-pedido/", updateViaCache: "none" });
+  });
+
   it("maps public customer URLs to the storefront PWA and registers the root scope", async () => {
     expect(getPwaApp("/")?.key).toBe("storefront");
     expect(getPwaApp("/product/123")?.key).toBe("storefront");
@@ -199,5 +209,23 @@ describe("KDS PWA entries", () => {
     const biContainer = { getRegistrations: vi.fn().mockResolvedValue([]), register: vi.fn().mockResolvedValue({}) };
     await configurePwaWorker("/painel/bi-mobile", biContainer as unknown as ServiceWorkerContainer, origin);
     expect(biContainer.register).toHaveBeenCalledWith("/sw.js", { scope: "/painel/bi-mobile/", updateViaCache: "none" });
+  });
+});
+
+describe("Print Pedido PWA entry", () => {
+  it("owns only the Print Pedido route and its dedicated scope", () => {
+    expect(getPwaApp("/operacoes/print-pedido")?.key).toBe("print-pedido");
+    expect(getPwaEntryApp("/operacoes/print-pedido/")?.key).toBe("print-pedido");
+    expect(pwaScopeForPath("/operacoes/print-pedido")).toBe("/operacoes/print-pedido/");
+    expect(canShowPwaInstallButton("/operacoes/print-pedido", ["print-pedido"])).toBe(true);
+    expect(canShowPwaInstallButton("/painel/orders", ["print-pedido"])).toBe(false);
+  });
+
+  it("registers the worker only inside the Print Pedido scope", async () => {
+    const container = { getRegistrations: vi.fn().mockResolvedValue([]), register: vi.fn().mockResolvedValue({}) };
+
+    await configurePwaWorker("/operacoes/print-pedido", container as unknown as ServiceWorkerContainer, origin);
+
+    expect(container.register).toHaveBeenCalledWith("/sw.js", { scope: "/operacoes/print-pedido/", updateViaCache: "none" });
   });
 });

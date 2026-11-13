@@ -57,6 +57,14 @@ PWA_MANIFESTS = {
         "short_name": "BI Mobile",
         "description": "Indicadores operacionais do BI Mobile",
     },
+    "print-pedido": {
+        "id": "/operacoes/print-pedido",
+        "start_url": "/operacoes/print-pedido/",
+        "scope": "/operacoes/print-pedido/",
+        "name": "Print Pedido",
+        "short_name": "Print Pedido",
+        "description": "Captura e revisão de pedidos por foto",
+    },
     "kds-principal": {
         "id": "/app/kds/principal",
         "start_url": "/painel/kds/",

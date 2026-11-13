@@ -546,6 +546,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
             <MotoboyPwaBoundary />
             <PwaInstallButton only={["storefront"]} delayMs={60000} variant="banner" />
             <PwaInstallButton only={KDS_PWA_KEYS} hideOnKds />
+            <PwaInstallButton only={["print-pedido"]} mobileOnly variant="banner" />
             {!platformSurface && !orderBoardSurface && <MotoboyNativeEntry />}
             {!platformSurface && !orderBoardSurface && <RouteDataLoader />}
             {!platformSurface && !orderBoardSurface && <StoreWidget />}
