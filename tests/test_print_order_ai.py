@@ -35,8 +35,10 @@ class _ConfiguredVisionProvider:
 
 
 def test_configured_vision_returns_structured_payload_without_writing_order(monkeypatch):
-    monkeypatch.setattr("backend.services.print_order_ai.get_ai_provider", lambda settings: _ConfiguredVisionProvider())
-    settings = SimpleNamespace(id="agente-whatsapp-ai:tenant-a", tenant_id="tenant-a")
+    configured = SimpleNamespace(provider="openai", api_key="central-key")
+    monkeypatch.setattr("backend.services.print_order_ai.get_tenant_ai_credential", lambda db, tenant_id: configured)
+    monkeypatch.setattr("backend.services.print_order_ai.OpenAIProvider", lambda **kwargs: _ConfiguredVisionProvider())
+    settings = SimpleNamespace(id="agente-whatsapp-ai:tenant-a", tenant_id="tenant-a", model="internal-rules-v1", temperature=0.4, max_tokens=800)
     db = SimpleNamespace(query=lambda model: SimpleNamespace(filter=lambda *args: SimpleNamespace(first=lambda: settings)))
 
     parsed, reason = extract_print_order_with_vision(db, "tenant-a", b"image", "image/jpeg", "keeta")
@@ -49,10 +51,7 @@ def test_configured_vision_returns_structured_payload_without_writing_order(monk
 
 
 def test_vision_falls_back_when_provider_is_not_configured(monkeypatch):
-    class _Unavailable:
-        def is_configured(self): return False
-
-    monkeypatch.setattr("backend.services.print_order_ai.get_ai_provider", lambda settings: _Unavailable())
+    monkeypatch.setattr("backend.services.print_order_ai.get_tenant_ai_credential", lambda db, tenant_id: None)
     settings = SimpleNamespace(id="agente-whatsapp-ai:tenant-a", tenant_id="tenant-a")
     db = SimpleNamespace(query=lambda model: SimpleNamespace(filter=lambda *args: SimpleNamespace(first=lambda: settings)))
 
@@ -84,9 +83,15 @@ def test_print_order_resolves_the_configured_atendimento_provider(monkeypatch):
     db.add(AgenteWhatsAppAISettings(
         id="agente-whatsapp-ai:tenant-a",
         tenant_id="tenant-a",
+        provider="internal",
+        model="internal-rules-v1",
+        max_tokens=1200,
+        temperature=0.3,
+    ))
+    db.add(TenantAICredential(
+        tenant_id="tenant-a",
         provider="openai",
-        model="gpt-4o-mini",
-        openai_api_key="atendimento-key",
+        api_key="central-key",
     ))
     db.commit()
     captured = {}
@@ -115,3 +120,48 @@ def test_print_order_resolves_the_configured_atendimento_provider(monkeypatch):
     assert reason is None
     assert parsed["parser"] == "vision-openai-v1"
     assert captured == {"provider": "openai", "model": "gpt-4o-mini"}
+
+
+def test_print_order_uses_central_provider_when_atendimento_remains_internal(monkeypatch):
+    from backend.models import (  # noqa: F401 - register the complete ORM relationship registry
+        admin, agente_whatsapp, business_intelligence, campaign, chatbot, cmv, coupon,
+        customer, customer_event, customer_identity, customer_contact_risk, delivery,
+        exit_popup, finance, fiscal, gestao, gestor, home_config, idempotency,
+        inventory, inventory_foundation, inventory_portion, inventory_receipts,
+        inventory_traceability, kds_audit, kds_production, label, loyalty,
+        marketing_intelligence, membership, order, order_board, partner_identification,
+        paid_traffic, payment, payment_config, pcp, platform_audit, platform_operations,
+        platform_rbac, platform_saas, preparation, print_order, product,
+        product_promotion, production_vision, promotion, promotion_landing_page,
+        rbac, salao, salao_page, shipping, shipping_v2, store_notification,
+        store_operation, tenant, tenant_domain, tenant_domain_ssl, theme, upload_asset,
+        upsell, whatsapp_gateway,
+    )
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine, tables=[Tenant.__table__, AgenteWhatsAppAISettings.__table__, TenantAICredential.__table__])
+    db = sessionmaker(bind=engine)()
+    db.add(AgenteWhatsAppAISettings(
+        id="agente-whatsapp-ai:tenant-a",
+        tenant_id="tenant-a",
+        provider="internal",
+        model="internal-rules-v1",
+    ))
+    db.add(TenantAICredential(tenant_id="tenant-a", provider="openai", api_key="central-key"))
+    db.commit()
+    captured = {}
+
+    def fake_multimodal(self, *args, **kwargs):
+        captured.update({"provider": self.provider_name, "model": self._model, "temperature": kwargs["temperatura"], "max_tokens": kwargs["max_tokens"]})
+        return SimpleNamespace(provider=self.provider_name, model=self._model, error_reason="", content=json.dumps({"platform": "keeta", "external_order_number": "9399"}))
+
+    monkeypatch.setattr("backend.services.ai.openai_provider.OpenAIProvider.generate_multimodal_json", fake_multimodal)
+    try:
+        parsed, reason = extract_print_order_with_vision(db, "tenant-a", b"image", "image/jpeg", "keeta")
+    finally:
+        db.close()
+        engine.dispose()
+
+    assert reason is None
+    assert parsed["parser"] == "vision-openai-v1"
+    assert captured == {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.4, "max_tokens": 800}

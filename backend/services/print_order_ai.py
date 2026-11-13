@@ -15,7 +15,10 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
 from backend.models.agente_whatsapp import AgenteWhatsAppAISettings, agente_whatsapp_ai_settings_id
-from backend.services.ai.factory import get_ai_provider
+from backend.services.ai.claude_provider import ClaudeProvider
+from backend.services.ai.credentials import get_tenant_ai_credential
+from backend.services.ai.factory import DEFAULT_MODELS, KNOWN_MODELS
+from backend.services.ai.openai_provider import OpenAIProvider
 
 
 class VisionItem(BaseModel):
@@ -131,9 +134,11 @@ def _normalize_response(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def extract_print_order_with_vision(db: Session, tenant_id: str, data: bytes, mime_type: str, manual_platform: str | None = None) -> tuple[dict[str, Any] | None, str | None]:
-    """Use the Agente WhatsApp Atendimento provider, failing closed when unavailable.
+    """Use the tenant central credential with Atendimento's AI behavior.
 
-    Gestor IA and the legacy ChatbotSettings are intentionally not consulted.
+    The central credential owns the provider and secret. Atendimento settings
+    continue to own the selected model and generation limits, while the
+    internal-rules provider is never valid for image extraction.
     """
     settings_id = agente_whatsapp_ai_settings_id(tenant_id)
     settings = db.query(AgenteWhatsAppAISettings).filter(
@@ -142,10 +147,24 @@ def extract_print_order_with_vision(db: Session, tenant_id: str, data: bytes, mi
     ).first()
     if settings is None:
         return None, "provedor_multimodal_nao_configurado"
-    provider = get_ai_provider(settings)
+    credential = get_tenant_ai_credential(db, tenant_id)
+    if credential is None or not (credential.api_key or "").strip():
+        return None, "provedor_multimodal_nao_configurado"
+    provider_name = credential.provider
+    if provider_name not in {"openai", "claude"}:
+        return None, "provedor_multimodal_nao_configurado"
+
+    requested_model = (settings.model or "").strip()
+    model = requested_model if requested_model in KNOWN_MODELS[provider_name] else DEFAULT_MODELS[provider_name]
+    if provider_name == "openai":
+        provider = OpenAIProvider(model=model, api_key=credential.api_key)
+    else:
+        provider = ClaudeProvider(model=model, api_key=credential.api_key)
     if not provider.is_configured() or not hasattr(provider, "generate_multimodal_json"):
         return None, "provedor_multimodal_nao_configurado"
-    response = provider.generate_multimodal_json(VISION_PROMPT, data, mime_type, temperatura=0.0, max_tokens=3000)
+    max_tokens = min(max(int(settings.max_tokens or 3000), 1), 3000)
+    temperature = min(max(float(settings.temperature or 0.0), 0.0), 2.0)
+    response = provider.generate_multimodal_json(VISION_PROMPT, data, mime_type, temperatura=temperature, max_tokens=max_tokens)
     if response.error_reason or not response.content.strip():
         return None, response.error_reason or "resposta_multimodal_vazia"
     try:
