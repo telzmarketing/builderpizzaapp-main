@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.config import get_settings
 from backend.core.catalog_context import LEGACY_TENANT_ID
-from backend.core.tenant_context import TenantContext, TenantSource
+from backend.core.tenant_context import TenantContext, TenantSource, trusted_process_context
 from backend.core.tenant_ownership import assign_tenant_on_create, scope_query_to_tenant
 from backend.core.wave6_tenant_orm import wave6_tenant_orm_enabled
 from backend.models.whatsapp_gateway import (
@@ -423,7 +423,19 @@ class WhatsAppGatewayService:
 
         from backend.services.agente_whatsapp_service import AgenteWhatsAppService
 
-        result = AgenteWhatsAppService(self._db).process_baileys_runtime_event(trusted_payload)
+        # The instance row is the authority for inbound ownership.  Rebuild a
+        # webhook context from that row so the Agent never falls back to the
+        # legacy tenant and never consumes tenant metadata from the payload.
+        agent_context = (
+            trusted_process_context(instance.tenant_id, source=TenantSource.WEBHOOK)
+            if instance and instance.tenant_id
+            else None
+        )
+
+        result = AgenteWhatsAppService(
+            self._db,
+            tenant_context=agent_context,
+        ).process_baileys_runtime_event(trusted_payload)
         self.add_log(
             action="runtime_message_received",
             status="success" if result.get("received") else "info",

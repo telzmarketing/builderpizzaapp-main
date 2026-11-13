@@ -213,15 +213,16 @@ def receive_runtime_event(
         raise HTTPException(status_code=503, detail="Token do runtime obrigatorio com isolamento multiempresa ativo.")
     if expected and x_whatsapp_gateway_token != expected:
         raise HTTPException(status_code=401, detail="Token do runtime invalido.")
-    context = None
-    if wave6_tenant_orm_enabled():
-        instance = db.query(WhatsAppGatewayInstance).filter(
-            WhatsAppGatewayInstance.id == body.instance_id,
-            WhatsAppGatewayInstance.tenant_id.is_not(None),
-        ).first()
-        if not instance:
-            raise HTTPException(status_code=404, detail="Instancia do WhatsApp Gateway nao encontrada.")
-        context = TenantContext(tenant_id=instance.tenant_id, source=TenantSource.WEBHOOK)
+    # Runtime callbacks must always resolve ownership from the persisted
+    # instance.  The rollout flag controls ORM enforcement, never whether a
+    # webhook may choose its tenant from request data.
+    instance = db.query(WhatsAppGatewayInstance).filter(
+        WhatsAppGatewayInstance.id == body.instance_id,
+        WhatsAppGatewayInstance.tenant_id.is_not(None),
+    ).first()
+    if not instance:
+        raise HTTPException(status_code=404, detail="Instancia do WhatsApp Gateway nao encontrada.")
+    context = TenantContext(tenant_id=instance.tenant_id, source=TenantSource.WEBHOOK)
     result = _tenant_service(db, context).process_runtime_event(body.model_dump())
     db.commit()
     return result
