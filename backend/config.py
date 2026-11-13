@@ -139,7 +139,9 @@ class Settings(BaseSettings):
 
     # AGENTE WHATSAPP - outbox worker
     AGENTE_WHATSAPP_WORKER_ENABLED: bool = True
-    AGENTE_WHATSAPP_WORKER_INTERVAL_SECONDS: int = 10
+    # Keep conversational replies responsive; delivery remains retryable and
+    # bounded by the outbox worker rather than relying on a long poll period.
+    AGENTE_WHATSAPP_WORKER_INTERVAL_SECONDS: int = 2
     AGENTE_WHATSAPP_WORKER_BATCH_SIZE: int = 20
     AGENTE_WHATSAPP_PROVIDER_FAILURE_THRESHOLD: int = 5
     AGENTE_WHATSAPP_PROVIDER_PAUSE_MINUTES: int = 30

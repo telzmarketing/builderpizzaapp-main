@@ -30,7 +30,24 @@ _AUDIO_MIME_EXTENSIONS = {
     "audio/mp4": "m4a",
     "audio/aac": "aac",
     "audio/webm": "webm",
+    "audio/wav": "wav",
+    "audio/flac": "flac",
     "video/mp4": "mp4",
+}
+
+_AUDIO_MIME_ALIASES = {
+    "audio/x-wav": "audio/wav",
+    "audio/x-flac": "audio/flac",
+    "audio/mpga": "audio/mpeg",
+}
+_AUDIO_MIME_REQUIRING_SIGNATURE = {
+    "audio/ogg",
+    "audio/mpeg",
+    "audio/mp4",
+    "audio/aac",
+    "audio/webm",
+    "audio/wav",
+    "audio/flac",
 }
 
 
@@ -67,6 +84,65 @@ def _safe_error(value: Any) -> str:
     return text_value.replace("\r", " ").replace("\n", " ")[:500]
 
 
+def normalize_audio_mime(value: str | None) -> str:
+    normalized = (value or "").split(";", 1)[0].strip().lower()
+    return _AUDIO_MIME_ALIASES.get(normalized, normalized)
+
+
+def detect_audio_mime(data: bytes) -> str | None:
+    if len(data) < 4:
+        return None
+    if data.startswith(b"OggS"):
+        return "audio/ogg"
+    if data.startswith(b"\x1a\x45\xdf\xa3"):
+        return "audio/webm"
+    if data.startswith(b"fLaC"):
+        return "audio/flac"
+    if data.startswith(b"RIFF") and data[8:12] == b"WAVE":
+        return "audio/wav"
+    if len(data) >= 12 and data[4:8] == b"ftyp":
+        return "audio/mp4"
+    if data.startswith(b"ID3") or (data[0] == 0xFF and data[1] & 0xE0 == 0xE0):
+        return "audio/mpeg"
+    if data[0] == 0xFF and data[1] & 0xF6 == 0xF0:
+        return "audio/aac"
+    return None
+
+
+def _mime_from_filename(filename: str | None) -> str | None:
+    suffix = Path(str(filename or "").split("?", 1)[0]).suffix.lower().lstrip(".")
+    return {
+        "ogg": "audio/ogg",
+        "opus": "audio/opus",
+        "mp3": "audio/mpeg",
+        "m4a": "audio/mp4",
+        "mp4": "audio/mp4",
+        "webm": "audio/webm",
+        "wav": "audio/wav",
+        "flac": "audio/flac",
+        "aac": "audio/aac",
+    }.get(suffix)
+
+
+def resolve_audio_mime(data: bytes, declared: str | None, filename: str | None = None) -> str:
+    normalized = normalize_audio_mime(declared)
+    detected = detect_audio_mime(data)
+    if normalized in {"", "application/octet-stream", "binary/octet-stream"}:
+        if detected:
+            return detected
+        extension_mime = _mime_from_filename(filename)
+        if extension_mime and detected == extension_mime:
+            return extension_mime
+        raise ValueError("Audio Baileys invalido ou formato de audio nao identificado.")
+    if normalized not in _AUDIO_MIME_EXTENSIONS:
+        raise ValueError(f"Tipo de audio nao permitido: {normalized}.")
+    if normalized in _AUDIO_MIME_REQUIRING_SIGNATURE and detected != normalized:
+        raise ValueError("Conteudo de audio nao corresponde ao MIME declarado.")
+    if detected and detected != normalized and normalized != "audio/opus":
+        raise ValueError("Conteudo de audio nao corresponde ao MIME declarado.")
+    return normalized
+
+
 class AgenteWhatsAppAudioService:
     def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
@@ -97,6 +173,7 @@ class AgenteWhatsAppAudioService:
 
         try:
             source = self._load_audio_source(message)
+            source.mime_type = resolve_audio_mime(source.data, source.mime_type, source.source_url)
             self._validate_source(source)
             stored_path, public_url, storage_key = self._store_audio(source, message)
             message.media_url = message.media_url or public_url

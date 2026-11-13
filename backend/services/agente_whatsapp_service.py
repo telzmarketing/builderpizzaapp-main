@@ -1211,6 +1211,15 @@ class AgenteWhatsAppService:
                 self._db,
                 self._tenant_context,
             ).enqueue_inbound_message(message)
+        elif direction == "outbound" and message.provider_status == "queued":
+            # Human and AI replies enter the outbox in the same transaction
+            # that creates the message. The worker remains responsible for
+            # delivery/retry, but no outbound message waits for its next poll
+            # just to become visible to the queue.
+            AgenteWhatsAppOutboxService(
+                self._db,
+                self._tenant_context,
+            ).enqueue_queued_messages(limit=1, message_id=message.id)
         session.last_message_at = now
         session.updated_at = now
         self.add_event(

@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from backend.core.tenant_context import TenantSource, trusted_process_context
 from backend.core.wave6_tenant_context import bind_wave6_tenant_context
-from backend.core.wave6_tenant_orm import wave6_tenant_orm_enabled
 from backend.models.tenant import Tenant
 from backend.services.agente_whatsapp_outbox_service import AgenteWhatsAppOutboxService
 from backend.services.platform_jobs_service import PlatformJobsService
@@ -69,18 +68,13 @@ def _run_tenant_cycle(db: Session, *, tenant_id: str, limit: int) -> dict[str, o
     scheduled_stories = agente_service.process_scheduled_stories(limit=10)
     commercial_automations = agente_service.run_due_commercial_automations(limit_per_automation=10)
 
-    # Audio/AI/TTS services have their own remaining isolation delivery.  Do
-    # not route a tenant worker through their legacy global data paths while
-    # Wave 6 is on; report no work instead of risking a cross-tenant action.
-    if wave6_tenant_orm_enabled():
-        audio_transcriptions = {"processed": 0, "deferred": 1}
-        agent_responses = {"processed": 0, "deferred": 1}
-        tts_generations = {"processed": 0, "deferred": 1}
-    else:
-        processing_service = AgenteWhatsAppProcessingService(db, context)
-        audio_transcriptions = processing_service.process_audio_transcriptions(limit=5)
-        agent_responses = processing_service.process_agent_responses(limit=5)
-        tts_generations = processing_service.process_tts_generations(limit=5)
+    # The processing service receives the trusted context selected from the
+    # persisted tenant and propagates it to every child service.  Wave6 must
+    # not disable the actual worker; it is the context that provides isolation.
+    processing_service = AgenteWhatsAppProcessingService(db, context)
+    audio_transcriptions = processing_service.process_audio_transcriptions(limit=5)
+    agent_responses = processing_service.process_agent_responses(limit=5)
+    tts_generations = processing_service.process_tts_generations(limit=5)
 
     retention_service = AgenteWhatsAppRetentionService(db, context)
     retention_cleanup = (

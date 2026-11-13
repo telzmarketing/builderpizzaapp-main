@@ -66,7 +66,10 @@ class AgenteWhatsAppProcessingService:
             self._db.flush()
             return None
         if job_type == "audio_transcription":
-            allowed, reason = AgenteWhatsAppRolloutService(self._db).check_message(message, "audio_input")
+            allowed, reason = AgenteWhatsAppRolloutService(
+                self._db,
+                self._tenant_context,
+            ).check_message(message, "audio_input")
             if not allowed:
                 message.processing_status = "skipped"
                 message.transcription_status = "none"
@@ -270,6 +273,7 @@ class AgenteWhatsAppProcessingService:
                 AgenteWhatsAppProcessingJob.attempts < AgenteWhatsAppProcessingJob.max_attempts,
             )
             .order_by(AgenteWhatsAppProcessingJob.created_at.asc())
+            .with_for_update(skip_locked=True)
             .limit(limit)
             .all()
         )
@@ -287,7 +291,10 @@ class AgenteWhatsAppProcessingService:
             try:
                 message = self._message_for_tenant(job.message_id)
                 if message:
-                    allowed, reason = AgenteWhatsAppRolloutService(self._db).check_message(message, "audio_input")
+                    allowed, reason = AgenteWhatsAppRolloutService(
+                        self._db,
+                        self._tenant_context,
+                    ).check_message(message, "audio_input")
                     if not allowed:
                         job.status = "done"
                         job.error = reason
@@ -295,7 +302,10 @@ class AgenteWhatsAppProcessingService:
                         message.transcription_status = "none"
                         message.transcription_error = reason
                         continue
-                result = AgenteWhatsAppAudioService(self._db).transcribe_message(job.message_id)
+                result = AgenteWhatsAppAudioService(
+                    self._db,
+                    self._tenant_context,
+                ).transcribe_message(job.message_id)
                 status = result.get("transcription_status")
                 if status in {"done", "low_confidence"}:
                     message = message or (
@@ -337,6 +347,7 @@ class AgenteWhatsAppProcessingService:
                 AgenteWhatsAppProcessingJob.attempts < AgenteWhatsAppProcessingJob.max_attempts,
             )
             .order_by(AgenteWhatsAppProcessingJob.created_at.asc())
+            .with_for_update(skip_locked=True)
             .limit(limit)
             .all()
         )
@@ -393,7 +404,10 @@ class AgenteWhatsAppProcessingService:
 
                 from backend.services.agente_whatsapp_ai_service import AgenteWhatsAppAIService
 
-                result = AgenteWhatsAppAIService(self._db).respond(
+                result = AgenteWhatsAppAIService(
+                    self._db,
+                    self._tenant_context,
+                ).respond(
                     session_id=message.session_id,
                     message=text_value,
                     auto_queue=True,
@@ -445,6 +459,7 @@ class AgenteWhatsAppProcessingService:
                 AgenteWhatsAppProcessingJob.attempts < AgenteWhatsAppProcessingJob.max_attempts,
             )
             .order_by(AgenteWhatsAppProcessingJob.created_at.asc())
+            .with_for_update(skip_locked=True)
             .limit(limit)
             .all()
         )
@@ -473,12 +488,18 @@ class AgenteWhatsAppProcessingService:
                     skipped += 1
                     continue
                 payload = _json_load(job.payload_json)
-                result = AgenteWhatsAppAudioService(self._db).synthesize_response_audio(
+                result = AgenteWhatsAppAudioService(
+                    self._db,
+                    self._tenant_context,
+                ).synthesize_response_audio(
                     message.id,
                     source_message_id=payload.get("source_message_id"),
                 )
                 if result.get("status") in {"generated", "existing"}:
-                    AgenteWhatsAppOutboxService(self._db).enqueue_queued_messages(limit=20)
+                    AgenteWhatsAppOutboxService(
+                        self._db,
+                        self._tenant_context,
+                    ).enqueue_queued_messages(limit=20)
                     job.status = "done"
                     job.error = None
                     generated += 1
@@ -530,13 +551,21 @@ class AgenteWhatsAppProcessingService:
             return "Audio ainda sem transcricao pronta."
         if message.message_type == "audio" and not self._settings.WHATSAPP_AUDIO_TEXT_FALLBACK_ENABLED:
             return "Fallback textual de audio desativado por configuracao."
-        allowed, reason = AgenteWhatsAppRolloutService(self._db).check_message(message, "ai_auto_reply")
+        allowed, reason = AgenteWhatsAppRolloutService(
+            self._db,
+            self._tenant_context,
+        ).check_message(message, "ai_auto_reply")
         if not allowed:
             return reason
         return None
 
     def _settings_audio_response_mode(self) -> str:
-        return str(AgenteWhatsAppAudioSettingsService(self._db).get_settings()["response_mode"]).strip().lower()
+        return str(
+            AgenteWhatsAppAudioSettingsService(
+                self._db,
+                self._tenant_context,
+            ).get_settings()["response_mode"]
+        ).strip().lower()
 
     def _should_generate_tts(
         self,
@@ -544,7 +573,10 @@ class AgenteWhatsAppProcessingService:
         *,
         source_message: AgenteWhatsAppMessage | None,
     ) -> bool:
-        audio_settings = AgenteWhatsAppAudioSettingsService(self._db).get_settings()
+        audio_settings = AgenteWhatsAppAudioSettingsService(
+            self._db,
+            self._tenant_context,
+        ).get_settings()
         if not audio_settings["enabled"]:
             return False
         mode = str(audio_settings["response_mode"]).strip().lower()
@@ -559,7 +591,10 @@ class AgenteWhatsAppProcessingService:
         if self._existing_tts_response(response_message.id):
             return False
         rollout_message = source_message or response_message
-        allowed, _reason = AgenteWhatsAppRolloutService(self._db).check_message(rollout_message, "audio_output")
+        allowed, _reason = AgenteWhatsAppRolloutService(
+            self._db,
+            self._tenant_context,
+        ).check_message(rollout_message, "audio_output")
         if not allowed:
             return False
         if mode == "mirror_customer_audio":
@@ -608,7 +643,10 @@ class AgenteWhatsAppProcessingService:
         )
         from backend.services.agente_whatsapp_service import AgenteWhatsAppService
 
-        response = AgenteWhatsAppService(self._db).add_message(
+        response = AgenteWhatsAppService(
+            self._db,
+            self._tenant_context,
+        ).add_message(
             message.session,
             direction="outbound",
             sender_type="ai",

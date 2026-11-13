@@ -90,8 +90,13 @@ class AgenteWhatsAppOutboxService:
     def _scope(self, query, model):
         return query.filter(model.tenant_id == self._tenant_id)
 
-    def enqueue_queued_messages(self, *, limit: int = 100) -> dict[str, int]:
-        rows = (
+    def enqueue_queued_messages(
+        self,
+        *,
+        limit: int = 100,
+        message_id: str | None = None,
+    ) -> dict[str, int]:
+        query = (
             self._db.query(AgenteWhatsAppMessage, AgenteWhatsAppSession)
             .join(AgenteWhatsAppSession, AgenteWhatsAppSession.id == AgenteWhatsAppMessage.session_id)
             .outerjoin(
@@ -108,7 +113,11 @@ class AgenteWhatsAppOutboxService:
                 AgenteWhatsAppMessage.provider_status == "queued",
                 AgenteWhatsAppOutbox.id.is_(None),
             )
-            .order_by(AgenteWhatsAppMessage.created_at.asc())
+        )
+        if message_id:
+            query = query.filter(AgenteWhatsAppMessage.id == message_id)
+        rows = (
+            query.order_by(AgenteWhatsAppMessage.created_at.asc())
             .with_for_update(skip_locked=True, of=AgenteWhatsAppMessage)
             .limit(limit)
             .all()

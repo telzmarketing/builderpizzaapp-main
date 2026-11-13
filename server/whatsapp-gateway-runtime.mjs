@@ -200,13 +200,78 @@ function quotedProviderMessageId(message) {
   return null;
 }
 
+function normalizeAudioMime(mimetype = "") {
+  const value = String(mimetype || "").toLowerCase().split(";", 1)[0].trim();
+  if (value === "audio/x-wav") return "audio/wav";
+  if (value === "audio/x-flac") return "audio/flac";
+  if (value === "audio/mpga") return "audio/mpeg";
+  return value;
+}
+
+function detectAudioMime(buffer) {
+  if (!buffer || buffer.length < 4) return null;
+  if (buffer.subarray(0, 4).toString("ascii") === "OggS") return "audio/ogg";
+  if (buffer.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) return "audio/webm";
+  if (buffer.subarray(0, 4).toString("ascii") === "fLaC") return "audio/flac";
+  if (buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WAVE") {
+    return "audio/wav";
+  }
+  if (buffer.length >= 12 && buffer.subarray(4, 8).toString("ascii") === "ftyp") return "audio/mp4";
+  if (buffer.subarray(0, 3).toString("ascii") === "ID3") return "audio/mpeg";
+  if (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) return "audio/mpeg";
+  if (buffer[0] === 0xff && (buffer[1] & 0xf6) === 0xf0) return "audio/aac";
+  return null;
+}
+
+function audioMimeFromFilename(filename = "") {
+  const extension = String(filename || "").toLowerCase().split("?", 1)[0].split(".").pop();
+  return {
+    ogg: "audio/ogg",
+    opus: "audio/opus",
+    mp3: "audio/mpeg",
+    m4a: "audio/mp4",
+    mp4: "audio/mp4",
+    webm: "audio/webm",
+    wav: "audio/wav",
+    flac: "audio/flac",
+    aac: "audio/aac",
+  }[extension] || null;
+}
+
+function resolveAudioMime({ mimetype, buffer, filename } = {}) {
+  const declared = normalizeAudioMime(mimetype);
+  const detected = detectAudioMime(buffer);
+  const generic = !declared || declared === "application/octet-stream" || declared === "binary/octet-stream";
+  if (generic) {
+    if (detected) return detected;
+    const byExtension = audioMimeFromFilename(filename);
+    if (byExtension && detectAudioMime(buffer) === byExtension) return byExtension;
+    return null;
+  }
+  const signatureRequired = new Set([
+    "audio/ogg",
+    "audio/mpeg",
+    "audio/mp4",
+    "audio/aac",
+    "audio/webm",
+    "audio/wav",
+    "audio/flac",
+  ]);
+  if (signatureRequired.has(declared) && detected !== declared) return null;
+  if (detected && detected !== declared && declared !== "audio/opus") return null;
+  return declared;
+}
+
 function mediaExtension(mimetype = "") {
-  const value = String(mimetype || "").toLowerCase().split(";", 1)[0];
+  const value = normalizeAudioMime(mimetype);
   if (value === "audio/ogg") return "ogg";
   if (value === "audio/opus") return "opus";
   if (value === "audio/mpeg" || value === "audio/mp3") return "mp3";
   if (value === "audio/mp4") return "m4a";
   if (value === "audio/webm") return "webm";
+  if (value === "audio/wav") return "wav";
+  if (value === "audio/flac") return "flac";
+  if (value === "audio/aac") return "aac";
   if (value === "video/mp4") return "mp4";
   return "bin";
 }
@@ -244,7 +309,12 @@ async function storeInboundMedia(item, media, messageType, providerMessageId) {
     if (!buffer || !buffer.length) {
       return { media_url: media.url || null, media_storage_key: null, media_size_bytes: numericValue(media.fileLength) };
     }
-    const mimetype = media.mimetype || (messageType === "audio" ? "audio/ogg" : "application/octet-stream");
+    const mimetype = resolveAudioMime({
+      mimetype: media.mimetype,
+      buffer,
+      filename: media.fileName,
+    });
+    if (!mimetype) throw new Error("Audio Baileys invalido ou formato nao identificado.");
     const dir = path.join(projectRoot, "uploads", "agente-whatsapp-audio");
     await fs.mkdir(dir, { recursive: true });
     const filename = `${providerMessageId}-${randomUUID()}.${mediaExtension(mimetype)}`;

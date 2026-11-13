@@ -90,7 +90,10 @@ class AgenteWhatsAppRolloutService:
         if mode == "pilot" and phone not in self._pilot_phones():
             return False, "Telefone fora do piloto de audio."
 
-        if not self._inside_allowed_hours():
+        # The rollout window controls the audio pilot. Text AI replies must
+        # remain available continuously; otherwise a configured audio window
+        # silently suppresses the primary WhatsApp assistant.
+        if action != "ai_auto_reply" and not self._inside_allowed_hours():
             return False, "Fora da janela horaria do rollout de audio."
 
         limit = self._daily_limit(action)
