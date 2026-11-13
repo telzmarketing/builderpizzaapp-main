@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -5,6 +6,11 @@ import pytest
 
 from backend.services.ai.model_catalog import AIModelCatalogError, list_provider_models
 from backend.routes.ai_credentials import list_central_models
+
+
+def test_runtime_model_catalog_dependency_is_declared_in_backend_requirements():
+    requirements = (Path(__file__).resolve().parents[1] / "backend" / "requirements.txt").read_text(encoding="utf-8").splitlines()
+    assert "httpx==0.28.1" in requirements
 
 
 def test_openai_catalog_is_normalized_and_sorted(monkeypatch):
