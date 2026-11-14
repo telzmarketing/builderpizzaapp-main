@@ -199,6 +199,7 @@ describe("buildPrintHtml", () => {
   it("mantem textos pequenos fortes para impressao termica", () => {
     const html = buildPrintHtml(deliveryOrder(), "completo", DEFAULT_PRINTER_SETTINGS);
 
+    expect(html).toContain("--receipt-scale:1.3;");
     expect(html).toContain(".s{font-size:var(--receipt-small);color:#000;font-weight:600}");
     expect(html).toContain("*{color:#000!important;text-shadow:none!important}");
     expect(html).not.toContain("color:#444");

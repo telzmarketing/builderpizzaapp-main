@@ -200,7 +200,7 @@ function paperCss(width: PaperWidth) {
     @page{size:${size.page};margin:0}
     html{margin:0;padding:0;width:${size.body}}
     body{
-      --receipt-scale:1.5;
+      --receipt-scale:1.3;
       --qty-col:${size.qty};
       --price-col:${size.price};
       --receipt-small:calc(${size.small} * var(--receipt-scale));
