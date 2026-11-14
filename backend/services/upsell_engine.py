@@ -42,6 +42,9 @@ def _serialize_product(product) -> UpsellProductOut | None:
         icon=product.icon or "",
         category=product.category,
         product_type=getattr(product, "product_type", None),
+        subcategory=getattr(product, "subcategory", None),
+        category_id=getattr(product, "category_id", None),
+        subcategory_id=getattr(product, "subcategory_id", None),
         active=product.active,
         sizes=sizes,
     )
@@ -71,6 +74,9 @@ def _serialize_upsell(row: Upsell) -> UpsellOut:
         trigger_type=row.trigger_type,
         trigger_product_id=row.trigger_product_id,
         trigger_category=row.trigger_category,
+        trigger_category_id=row.trigger_category_id,
+        trigger_subcategory=row.trigger_subcategory,
+        trigger_subcategory_id=row.trigger_subcategory_id,
         trigger_min_value=row.trigger_min_value,
         trigger_min_quantity=row.trigger_min_quantity,
         allowed_weekdays=row.allowed_weekdays,
@@ -124,6 +130,9 @@ class UpsellEngine:
 
         cart_product_ids = {item.product_id for item in cart_items}
         cart_categories = {item.category for item in cart_items if item.category}
+        cart_category_ids = {item.category_id for item in cart_items if item.category_id}
+        cart_subcategories = {item.subcategory for item in cart_items if item.subcategory}
+        cart_subcategory_ids = {item.subcategory_id for item in cart_items if item.subcategory_id}
         cart_quantity = sum(item.quantity for item in cart_items)
 
         rows: Sequence[Upsell] = (
@@ -168,7 +177,16 @@ class UpsellEngine:
                     triggered = row.trigger_product_id in cart_product_ids
 
             elif t == "category":
-                triggered = (row.trigger_category is not None) and (row.trigger_category in cart_categories)
+                triggered = (
+                    (row.trigger_category_id is not None and row.trigger_category_id in cart_category_ids)
+                    or (row.trigger_category is not None and row.trigger_category in cart_categories)
+                )
+
+            elif t == "subcategory":
+                triggered = (
+                    (row.trigger_subcategory_id is not None and row.trigger_subcategory_id in cart_subcategory_ids)
+                    or (row.trigger_subcategory is not None and row.trigger_subcategory in cart_subcategories)
+                )
 
             if not triggered:
                 print(f"[UpsellEngine] upsell {row.id[:8]} NOT triggered: type={row.trigger_type} trigger_pid={row.trigger_product_id}")

@@ -22,6 +22,11 @@ class Upsell(Base):
     trigger_type = Column(String(50), nullable=False, default="min_value")
     trigger_product_id = Column(String, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
     trigger_category = Column(String(100), nullable=True)
+    # Canonical catalog references for category/subcategory triggers. The text
+    # fields remain for backwards compatibility with legacy upsells.
+    trigger_category_id = Column(String, ForeignKey("product_categories.id", ondelete="SET NULL"), nullable=True, index=True)
+    trigger_subcategory = Column(String(100), nullable=True)
+    trigger_subcategory_id = Column(String, ForeignKey("product_categories.id", ondelete="SET NULL"), nullable=True, index=True)
     trigger_min_value = Column(Float, default=0.0, nullable=True)
     trigger_min_quantity = Column(Integer, default=1, nullable=True)
     # "0123456" → all days; subset e.g. "0145" → Mon/Tue/Fri/Sat

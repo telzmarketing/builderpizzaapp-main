@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-UpsellTriggerType = Literal["product_in_cart", "category", "min_value", "min_quantity"]
+UpsellTriggerType = Literal["product_in_cart", "category", "subcategory", "min_value", "min_quantity"]
 UpsellEventType = Literal["viewed", "accepted", "rejected"]
 
 
@@ -28,6 +28,9 @@ class UpsellProductOut(BaseModel):
     icon: str
     category: str | None = None
     product_type: str | None = None
+    subcategory: str | None = None
+    category_id: str | None = None
+    subcategory_id: str | None = None
     active: bool
     sizes: list[UpsellProductSizeOut] = []
 
@@ -46,6 +49,9 @@ class UpsellIn(BaseModel):
     trigger_type: UpsellTriggerType = "min_value"
     trigger_product_id: str | None = None
     trigger_category: str | None = None
+    trigger_category_id: str | None = None
+    trigger_subcategory: str | None = None
+    trigger_subcategory_id: str | None = None
     trigger_min_value: float | None = 0.0
     trigger_min_quantity: int | None = 1
     allowed_weekdays: str | None = "0123456"
@@ -67,6 +73,9 @@ class UpsellOut(BaseModel):
     trigger_type: str
     trigger_product_id: str | None
     trigger_category: str | None
+    trigger_category_id: str | None
+    trigger_subcategory: str | None
+    trigger_subcategory_id: str | None
     trigger_min_value: float | None
     trigger_min_quantity: int | None
     allowed_weekdays: str | None
@@ -101,6 +110,9 @@ class UpsellMetricOut(BaseModel):
 class UpsellCartItemIn(BaseModel):
     product_id: str
     category: str | None = None
+    category_id: str | None = None
+    subcategory: str | None = None
+    subcategory_id: str | None = None
     quantity: int = 1
 
 

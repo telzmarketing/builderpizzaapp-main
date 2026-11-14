@@ -9334,7 +9334,7 @@ export const storeNotificationsApi = {
 
 // ─── Upsell ───────────────────────────────────────────────────────────────────
 
-export type UpsellTriggerType = "product_in_cart" | "category" | "min_value" | "min_quantity";
+export type UpsellTriggerType = "product_in_cart" | "category" | "subcategory" | "min_value" | "min_quantity";
 export type UpsellEventType = "viewed" | "accepted" | "rejected";
 
 export interface ApiUpsellProductSize {
@@ -9353,6 +9353,9 @@ export interface ApiUpsellProduct {
   price: number;
   icon: string;
   category: string | null;
+  subcategory: string | null;
+  category_id: string | null;
+  subcategory_id: string | null;
   product_type: string | null;
   active: boolean;
   sizes: ApiUpsellProductSize[];
@@ -9379,6 +9382,9 @@ export interface ApiUpsell {
   trigger_type: UpsellTriggerType;
   trigger_product_id: string | null;
   trigger_category: string | null;
+  trigger_category_id: string | null;
+  trigger_subcategory: string | null;
+  trigger_subcategory_id: string | null;
   trigger_min_value: number | null;
   trigger_min_quantity: number | null;
   allowed_weekdays: string | null;
@@ -9404,6 +9410,9 @@ export interface ApiUpsellInput {
   trigger_type: UpsellTriggerType;
   trigger_product_id?: string | null;
   trigger_category?: string | null;
+  trigger_category_id?: string | null;
+  trigger_subcategory?: string | null;
+  trigger_subcategory_id?: string | null;
   trigger_min_value?: number | null;
   trigger_min_quantity?: number | null;
   allowed_weekdays?: string | null;
@@ -9417,6 +9426,9 @@ export interface ApiUpsellInput {
 export interface ApiUpsellCartItem {
   product_id: string;
   category?: string | null;
+  category_id?: string | null;
+  subcategory?: string | null;
+  subcategory_id?: string | null;
   quantity: number;
 }
 

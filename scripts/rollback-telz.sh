@@ -273,7 +273,9 @@ schema_pair_is_compatible() {
     "20261113_marketplace_settlements:20261114_product_landing_pages" | \
     "20261114_product_landing_pages:20261113_marketplace_settlements" | \
     "20261113_customer_reviews:20261114_product_landing_pages" | \
-    "20261114_product_landing_pages:20261113_customer_reviews")
+    "20261114_product_landing_pages:20261113_customer_reviews" | \
+    "20261114_product_landing_pages:20261114_upsell_subcategory_triggers" | \
+    "20261114_upsell_subcategory_triggers:20261114_product_landing_pages")
       return 0
       ;;
     *)

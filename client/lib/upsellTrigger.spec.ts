@@ -28,9 +28,21 @@ describe("upsell trigger selection", () => {
     });
   });
 
+  it("serializes a canonical subcategory trigger", () => {
+    expect(applyUpsellTrigger(base, "subcategory", "subcategory-id", "Bebidas Zero")).toMatchObject({
+      trigger_type: "subcategory",
+      trigger_product_id: null,
+      trigger_category: null,
+      trigger_category_id: null,
+      trigger_subcategory: "Bebidas Zero",
+      trigger_subcategory_id: "subcategory-id",
+    });
+  });
+
   it("detects the mode when editing persisted rules", () => {
     expect(getUpsellTriggerMode({ trigger_type: "category", trigger_product_id: null, trigger_category: "Pizzas" })).toBe("category");
     expect(getUpsellTriggerMode({ trigger_type: "product_in_cart", trigger_product_id: "product", trigger_category: null })).toBe("product");
     expect(getUpsellTriggerMode({ trigger_type: "min_value", trigger_product_id: null, trigger_category: null })).toBe("any");
+    expect(getUpsellTriggerMode({ trigger_type: "subcategory", trigger_product_id: null, trigger_category: null, trigger_subcategory: "Bebidas Zero", trigger_subcategory_id: "subcategory-id" })).toBe("subcategory");
   });
 });

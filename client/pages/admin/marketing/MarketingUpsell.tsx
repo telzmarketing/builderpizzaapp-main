@@ -17,11 +17,13 @@ import {
   X,
 } from "lucide-react";
 import {
+  categoriesApi,
   productsApi,
   resolveAssetUrl,
   isAssetUrl,
   upsellsApi,
   type ApiProduct,
+  type ApiProductCategory,
   type ApiUpsell,
   type ApiUpsellInput,
 } from "@/lib/api";
@@ -46,6 +48,9 @@ function emptyForm(): ApiUpsellInput {
     trigger_type: "product_in_cart",
     trigger_product_id: null,
     trigger_category: null,
+    trigger_category_id: null,
+    trigger_subcategory: null,
+    trigger_subcategory_id: null,
     trigger_min_value: 0,
     trigger_min_quantity: 1,
     allowed_weekdays: "0123456",
@@ -234,6 +239,7 @@ export default function MarketingUpsell() {
   const [upsells, setUpsells] = useState<ApiUpsell[]>([]);
   const [metrics, setMetrics] = useState<Awaited<ReturnType<typeof upsellsApi.metrics>> | null>(null);
   const [products, setProducts] = useState<ApiProduct[]>([]);
+  const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -246,20 +252,48 @@ export default function MarketingUpsell() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const activeProducts = useMemo(() => products.filter((p) => p.active), [products]);
-  const triggerCategories = useMemo(
-    () => [...new Set(activeProducts.map((p) => p.category?.trim()).filter((category): category is string => Boolean(category)))].sort((a, b) => a.localeCompare(b, "pt-BR")),
-    [activeProducts],
+  const activeCatalogCategories = useMemo(
+    () => catalogCategories.filter((category) => category.active),
+    [catalogCategories],
+  );
+  const triggerCategoryOptions = useMemo(() => {
+    const canonical = activeCatalogCategories
+      .filter((category) => !category.parent_id)
+      .map((category) => ({ id: category.id, name: category.name }));
+    const knownNames = new Set(canonical.map((category) => category.name.trim().toLowerCase()));
+    const legacy = [...new Set(activeProducts.map((p) => p.category?.trim()).filter((category): category is string => Boolean(category)))]
+      .filter((category) => !knownNames.has(category.toLowerCase()))
+      .map((name) => ({ id: null, name }));
+    return [...canonical, ...legacy].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  }, [activeCatalogCategories, activeProducts]);
+  const triggerSubcategoryOptions = useMemo(
+    () => activeCatalogCategories
+      .filter((category) => Boolean(category.parent_id))
+      .map((category) => ({
+        id: category.id,
+        name: category.name,
+        parentName: activeCatalogCategories.find((parent) => parent.id === category.parent_id)?.name ?? "Categoria",
+      }))
+      .sort((a, b) => `${a.parentName} ${a.name}`.localeCompare(`${b.parentName} ${b.name}`, "pt-BR")),
+    [activeCatalogCategories],
   );
 
   const selectedTriggerProduct = activeProducts.find((p) => p.id === form.trigger_product_id) ?? null;
   const selectedUpsellProduct = activeProducts.find((p) => p.id === form.product_id) ?? null;
+  const selectedCategoryValue = form.trigger_category_id ?? (form.trigger_category ? `legacy:${form.trigger_category}` : "");
+  const selectedSubcategoryValue = form.trigger_subcategory_id ?? (form.trigger_subcategory ? `legacy:${form.trigger_subcategory}` : "");
 
   async function loadAll() {
     setLoading(true);
     try {
-      const [u, p] = await Promise.all([upsellsApi.list(), productsApi.list(false)]);
+      const [u, p, c] = await Promise.all([
+        upsellsApi.list(),
+        productsApi.list(false),
+        categoriesApi.list(false).catch(() => []),
+      ]);
       setUpsells(u);
       setProducts(p);
+      setCatalogCategories(c);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro ao carregar.");
     } finally {
@@ -298,6 +332,9 @@ export default function MarketingUpsell() {
       trigger_type: u.trigger_type,
       trigger_product_id: u.trigger_product_id,
       trigger_category: u.trigger_category,
+      trigger_category_id: u.trigger_category_id,
+      trigger_subcategory: u.trigger_subcategory,
+      trigger_subcategory_id: u.trigger_subcategory_id,
       trigger_min_value: u.trigger_min_value,
       trigger_min_quantity: u.trigger_min_quantity,
       allowed_weekdays: u.allowed_weekdays,
@@ -327,8 +364,12 @@ export default function MarketingUpsell() {
       setError("Selecione o produto que deve estar no carrinho.");
       return;
     }
-    if (triggerMode === "category" && !form.trigger_category) {
+    if (triggerMode === "category" && !form.trigger_category_id && !form.trigger_category) {
       setError("Selecione a categoria que deve estar no carrinho.");
+      return;
+    }
+    if (triggerMode === "subcategory" && !form.trigger_subcategory_id && !form.trigger_subcategory) {
+      setError("Selecione a subcategoria que deve estar no carrinho.");
       return;
     }
     // Auto-generate internal_name if empty
@@ -339,7 +380,18 @@ export default function MarketingUpsell() {
     setError("");
     try {
       const payload: ApiUpsellInput = {
-        ...applyUpsellTrigger(form, triggerMode, triggerMode === "category" ? form.trigger_category : form.trigger_product_id),
+        ...applyUpsellTrigger(
+          form,
+          triggerMode,
+          triggerMode === "product"
+            ? form.trigger_product_id ?? null
+            : triggerMode === "category"
+              ? form.trigger_category_id ?? null
+              : triggerMode === "subcategory"
+                ? form.trigger_subcategory_id ?? null
+                : null,
+          triggerMode === "category" ? form.trigger_category : triggerMode === "subcategory" ? form.trigger_subcategory : null,
+        ),
         internal_name: internalName,
         allowed_weekdays: buildWeekdaysString(selectedWeekdays),
       };
@@ -482,7 +534,12 @@ export default function MarketingUpsell() {
                           {u.trigger_type === "category" ? (
                             <div className="min-w-0">
                               <p className="text-stone text-[10px] uppercase tracking-wide">Categoria principal</p>
-                              <p className="text-cream text-xs font-medium truncate">{u.trigger_category}</p>
+                              <p className="text-cream text-xs font-medium truncate">{u.trigger_category ?? "—"}</p>
+                            </div>
+                          ) : u.trigger_type === "subcategory" ? (
+                            <div className="min-w-0">
+                              <p className="text-stone text-[10px] uppercase tracking-wide">Subcategoria</p>
+                              <p className="text-cream text-xs font-medium truncate">{u.trigger_subcategory ?? "—"}</p>
                             </div>
                           ) : triggerProd ? (
                             <div className="flex items-center gap-2">
@@ -648,9 +705,9 @@ export default function MarketingUpsell() {
               {/* 1. Produto principal (gatilho) */}
               <div>
                 <label className={LB}>Exibir o upsell quando</label>
-                <div className="grid grid-cols-3 gap-2 mb-3">
-                  {([["product", "Produto no carrinho"], ["category", "Categoria no carrinho"], ["any", "Qualquer carrinho"]] as const).map(([mode, label]) => (
-                    <button key={mode} type="button" onClick={() => { setTriggerMode(mode); setForm((f) => ({ ...f, trigger_product_id: null, trigger_category: null })); }} className={`rounded-xl border px-2 py-2 text-xs font-semibold ${triggerMode === mode ? "border-gold bg-gold/15 text-gold" : "border-surface-03 bg-surface-03 text-stone"}`}>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                  {([["product", "Produto no carrinho"], ["category", "Categoria pai"], ["subcategory", "Subcategoria"], ["any", "Qualquer carrinho"]] as const).map(([mode, label]) => (
+                    <button key={mode} type="button" onClick={() => { setTriggerMode(mode); setForm((f) => ({ ...f, trigger_product_id: null, trigger_category: null, trigger_category_id: null, trigger_subcategory: null, trigger_subcategory_id: null })); }} className={`rounded-xl border px-2 py-2 text-xs font-semibold ${triggerMode === mode ? "border-gold bg-gold/15 text-gold" : "border-surface-03 bg-surface-03 text-stone"}`}>
                       {label}
                     </button>
                   ))}
@@ -664,12 +721,30 @@ export default function MarketingUpsell() {
                 />}
                 {triggerMode === "category" && (
                   <>
-                    <label className={LB}>Categoria do carrinho</label>
-                    <select className={IC} value={form.trigger_category ?? ""} onChange={(e) => setForm((f) => ({ ...f, trigger_category: e.target.value || null }))}>
+                    <label className={LB}>Categoria pai do carrinho</label>
+                    <select className={IC} value={selectedCategoryValue} onChange={(e) => {
+                      const value = e.target.value;
+                      const option = triggerCategoryOptions.find((category) => (category.id ? category.id : `legacy:${category.name}`) === value);
+                      setForm((f) => ({ ...f, trigger_category_id: option?.id ?? null, trigger_category: option?.name ?? null }));
+                    }}>
                       <option value="">Selecione uma categoria...</option>
-                      {triggerCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+                      {triggerCategoryOptions.map((category) => <option key={category.id ?? `legacy:${category.name}`} value={category.id ?? `legacy:${category.name}`}>{category.name}</option>)}
                     </select>
-                    {!form.trigger_category && <p className="mt-1.5 text-xs text-amber-400">Selecione uma categoria para ativar este gatilho.</p>}
+                    {!form.trigger_category_id && !form.trigger_category && <p className="mt-1.5 text-xs text-amber-400">Selecione uma categoria para ativar este gatilho.</p>}
+                  </>
+                )}
+                {triggerMode === "subcategory" && (
+                  <>
+                    <label className={LB}>Subcategoria do carrinho</label>
+                    <select className={IC} value={selectedSubcategoryValue} onChange={(e) => {
+                      const value = e.target.value;
+                      const option = triggerSubcategoryOptions.find((subcategory) => (subcategory.id ? subcategory.id : `legacy:${subcategory.name}`) === value);
+                      setForm((f) => ({ ...f, trigger_subcategory_id: option?.id ?? null, trigger_subcategory: option?.name ?? null }));
+                    }}>
+                      <option value="">Selecione uma subcategoria...</option>
+                      {triggerSubcategoryOptions.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.parentName} / {subcategory.name}</option>)}
+                    </select>
+                    {!form.trigger_subcategory_id && !form.trigger_subcategory && <p className="mt-1.5 text-xs text-amber-400">Selecione uma subcategoria para ativar este gatilho.</p>}
                   </>
                 )}
                 {triggerMode === "any" && <p className="mt-1.5 text-xs text-green-400">✓ O upsell aparece para qualquer carrinho.</p>}

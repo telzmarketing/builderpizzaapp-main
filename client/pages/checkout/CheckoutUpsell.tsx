@@ -143,6 +143,9 @@ export default function CheckoutUpsell({ isLocked }: Props) {
         cart_items: cart.map((item) => ({
           product_id: item.productId,
           category: item.productData.category ?? undefined,
+          category_id: item.productData.category_id ?? undefined,
+          subcategory: item.productData.subcategory ?? undefined,
+          subcategory_id: item.productData.subcategory_id ?? undefined,
           quantity: item.quantity,
         })),
         cart_total: cartSubtotal,

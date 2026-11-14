@@ -1212,6 +1212,11 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_upsells_active ON upsells(active)",
         "CREATE INDEX IF NOT EXISTS ix_upsells_priority ON upsells(priority DESC)",
         "CREATE INDEX IF NOT EXISTS ix_upsells_product_id ON upsells(product_id)",
+        "ALTER TABLE upsells ADD COLUMN IF NOT EXISTS trigger_category_id VARCHAR REFERENCES product_categories(id) ON DELETE SET NULL",
+        "ALTER TABLE upsells ADD COLUMN IF NOT EXISTS trigger_subcategory VARCHAR(100)",
+        "ALTER TABLE upsells ADD COLUMN IF NOT EXISTS trigger_subcategory_id VARCHAR REFERENCES product_categories(id) ON DELETE SET NULL",
+        "CREATE INDEX IF NOT EXISTS ix_upsells_trigger_category_id ON upsells(trigger_category_id)",
+        "CREATE INDEX IF NOT EXISTS ix_upsells_trigger_subcategory_id ON upsells(trigger_subcategory_id)",
         """CREATE TABLE IF NOT EXISTS upsell_metrics (
             id VARCHAR PRIMARY KEY,
             upsell_id VARCHAR NOT NULL UNIQUE REFERENCES upsells(id) ON DELETE CASCADE,

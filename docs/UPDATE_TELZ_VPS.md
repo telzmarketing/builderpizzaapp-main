@@ -8,7 +8,13 @@ uma reconstrucao planejada; ele nao deve ser reutilizado como updater.
 
 ## Head atual e Gestor IA
 
-O head atual da fonte e `20261114_product_landing_pages`, filho de
+O head atual da fonte e `20261114_upsell_subcategory_triggers`, filho de
+`20261114_product_landing_pages`. A migration de upsell e aditiva: adiciona
+gatilhos canonicos por categoria/subcategoria e preserva os campos textuais
+legados. O par direcional entre `20261114_product_landing_pages` e
+`20261114_upsell_subcategory_triggers` foi revisado para rollback de codigo
+sem downgrade do banco nem cutover forward-only.
+O head anterior `20261114_product_landing_pages` permanece filho de
 `20261106_product_global_catalog_backfill`. A cadeia do Gestor IA adiciona fundacao
 administrativa, configuracao, canal Meta, outbox, processamento multimodal e
 automacoes proativas tenant-scoped. Nenhum segredo e persistido no banco.
@@ -244,7 +250,7 @@ obrigatoria e SHA completo aprovado no CI:
     esac
   done
   test "$(systemctl show telz-domain-ssl.service -p ActiveState --value)" = inactive
-  TELZ_ALEMBIC_TARGET=20261114_product_landing_pages \
+  TELZ_ALEMBIC_TARGET=20261114_upsell_subcategory_triggers \
     /usr/local/sbin/telz-deploy-from-origin "$TARGET" /opt/telz
 )
 ```
@@ -370,7 +376,7 @@ imutavel e executa health checks.
 O target canonico desta entrega e:
 
 ```text
-20261114_product_landing_pages
+20261114_upsell_subcategory_triggers
 ```
 
 O deploy fica bloqueado se o commit publicado nao possuir exatamente esse unico
@@ -430,7 +436,7 @@ movimentacao manual para contornar o gate.
 
 Confirme no commit alvo:
 
-- unico head Alembic `20261114_product_landing_pages`;
+- unico head Alembic `20261114_upsell_subcategory_triggers`;
 - workflow e updater usando o mesmo target;
 - CI verde para o mesmo SHA, incluindo o upgrade Alembic em PostgreSQL
   descartavel; CI verde nao substitui o backup nem a migration na VPS;
@@ -466,7 +472,7 @@ deploy, todos estes inputs promovidos e root-owned:
 - archive de fonte alvo e seu `TELZ_SOURCE_ARCHIVE_SHA256`;
 - archive de fonte anterior e seu `TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256`;
 - archive offline de dependencias e seu `TELZ_DEPENDENCY_ARCHIVE_SHA256`;
-- `TELZ_ALEMBIC_TARGET=20261114_product_landing_pages`;
+- `TELZ_ALEMBIC_TARGET=20261114_upsell_subcategory_triggers`;
 - `TELZ_PUBLIC_HEALTH_URL` quando HTTPS publico e obrigatorio.
 
 Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
@@ -507,7 +513,7 @@ sudo /usr/local/sbin/telz-health-check /opt/telz
 ```
 
 Confirme que o link `current` termina em `/releases/<SHA-ALVO>/app`, o manifest
-registra o mesmo commit e `20261114_product_landing_pages`, e o banco possui uma unica
+registra o mesmo commit e `20261114_upsell_subcategory_triggers`, e o banco possui uma unica
 revision igual ao target.
 
 Tambem valide HTTPS publico, login, loja, pedido, pagamentos, cozinha,

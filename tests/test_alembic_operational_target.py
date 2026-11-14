@@ -9,10 +9,13 @@ EXPECTED_TARGET_FILES = {
     "scripts/deploy-telz-from-origin.sh",
     ".github/workflows/deploy.yml",
     ".github/workflows/prepare-manual-deploy.yml",
+    "installer/config/defaults.env",
+    "docs/INSTALL_TELZ_VPS.md",
+    "docs/TELZ_VPS_INSTALL_PHASED_METHOD.md",
     "docs/UPDATE_TELZ_VPS.md",
 }
 REVISION_PATTERN = re.compile(r"202\d{5}_[a-z0-9_]+")
-EXPECTED_OPERATIONAL_HEAD = "20261114_product_landing_pages"
+EXPECTED_OPERATIONAL_HEAD = "20261114_upsell_subcategory_triggers"
 
 
 def _migration_heads() -> set[str]:
@@ -115,6 +118,8 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20261114_product_landing_pages:20261113_marketplace_settlements",
         "20261113_customer_reviews:20261114_product_landing_pages",
         "20261114_product_landing_pages:20261113_customer_reviews",
+        "20261114_product_landing_pages:20261114_upsell_subcategory_triggers",
+        "20261114_upsell_subcategory_triggers:20261114_product_landing_pages",
     }
 
     sources = {
@@ -194,6 +199,8 @@ def test_schema_predicates_allow_reviewed_recovery_and_reject_unknown_pairs():
             ("20261114_product_landing_pages", "20261113_marketplace_settlements", 0),
             ("20261113_customer_reviews", "20261114_product_landing_pages", 0),
             ("20261114_product_landing_pages", "20261113_customer_reviews", 0),
+            ("20261114_product_landing_pages", "20261114_upsell_subcategory_triggers", 0),
+            ("20261114_upsell_subcategory_triggers", "20261114_product_landing_pages", 0),
             ("unknown", "20261017_runtime_schema", 1),
         )
         for code, database, expected in cases:

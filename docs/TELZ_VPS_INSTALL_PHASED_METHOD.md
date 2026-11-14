@@ -76,7 +76,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Use inicialmente:
 
 ```env
-ALEMBIC_TARGET=20261113_marketplace_settlements
+ALEMBIC_TARGET=20261114_upsell_subcategory_triggers
 INSTALL_SSL=false
 ```
 
