@@ -5,6 +5,7 @@ import {
   PROMO_LABEL,
   getHomeCatalogCategories,
   productMatchesHomeCategory,
+  productMatchesConfiguredHomeCategory,
   getHomeCatalogParentName,
   getHomeCatalogSubcategories,
   productMatchesHomeSubcategory,
@@ -82,5 +83,17 @@ describe("home catalog navigation", () => {
     expect(getHomeCatalogParentName(products[0], categories)).toBe("Pizzas");
     expect(getHomeCatalogSubcategories(products, categories, "Pizzas")).toEqual(["Clássicas", "Especiais"]);
     expect(productMatchesHomeSubcategory(products[0], "Clássicas")).toBe(true);
+  });
+  it("matches configured categories by ids and separates parent and subcategory", () => {
+    const categories = [
+      { id: "pizza", parent_id: null, name: "Pizzas", active: true, sort_order: 0 },
+      { id: "classic", parent_id: "pizza", name: "ClÃ¡ssicas", active: true, sort_order: 0 },
+      { id: "special", parent_id: "pizza", name: "Especiais", active: true, sort_order: 1 },
+    ] as ApiProductCategory[];
+    const classic = { active: true, category_id: "pizza", subcategory_id: "classic", category: null, subcategory: null };
+    const special = { active: true, category_id: "pizza", subcategory_id: "special", category: null, subcategory: null };
+    expect(productMatchesConfiguredHomeCategory(classic, "ClÃ¡ssicas", categories)).toBe(true);
+    expect(productMatchesConfiguredHomeCategory(special, "ClÃ¡ssicas", categories)).toBe(false);
+    expect(productMatchesConfiguredHomeCategory(special, "Pizzas", categories)).toBe(true);
   });
 });

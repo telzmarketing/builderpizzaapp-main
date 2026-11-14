@@ -77,6 +77,41 @@ export function productMatchesHomeCategory(
   return normalizeHomeCategory(getHomeCatalogParentName(product, categories)) === normalizeHomeCategory(category);
 }
 
+export function productMatchesConfiguredHomeCategory(
+  product: HomeCatalogProduct,
+  selectedCategory: string,
+  categories: ApiProductCategory[] = [],
+) {
+  const selectedKey = normalizeHomeCategory(selectedCategory);
+  if (selectedKey === normalizeHomeCategory(PROMO_LABEL)) return !!product.promotion_applied;
+
+  const selected = categories.find((item) => (
+    item.id === selectedCategory || normalizeHomeCategory(item.name) === selectedKey
+  ));
+  const productCategory = product.category_id
+    ? categories.find((item) => item.id === product.category_id)
+    : undefined;
+  const productSubcategory = product.subcategory_id
+    ? categories.find((item) => item.id === product.subcategory_id)
+    : undefined;
+
+  if (selected?.parent_id) {
+    return productSubcategory?.id === selected.id
+      || normalizeHomeCategory(productSubcategory?.name) === selectedKey
+      || (!productSubcategory && normalizeHomeCategory(product.subcategory) === selectedKey);
+  }
+
+  if (selected) {
+    return productCategory?.id === selected.id
+      || productSubcategory?.parent_id === selected.id
+      || normalizeHomeCategory(getHomeCatalogParentName(product, categories)) === selectedKey;
+  }
+
+  return normalizeHomeCategory(getHomeCatalogParentName(product, categories)) === selectedKey
+    || normalizeHomeCategory(product.category) === selectedKey
+    || normalizeHomeCategory(product.subcategory) === selectedKey;
+}
+
 export function getHomeCatalogCategories(
   products: HomeCatalogProduct[],
   categories: ApiProductCategory[],

@@ -4,7 +4,7 @@ import { Menu, Search, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, T
 
 import { useApp } from "@/context/AppContext";
 import { categoriesApi, homeCatalogApi, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl, type ApiProductCategory } from "@/lib/api";
-import { ALL_PRODUCTS_CATEGORY, PROMO_LABEL, getHomeCatalogCategories, normalizeHomeCategory, productMatchesHomeCategory, type HomeCatalogCategory } from "@/lib/homeCatalog";
+import { ALL_PRODUCTS_CATEGORY, getHomeCatalogCategories, productMatchesConfiguredHomeCategory, productMatchesHomeCategory, type HomeCatalogCategory } from "@/lib/homeCatalog";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import StoreStatusBanner from "@/components/StoreStatusBanner";
@@ -88,15 +88,10 @@ export default function Home() {
 
   // Apply home catalog config filter on top of all active products.
   const catalogProducts = useMemo(() => {
-    const selectedCategoryKeys = homeConfig.selectedCategories.map(normalizeHomeCategory);
     if (homeConfig.mode === "categories" && homeConfig.selectedCategories.length > 0) {
-      return products.filter(p => {
-        if (selectedCategoryKeys.includes(normalizeHomeCategory(PROMO_LABEL)) && p.promotion_applied) return true;
-        return [
-          normalizeHomeCategory(p.category),
-          normalizeHomeCategory(p.subcategory),
-        ].some((category) => selectedCategoryKeys.includes(category));
-      });
+      return products.filter((product) => homeConfig.selectedCategories.some((selectedCategory) => (
+        productMatchesConfiguredHomeCategory(product, selectedCategory, catalogCategories)
+      )));
     }
     if (homeConfig.mode === "products" && homeConfig.selectedProductIds.length > 0) {
       return products.filter(p => homeConfig.selectedProductIds.includes(p.id));
