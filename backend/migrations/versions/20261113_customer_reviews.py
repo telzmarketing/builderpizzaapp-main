@@ -5,7 +5,7 @@ import sqlalchemy as sa
 
 
 revision = "20261113_customer_reviews"
-down_revision = "20261113_payment_secret_encryption"
+down_revision = "20261113_campaign_highlight_target"
 branch_labels = None
 depends_on = None
 
