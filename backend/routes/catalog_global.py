@@ -72,19 +72,13 @@ def _delete(db, model, resource_id, context, *, physical=False):
     if resource is None:
         raise HTTPException(status_code=404, detail="Cadastro nao encontrado.")
     if physical:
-        # Product options keep a RESTRICT FK to the global border so historical
-        # rows cannot be removed accidentally. Inactive associations are only
-        # historical links, however, and must not prevent deleting the global
-        # catalog record or recreating the same name later.
+        # Product options keep a RESTRICT FK to the global border. A physical
+        # delete explicitly removes the border configuration and every product
+        # association, so neither active nor inactive links may block it.
         if model is PizzaGlobalCrust:
             links = catalog_query(db, ProductCrustType, context).filter(
                 ProductCrustType.global_crust_id == resource.id,
             ).all()
-            if any(link.active is True for link in links):
-                raise HTTPException(
-                    status_code=409,
-                    detail="Nao e possivel excluir esta borda porque ela esta associada a um ou mais produtos ativos.",
-                )
             link_ids = [link.id for link in links]
             if link_ids:
                 # Orders/table sessions retain the displayed border name as a

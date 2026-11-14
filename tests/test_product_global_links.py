@@ -14,8 +14,6 @@ from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
-from fastapi import HTTPException
-
 from backend.models.product import ProductCrustType, ProductSize
 from backend.models.catalog_global import PizzaGlobalCrust
 from backend.schemas.catalog_global import GlobalCatalogCreate, ProductOptionAssociationCreate, ProductSizeAssociationCreate
@@ -108,7 +106,7 @@ def test_global_crust_create_delete_is_physical_and_recreate_is_new_record():
     engine.dispose()
 
 
-def test_global_crust_delete_detaches_inactive_product_links_but_blocks_active_links():
+def test_global_crust_delete_removes_all_product_links_and_allows_recreate():
     engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
     PizzaGlobalCrust.__table__.create(engine)
     ProductCrustType.__table__.create(engine)
@@ -142,8 +140,14 @@ def test_global_crust_delete_detaches_inactive_product_links_but_blocks_active_l
         ))
         db.commit()
 
-        with pytest.raises(HTTPException) as exc:
-            _delete(db, PizzaGlobalCrust, recreated.id, context, physical=True)
-        assert getattr(exc.value, "status_code", None) == 409
-        assert db.get(PizzaGlobalCrust, recreated.id) is not None
+        _delete(db, PizzaGlobalCrust, recreated.id, context, physical=True)
+        assert db.get(PizzaGlobalCrust, recreated.id) is None
+        assert db.get(ProductCrustType, "active-link") is None
+
+        recreated_again = _create(
+            db, PizzaGlobalCrust,
+            GlobalCatalogCreate(name="Cheddar", price_addition=18),
+            context, "global-crust",
+        )
+        assert recreated_again.id not in {border.id, recreated.id}
     engine.dispose()

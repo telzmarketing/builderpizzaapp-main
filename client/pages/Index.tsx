@@ -97,7 +97,7 @@ export default function Home() {
       return products.filter(p => homeConfig.selectedProductIds.includes(p.id));
     }
     return products;
-  }, [products, homeConfig]);
+  }, [products, homeConfig, catalogCategories]);
 
   const effectiveCategories = useMemo(
     () => getHomeCatalogCategories(catalogProducts, catalogCategories),
@@ -127,7 +127,7 @@ export default function Home() {
       category,
       count: catalogProducts.filter((p) => p.active && productMatchesHomeCategory(p, category, catalogCategories)).length,
     }))
-  ), [catalogProducts, effectiveCategories]);
+  ), [catalogProducts, effectiveCategories, catalogCategories]);
 
   useEffect(() => {
     if (!productsLoaded || catalogProducts.length === 0 || categoryProducts.length > 0) return;
