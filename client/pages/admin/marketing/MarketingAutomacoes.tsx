@@ -14,6 +14,7 @@ import {
   type ApiAutomationTemplate,
   type ApiMarketingAutomation,
 } from "@/lib/api";
+import { chatbotAdminApi, type ChatbotAutomation } from "@/lib/chatbotApi";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 type Tab = "eventos" | "automacoes" | "templates" | "monitoramento";
@@ -21,6 +22,7 @@ type Automation = ApiMarketingAutomation;
 type AutomationTemplate = ApiAutomationTemplate;
 type AutomationLog = ApiAutomationLog;
 type EventRow = ApiAutomationEvent;
+const CHATBOT_TRIGGER_LABELS: Record<string, string> = { tempo_na_pagina: "Tempo na página", pagina_especifica: "Página específica", carrinho_abandonado: "Carrinho abandonado", produto_visualizado: "Produto visualizado" };
 type QueueBusy = "enqueue" | "process" | "worker";
 type QueueResult = { label: string; data: Record<string, unknown> };
 
@@ -151,16 +153,25 @@ const emptyTplForm = (): Partial<AutomationTemplate> => ({
   name: "", channel: "whatsapp", subject: "", body: "", variables: "", category: "marketing",
 });
 
+function ChatbotAutomationEditor({ automation, onClose, onSave }: { automation: Partial<ChatbotAutomation> | null; onClose: () => void; onSave: (data: Partial<ChatbotAutomation>) => Promise<void> }) {
+  const [form, setForm] = useState<Partial<ChatbotAutomation>>({ nome: "", gatilho: "tempo_na_pagina", condicao: "", mensagem: "", ativo: true, prioridade: 0, ...automation });
+  const [savingChatbot, setSavingChatbot] = useState(false);
+  const submit = async (event: React.FormEvent) => { event.preventDefault(); if (!form.nome?.trim() || !form.mensagem?.trim()) return; setSavingChatbot(true); try { await onSave(form); } finally { setSavingChatbot(false); } };
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><form onSubmit={(event) => void submit(event)} className="w-full max-w-lg space-y-4 rounded-2xl border border-surface-03 bg-surface-02 p-5"><div className="flex items-center justify-between"><h2 className="font-semibold text-cream">{automation?.id ? "Editar automação do chatbot" : "Nova automação do chatbot"}</h2><button type="button" onClick={onClose} className="text-stone"><X size={18} /></button></div><input required value={form.nome ?? ""} onChange={(event) => setForm((value) => ({ ...value, nome: event.target.value }))} placeholder="Nome" className={IC} /><select value={form.gatilho ?? "tempo_na_pagina"} onChange={(event) => setForm((value) => ({ ...value, gatilho: event.target.value as ChatbotAutomation["gatilho"] }))} className={IC}>{Object.entries(CHATBOT_TRIGGER_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><input value={form.condicao ?? ""} onChange={(event) => setForm((value) => ({ ...value, condicao: event.target.value }))} placeholder="Condição" className={IC} /><textarea required rows={4} value={form.mensagem ?? ""} onChange={(event) => setForm((value) => ({ ...value, mensagem: event.target.value }))} placeholder="Mensagem do bot" className={`${IC} resize-none`} /><div className="flex items-center justify-between"><label className="text-sm text-stone">Prioridade<input type="number" min={0} max={100} value={form.prioridade ?? 0} onChange={(event) => setForm((value) => ({ ...value, prioridade: Number(event.target.value) }))} className={`${IC} mt-1 w-28`} /></label><label className="flex items-center gap-2 text-sm text-stone"><input type="checkbox" checked={form.ativo ?? true} onChange={(event) => setForm((value) => ({ ...value, ativo: event.target.checked }))} /> Ativa</label></div><div className="flex gap-3"><button type="button" onClick={onClose} className="flex-1 rounded-xl border border-surface-03 py-2 text-sm text-stone">Cancelar</button><button type="submit" disabled={savingChatbot} className="flex-1 rounded-xl bg-gold py-2 text-sm font-semibold text-black">{savingChatbot ? "Salvando..." : "Salvar"}</button></div></form></div>;
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 export default function MarketingAutomacoes() {
   const [tab, setTab] = useState<Tab>("automacoes");
 
   // ── Automações ──
   const [automations, setAutomations] = useState<Automation[]>([]);
+  const [chatbotAutomations, setChatbotAutomations] = useState<ChatbotAutomation[]>([]);
   const [autoLoading, setAutoLoading] = useState(false);
   const [autoError, setAutoError] = useState("");
   const [showAutoModal, setShowAutoModal] = useState(false);
   const [editingAutoId, setEditingAutoId] = useState<string | null>(null);
+  const [editingChatbotAutomation, setEditingChatbotAutomation] = useState<Partial<ChatbotAutomation> | null | false>(false);
   const [autoForm, setAutoForm] = useState<Partial<Automation>>(emptyAutoForm());
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState<string | null>(null);
@@ -187,10 +198,19 @@ export default function MarketingAutomacoes() {
   // ── Fetchers ──
   const fetchAutomations = () => {
     setAutoLoading(true); setAutoError("");
-    marketingAutomationsApi.list()
-      .then(d => setAutomations(d ?? []))
+    Promise.allSettled([marketingAutomationsApi.list(), chatbotAdminApi.listAutomations()])
+      .then(([marketing, chatbot]) => {
+        if (marketing.status === "fulfilled") setAutomations(marketing.value ?? []);
+        if (chatbot.status === "fulfilled") setChatbotAutomations(chatbot.value ?? []);
+      })
       .catch(() => setAutoError("Falha ao carregar automações."))
       .finally(() => setAutoLoading(false));
+  };
+  const saveChatbotAutomation = async (data: Partial<ChatbotAutomation>) => {
+    if (data.id) await chatbotAdminApi.updateAutomation(data.id, data);
+    else await chatbotAdminApi.createAutomation(data);
+    setChatbotAutomations(await chatbotAdminApi.listAutomations());
+    setEditingChatbotAutomation(false);
   };
   const fetchTemplates = () => {
     setTplLoading(true);
@@ -405,6 +425,7 @@ export default function MarketingAutomacoes() {
         {tab === "automacoes" && (
           <>
             <AutomationCatalogBuilder onCreated={fetchAutomations} />
+            {editingChatbotAutomation !== false && <ChatbotAutomationEditor automation={editingChatbotAutomation} onClose={() => setEditingChatbotAutomation(false)} onSave={saveChatbotAutomation} />}
             <div className="bg-surface-02 border border-surface-03 rounded-2xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-cream">Integração com AGENTE WHATSAPP</p>
@@ -501,6 +522,8 @@ export default function MarketingAutomacoes() {
             )}
           </>
         )}
+
+            {tab === "automacoes" && <section className="space-y-3"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold text-cream">Automações do Chatbot</h2><p className="text-xs text-stone">Ativas e inativas cadastradas no módulo Chatbot.</p></div><button onClick={() => setEditingChatbotAutomation(null)} className="flex items-center gap-2 rounded-xl bg-gold px-3 py-2 text-xs font-semibold text-black"><Plus size={14} /> Nova do chatbot</button></div>{chatbotAutomations.length === 0 ? <p className="rounded-xl border border-surface-03 bg-surface-02 p-4 text-sm text-stone">Nenhuma automação do Chatbot cadastrada.</p> : chatbotAutomations.map((a) => <div key={a.id} className="flex items-start justify-between gap-3 rounded-2xl border border-surface-03 bg-surface-02 p-4"><div><div className="flex items-center gap-2"><h3 className={`text-sm font-semibold ${a.ativo ? "text-cream" : "text-stone"}`}>{a.nome}</h3><span className="rounded-full bg-surface-03 px-2 py-0.5 text-xs text-stone">{a.ativo ? "Ativa" : "Inativa"}</span></div><p className="mt-1 text-xs text-stone">{CHATBOT_TRIGGER_LABELS[a.gatilho] ?? a.gatilho}{a.condicao ? ` · ${a.condicao}` : ""}</p><p className="mt-1 text-xs text-stone">{a.mensagem}</p></div><button onClick={() => setEditingChatbotAutomation(a)} className="inline-flex items-center gap-1.5 rounded-lg bg-surface-03 px-3 py-1.5 text-xs text-stone hover:text-cream"><Pencil size={13} /> Editar</button></div>)}</section>}
 
         {/* ═══ TEMPLATES ═══ */}
         {tab === "templates" && (
