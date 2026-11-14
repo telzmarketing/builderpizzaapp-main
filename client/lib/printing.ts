@@ -86,7 +86,7 @@ export function withReceiptBranding(settings: PrinterSettings, content: Record<s
 function storeHeader(settings: PrinterSettings) {
   const logo = settings.storeLogoUrl || "";
   const safeLogo = /^(https?:\/\/|\/(?!\/)|data:image\/(?:png|jpeg|gif|webp|svg\+xml)[;,])/i.test(logo);
-  return `${safeLogo ? `<img class="receipt-logo" src="${escapeText(logo)}" alt="${escapeText(settings.storeName)}"/>` : ""}<p class="c b" style="font-size:13px">${escapeText(settings.storeName)}</p>`;
+  return `${safeLogo ? `<img class="receipt-logo" src="${escapeText(logo)}" alt="${escapeText(settings.storeName)}"/>` : ""}<p class="c b receipt-store-name">${escapeText(settings.storeName)}</p>`;
 }
 
 function drinksBlock(order: ApiOrder) {
@@ -200,15 +200,21 @@ function paperCss(width: PaperWidth) {
     @page{size:${size.page};margin:0}
     html{margin:0;padding:0;width:${size.body}}
     body{
+      --receipt-scale:1.5;
       --qty-col:${size.qty};
       --price-col:${size.price};
-      --receipt-small:${size.small};
+      --receipt-small:calc(${size.small} * var(--receipt-scale));
+      --receipt-base:calc(${size.font} * var(--receipt-scale));
+      --receipt-medium:calc(13px * var(--receipt-scale));
+      --receipt-heading:calc(15px * var(--receipt-scale));
+      --receipt-display:calc(16px * var(--receipt-scale));
+      --receipt-item:calc(14px * var(--receipt-scale));
       box-sizing:border-box;
       width:${size.body};
       max-width:${size.body};
       margin:0 auto;
       padding:${size.padding};
-      font-size:${size.font};
+      font-size:var(--receipt-base);
     }
     @media print{
       html,body{width:${size.body};max-width:${size.body}}
@@ -235,6 +241,13 @@ function baseCss() {
     .r{text-align:right}
     .b{font-weight:bold}
     .s{font-size:var(--receipt-small);color:#000;font-weight:600}
+    .receipt-store-name{font-size:var(--receipt-medium)}
+    .receipt-heading{font-size:var(--receipt-heading)}
+    .receipt-order-number{font-size:var(--receipt-medium)}
+    .receipt-display{font-size:var(--receipt-display)}
+    .receipt-item{font-size:var(--receipt-item)}
+    .receipt-total{font-size:var(--receipt-medium)}
+    p[style*="font-size:13px"]{font-size:var(--receipt-medium)!important}
     .receipt-logo{display:block;max-width:75%;max-height:24mm;width:auto;height:auto;object-fit:contain;margin:0 auto 3mm;filter:grayscale(1) contrast(1.6)}
     .partner-origin{display:flex;align-items:center;justify-content:center;gap:2mm;font-weight:bold;text-align:center;margin:2mm 0}.partner-origin img{max-width:18mm;max-height:10mm;object-fit:contain;filter:grayscale(1) contrast(1.5)}
     .drinks{background:#eee;border:2px solid #000;padding:2mm;margin:3mm 0;break-inside:avoid}
@@ -318,7 +331,7 @@ export function buildCompletoHtml(order: ApiOrder, settings: PrinterSettings, pa
     `<tr><td>Total itens(=)</td><td class="r">${fmt(order.subtotal)}</td></tr>`,
     order.shipping_fee > 0 ? `<tr><td>Taxa de entrega(+)</td><td class="r">${fmt(order.shipping_fee)}</td></tr>` : "",
     order.discount > 0 ? `<tr><td>Desconto(-)</td><td class="r">-${fmt(order.discount)}</td></tr>` : "",
-    `<tr><td class="b" style="font-size:13px;padding-top:4px">TOTAL(=)</td><td class="b r" style="font-size:13px;padding-top:4px">${fmt(order.total)}</td></tr>`,
+    `<tr><td class="b receipt-total" style="padding-top:4px">TOTAL(=)</td><td class="b r receipt-total" style="padding-top:4px">${fmt(order.total)}</td></tr>`,
   ].filter(Boolean).join("");
 
   // Delivery person
@@ -340,12 +353,12 @@ ${headerParts}
 ${headerParts ? "<hr/>" : ""}
 
 <table><tr>
-  <td class="b" style="font-size:15px;letter-spacing:2px">PEDIDO</td>
+  <td class="b receipt-heading" style="letter-spacing:2px">PEDIDO</td>
   <td class="r s">${shortDate(created)} — ${hhmm(created)}</td>
 </tr></table>
 
 <hr/>
-<p><span class="s">Pedido: </span><span class="b" style="font-size:14px">${num}</span></p>
+<p><span class="s">Pedido: </span><span class="b receipt-order-number">${num}</span></p>
 ${operationalHeader(order)}
 <p class="b">${escapeText(order.delivery_name)}</p>
 <p class="s">Telefone: ${escapeText(order.delivery_phone)} | ID: ${escapeText(order.id.slice(0, 8).toUpperCase())}</p>
@@ -399,9 +412,9 @@ export function buildCozinhaHtml(order: ApiOrder, settings: PrinterSettings): st
   const items = itemLines(order);
   const rows = items.map((i) => `
     <tr>
-      <td class="qty" style="font-size:15px;font-weight:bold;padding:4px 2px">${i.qty}x</td>
+      <td class="qty receipt-heading" style="font-weight:bold;padding:4px 2px">${i.qty}x</td>
       <td class="desc" style="padding:4px 2px">
-        <div style="font-size:14px;font-weight:bold;text-transform:uppercase">${i.name}</div>
+        <div class="receipt-item" style="font-weight:bold;text-transform:uppercase">${i.name}</div>
         ${i.details ? `<div class="s">${i.details}</div>` : ""}
         ${i.addOns.map((a) => `<div class="s">+ ${a}</div>`).join("")}
         ${i.notes ? `<div class="s b">Obs.: ${i.notes}</div>` : ""}
@@ -416,8 +429,8 @@ export function buildCozinhaHtml(order: ApiOrder, settings: PrinterSettings): st
 <style>${baseCss()}${paperCss(settings.paperWidth)}</style>
 </head><body>
 ${storeHeader(settings)}
-<p class="c" style="font-size:11px;font-weight:bold;letter-spacing:2px">*** COMANDA COZINHA ***</p>
-<p class="c b" style="font-size:16px">PEDIDO ${num}</p>
+<p class="c receipt-item" style="font-weight:bold;letter-spacing:2px">*** COMANDA COZINHA ***</p>
+<p class="c b receipt-display">PEDIDO ${num}</p>
 <p class="c s">${hhmm(created)}</p>
 ${operationalHeader(order)}
 <hr/>
@@ -454,8 +467,8 @@ export function buildEntregaHtml(order: ApiOrder, settings: PrinterSettings, pay
 <style>${baseCss()}${paperCss(settings.paperWidth)}</style>
 </head><body>
 ${storeHeader(settings)}
-<p class="c" style="font-size:11px;font-weight:bold;letter-spacing:2px">*** VIA ENTREGA ***</p>
-<p class="c b" style="font-size:16px">PEDIDO ${num}</p>
+<p class="c receipt-item" style="font-weight:bold;letter-spacing:2px">*** VIA ENTREGA ***</p>
+<p class="c b receipt-display">PEDIDO ${num}</p>
 <p class="c s">${shortDate(created)} — ${hhmm(created)}</p>
 ${operationalHeader(order)}
 <hr/>
@@ -505,15 +518,32 @@ function writeReceiptWindow(w: Window, html: string, shouldPrint: boolean, print
   });
 }
 
-export function openReceiptPreview(html: string, shouldPrint = false): boolean {
+async function enqueueReceiptHtml(html: string, settings: PrinterSettings, documentId: string, idempotencyKey: string, documentType: "receipt" | "test" = "receipt") {
+  return enqueueSilentPrint({
+    documentId,
+    documentType,
+    content: { kind: "html", data: html },
+    printerId: settings.printerId,
+    printerName: settings.printerName,
+    paper: { paperWidth: settings.paperWidth },
+    idempotencyKey,
+  });
+}
+
+export function openReceiptPreview(html: string, shouldPrint = false, settings?: PrinterSettings): boolean {
   if (shouldPrint) {
-    void enqueueSilentPrint({ documentId: `receipt-preview:${Date.now()}`, documentType: "receipt", content: { kind: "html", data: html }, idempotencyKey: `receipt-preview:${Date.now()}` }).catch((error) => console.error("Silent print failed", silentPrintFallbackMessage(error)));
+    void printReceiptTest(html, settings).catch((error) => console.error("Silent print failed", silentPrintFallbackMessage(error)));
     return true;
   }
   const w = window.open("", "_blank", "width=440,height=700,scrollbars=yes");
   if (!w) return false;
   writeReceiptWindow(w, html, shouldPrint);
   return true;
+}
+
+export function printReceiptTest(html: string, settings = loadPrinterSettings()) {
+  const id = `receipt-test:${Date.now()}`;
+  return enqueueReceiptHtml(html, settings, id, id, "test");
 }
 
 async function currentReceiptSettings(settings: PrinterSettings) {
@@ -535,24 +565,28 @@ export function printOrder(order: ApiOrder, template?: PrintTemplate): boolean {
   ]).then(async ([branded, payment]) => {
     const qrCodeDataUrl = await receiptQrDataUrl(payment);
     const html = buildPrintHtml(order, tpl, branded, payment, qrCodeDataUrl);
-    return enqueueSilentPrint({ documentId: order.id, documentType: "receipt", content: { kind: "html", data: html }, printerId: settings.printerId, printerName: settings.printerName, paper: { paperWidth: settings.paperWidth }, idempotencyKey: `receipt:${order.id}:${tpl}` });
+    return enqueueReceiptHtml(html, settings, order.id, `receipt:${order.id}:${tpl}`);
   }).catch((error) => { console.error("Silent print failed", silentPrintFallbackMessage(error)); });
   return true;
 }
 
-export function printConfirmedOrder(order: ApiOrder): boolean {
+export async function printConfirmedOrder(order: ApiOrder): Promise<boolean> {
   const settings = loadPrinterSettings();
   if (!settings.autoPrintConfirmedOrders) return true;
 
   const templates: PrintTemplate[] = ["cozinha", "completo"];
-  void Promise.all([
-    currentReceiptSettings(settings),
-    paymentsApi.getByOrder(order.id).catch(() => null),
-  ]).then(async ([branded, payment]) => {
+  try {
+    const [branded, payment] = await Promise.all([
+      currentReceiptSettings(settings),
+      paymentsApi.getByOrder(order.id).catch(() => null),
+    ]);
     const qrCodeDataUrl = await receiptQrDataUrl(payment);
-    return Promise.all(templates.map((tpl) => enqueueSilentPrint({ documentId: `${order.id}:${tpl}`, documentType: "receipt", content: { kind: "html", data: buildPrintHtml(order, tpl, branded, payment, qrCodeDataUrl) }, printerId: settings.printerId, printerName: settings.printerName, paper: { paperWidth: settings.paperWidth }, idempotencyKey: `receipt:${order.id}:${tpl}` })));
-  }).catch((error) => { console.error("Silent print failed", silentPrintFallbackMessage(error)); });
-  return true;
+    await Promise.all(templates.map((tpl) => enqueueReceiptHtml(buildPrintHtml(order, tpl, branded, payment, qrCodeDataUrl), settings, `${order.id}:${tpl}`, `receipt:${order.id}:${tpl}`)));
+    return true;
+  } catch (error) {
+    console.error("Silent print failed", silentPrintFallbackMessage(error));
+    return false;
+  }
 }
 
 // ── Sample order for preview ──────────────────────────────────────────────────

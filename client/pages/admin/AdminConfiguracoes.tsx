@@ -11,9 +11,10 @@ import {
   loadPrinterSettings, savePrinterSettings,
   buildCompletoHtml, buildCozinhaHtml, buildEntregaHtml,
   SAMPLE_ORDER, DEFAULT_PRINTER_SETTINGS,
-  openReceiptPreview, withReceiptBranding,
+  openReceiptPreview, printReceiptTest, withReceiptBranding,
   type PrinterSettings, type PrintTemplate, type PaperWidth,
 } from "@/lib/printing";
+import { silentPrintFallbackMessage } from "@/lib/silentPrinting";
 import {
   loadSoundType, saveSoundType, playOrderAlert,
   SOUND_OPTIONS, type OrderSoundType,
@@ -64,7 +65,7 @@ const cls =
 // ── Template card ─────────────────────────────────────────────────────────────
 
 function TemplateCard({
-  id, title, description, selected, onSelect, html,
+  id, title, description, selected, onSelect, html, settings,
 }: {
   id: PrintTemplate;
   title: string;
@@ -72,8 +73,10 @@ function TemplateCard({
   selected: boolean;
   onSelect: () => void;
   html: string;
+  settings: PrinterSettings;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [testStatus, setTestStatus] = useState<string | null>(null);
 
   useEffect(() => {
     const iframe = iframeRef.current;
@@ -85,7 +88,16 @@ function TemplateCard({
     doc.close();
   }, [html]);
 
-  const openPreview = (print = false) => openReceiptPreview(html, print);
+  const openPreview = (print = false) => openReceiptPreview(html, print, settings);
+  const runPrintTest = async () => {
+    setTestStatus("Enviando...");
+    try {
+      const result = await printReceiptTest(html, settings);
+      setTestStatus(`Aceito via ${result.transport === "qz" ? "QZ Tray" : "agente local"}`);
+    } catch (error) {
+      setTestStatus(silentPrintFallbackMessage(error));
+    }
+  };
 
   return (
     <div
@@ -115,8 +127,9 @@ function TemplateCard({
           <Eye size={12} />
           Prévia
         </button>
-        <button type="button" onClick={(event) => { event.stopPropagation(); openPreview(true); }} className="min-h-10 rounded-lg border border-surface-03 px-3 text-xs font-bold text-gold">Imprimir teste</button>
+        <button type="button" disabled={testStatus === "Enviando..."} onClick={(event) => { event.stopPropagation(); void runPrintTest(); }} className="min-h-10 rounded-lg border border-surface-03 px-3 text-xs font-bold text-gold disabled:opacity-50">Imprimir teste</button>
       </div>
+      {testStatus && <p className="border-t border-surface-03 bg-surface-01 px-4 py-2 text-xs text-stone" role="status">{testStatus}</p>}
 
       {/* Receipt preview */}
       <div className="bg-white overflow-hidden" style={{ height: 260 }}>
@@ -499,6 +512,18 @@ export default function AdminConfiguracoes() {
                         {settings.autoPrintConfirmedOrders ? "✓ Ativada" : "Desativada"}
                       </button>
                     </Field>
+
+                    <Field
+                      label="Nome da fila da impressora"
+                      hint="Use o nome exato da fila no Windows/QZ Tray. Ex.: Bematech MP-4200 TH."
+                    >
+                      <input
+                        className={cls}
+                        value={settings.printerName ?? ""}
+                        onChange={(event) => update({ printerName: event.target.value || undefined })}
+                        placeholder="Bematech MP-4200 TH"
+                      />
+                    </Field>
                   </div>
                 </section>
 
@@ -519,6 +544,7 @@ export default function AdminConfiguracoes() {
                       selected={settings.defaultTemplate === "completo"}
                       onSelect={() => update({ defaultTemplate: "completo" })}
                       html={htmlCompleto}
+                      settings={settings}
                     />
                     <TemplateCard
                       id="cozinha"
@@ -527,6 +553,7 @@ export default function AdminConfiguracoes() {
                       selected={settings.defaultTemplate === "cozinha"}
                       onSelect={() => update({ defaultTemplate: "cozinha" })}
                       html={htmlCozinha}
+                      settings={settings}
                     />
                     <TemplateCard
                       id="entrega"
@@ -535,6 +562,7 @@ export default function AdminConfiguracoes() {
                       selected={settings.defaultTemplate === "entrega"}
                       onSelect={() => update({ defaultTemplate: "entrega" })}
                       html={htmlEtiqueta}
+                      settings={settings}
                     />
                   </div>
                 </section>

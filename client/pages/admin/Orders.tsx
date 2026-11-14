@@ -181,14 +181,14 @@ function rememberAutoPrintedConfirmedOrder(orderId: string) {
   }
 }
 
-function printConfirmedOrderOnce(order: ApiOrder) {
+async function printConfirmedOrderOnce(order: ApiOrder) {
   if (!CONFIRMED_PAYMENT_STATUSES.has(order.status)) return true;
   if (!loadPrinterSettings().autoPrintConfirmedOrders) return true;
   if (loadAutoPrintedConfirmedOrderIds().has(order.id)) return true;
 
-  const opened = printConfirmedOrder(order);
-  if (opened) rememberAutoPrintedConfirmedOrder(order.id);
-  return opened;
+  const confirmed = await printConfirmedOrder(order);
+  if (confirmed) rememberAutoPrintedConfirmedOrder(order.id);
+  return confirmed;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -324,15 +324,18 @@ export default function AdminOrders() {
     try {
       const data = await ordersApi.list({ ...dayRangeIso(selectedDate), limit: 500 });
       const sorted = [...data].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      const failedAutoPrintIds = new Set<string>();
 
       if (!isFirstFetch.current && selectedDate === todayInputValue()) {
         // Alert fires only when an order ENTERS paid/pago status for the first time
         const newlyPaid = sorted.filter(
           (o) => (o.status === "paid" || o.status === "pago") && !paidIds.current.has(o.id),
         );
-        const blockedPrint = newlyPaid.some((order) => !printConfirmedOrderOnce(order));
+        const printResults = await Promise.all(newlyPaid.map((order) => printConfirmedOrderOnce(order)));
+        const blockedPrint = printResults.some((printed) => !printed);
+        newlyPaid.forEach((order, index) => { if (!printResults[index]) failedAutoPrintIds.add(order.id); });
         if (blockedPrint) {
-          setError("O navegador bloqueou a impressao automatica. Habilite pop-ups para imprimir cozinha e recepcao.");
+          setError("A impressao automatica nao foi confirmada pelo agente local/QZ Tray. Verifique a Bematech e tente novamente.");
         }
         if (newlyPaid.length > 0 && soundEnabled) {
           playNewOrderAlert();
@@ -345,6 +348,7 @@ export default function AdminOrders() {
       sorted
         .filter((o) => o.status === "paid" || o.status === "pago")
         .forEach((o) => paidIds.current.add(o.id));
+      failedAutoPrintIds.forEach((id) => paidIds.current.delete(id));
 
       setOrders(sorted);
       setLastUpdated(new Date());
