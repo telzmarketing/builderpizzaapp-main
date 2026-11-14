@@ -22,7 +22,7 @@ def _landing_payload(service: PromotionLandingService, landing) -> dict:
         "public_url": f"/promocao/{landing.slug}",
         "product_name": landing.product.name if landing.product else None,
         "promotion_name": landing.promotion.name if landing.promotion else None,
-        "promotion_active_now": service.promotion_is_active_now(landing.promotion),
+        "promotion_active_now": service.promotion_is_active_now(landing.promotion) if landing.landing_type == "promotion" else False,
     }
 
 
@@ -57,6 +57,18 @@ def get_landing_by_product_promotion(
     return _landing_payload(service, landing) if landing else None
 
 
+@router.get("/by-product/{product_id}", response_model=PromotionLandingPageOut | None)
+def get_landing_by_product(
+    product_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin),
+):
+    service = PromotionLandingService(db, resolve_panel_tenant_context(request, db, admin))
+    landing = service.get_by_product(product_id)
+    return _landing_payload(service, landing) if landing else None
+
+
 @router.get("/slug/{slug}", response_model=PromotionLandingPageOut)
 def get_public_landing(slug: str, request: Request, db: Session = Depends(get_db)):
     service = PromotionLandingService(db, resolve_public_tenant_context(request, db))
@@ -75,7 +87,7 @@ def get_landing_decision(product_id: str, request: Request, db: Session = Depend
     landing = PromotionLandingService(db, context).active_landing_for_product(product) if product else None
     return {
         "product_id": product_id,
-        "promotion_id": landing.promotion_id if landing else None,
+        "promotion_id": landing.promotion_id if landing and landing.landing_type == "promotion" else None,
         "landing_page_id": landing.id if landing else None,
         "slug": landing.slug if landing else None,
         "url": f"/promocao/{landing.slug}" if landing else None,

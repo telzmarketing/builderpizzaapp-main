@@ -675,6 +675,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/gestor" element={<AdminGestor />} />
                 <Route path="/painel/whatsapp-gateway" element={<WhatsAppGateway />} />
                 <Route path="/painel/products" element={<AdminProducts />} />
+                <Route path="/painel/products/landing/:productId" element={<PromotionalLandingEditor />} />
                 <Route path="/painel/products/landing/:productId/:promotionId" element={<PromotionalLandingEditor />} />
                 <Route path="/painel/orders" element={<AdminOrders />} />
                 <Route path="/painel/orders/historico" element={<OrderHistory />} />

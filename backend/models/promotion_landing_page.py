@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -14,12 +14,19 @@ class PromotionLandingPage(Base):
     __table_args__ = (
         Index("uq_promotion_landing_pages_tenant_id_id", "tenant_id", "id", unique=True),
         UniqueConstraint("tenant_id", "slug", name="uq_promotion_landing_pages_tenant_slug"),
+        CheckConstraint("landing_type IN ('product', 'promotion')", name="ck_promotion_landing_pages_landing_type"),
+        CheckConstraint(
+            "(landing_type = 'product' AND promotion_id IS NULL) OR "
+            "(landing_type = 'promotion' AND promotion_id IS NOT NULL)",
+            name="ck_promotion_landing_pages_type_promotion",
+        ),
     )
 
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_promotion_landing_pages_tenant_id_tenants"), nullable=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
-    promotion_id = Column(String, ForeignKey("product_promotions.id", ondelete="CASCADE"), nullable=False, index=True)
+    promotion_id = Column(String, ForeignKey("product_promotions.id", ondelete="CASCADE"), nullable=True, index=True)
+    landing_type = Column(String(20), nullable=False, default="promotion", server_default="promotion", index=True)
     title = Column(String(220), nullable=False)
     subtitle = Column(String(500), nullable=True)
     description = Column(Text, nullable=True)

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ChevronLeft, Search, Plus, Check } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { categoriesApi, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl, type ApiProductCategory } from "@/lib/api";
+import { categoriesApi, getProductLandingUrl, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl, type ApiProductCategory } from "@/lib/api";
 import { trackEvent } from "@/lib/tracking";
 import { getProductCardAction } from "@/lib/productCardAction";
 import BottomNav from "@/components/BottomNav";
@@ -73,8 +73,7 @@ export default function Cardapio() {
   });
   const isCatalogLoading = !productsLoaded && products.length === 0;
 
-  const productTarget = (product: typeof products[0]) =>
-    product.promotion_landing_url || `/product/${product.id}`;
+  const productTarget = (product: typeof products[0]) => getProductLandingUrl(product);
 
   const handleQuickAdd = (e: React.MouseEvent, product: typeof products[0]) => {
     e.stopPropagation();

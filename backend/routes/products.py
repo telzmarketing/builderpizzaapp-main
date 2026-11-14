@@ -207,7 +207,7 @@ def _product_payload(
     if promotion_quotes:
         quote = min(promotion_quotes, key=lambda candidate: candidate.final_price)
     try:
-        landing = PromotionLandingService(db, context).active_landing_for_product(product) if promotion_quotes else None
+        landing = PromotionLandingService(db, context).active_landing_for_product(product)
     except Exception:
         landing = None
 
@@ -234,9 +234,12 @@ def _product_payload(
         "promotion_gift_name": quote.gift_name,
         "promotion_gift_icon": quote.gift_icon,
         "promotion_blocks_other_coupons": quote.blocks_other_coupons,
-        "promotion_landing_page_id": landing.id if landing else None,
-        "promotion_landing_slug": landing.slug if landing else None,
-        "promotion_landing_url": f"/promocao/{landing.slug}" if landing else None,
+        "promotion_landing_page_id": landing.id if landing and landing.landing_type == "promotion" else None,
+        "promotion_landing_slug": landing.slug if landing and landing.landing_type == "promotion" else None,
+        "promotion_landing_url": f"/promocao/{landing.slug}" if landing and landing.landing_type == "promotion" else None,
+        "product_landing_page_id": landing.id if landing and landing.landing_type == "product" else None,
+        "product_landing_slug": landing.slug if landing and landing.landing_type == "product" else None,
+        "product_landing_url": f"/promocao/{landing.slug}" if landing and landing.landing_type == "product" else None,
         "show_best_seller_badge": show_badge,
     })
     if inventory_payload:

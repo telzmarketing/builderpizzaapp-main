@@ -339,6 +339,9 @@ class ProductOut(ProductBase):
     promotion_landing_page_id: Optional[str] = None
     promotion_landing_slug: Optional[str] = None
     promotion_landing_url: Optional[str] = None
+    product_landing_page_id: Optional[str] = None
+    product_landing_slug: Optional[str] = None
+    product_landing_url: Optional[str] = None
     show_best_seller_badge: bool = False
     inventory_available: bool = True
     inventory_status: Optional[str] = None

@@ -4,13 +4,15 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 PromotionLandingMediaSlot = Literal["image_url", "image_url_2", "video_url"]
+PromotionLandingType = Literal["product", "promotion"]
 DEFAULT_MEDIA_ORDER: list[PromotionLandingMediaSlot] = ["image_url", "image_url_2", "video_url"]
 FREE_SHIPPING_LABEL = "Frete Grátis na Promoção"
 
 
 class PromotionLandingPageBase(BaseModel):
     product_id: str
-    promotion_id: str
+    promotion_id: Optional[str] = None
+    landing_type: PromotionLandingType = "promotion"
     title: str = Field(min_length=1, max_length=220)
     subtitle: Optional[str] = Field(default=None, max_length=500)
     description: Optional[str] = None

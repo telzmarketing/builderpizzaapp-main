@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat, Droplets, Gift, Search, ChevronUp, ChevronDown, Truck, ClipboardList } from "lucide-react";
+import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat, Droplets, Gift, Search, ChevronUp, ChevronDown, Truck, ClipboardList, Images } from "lucide-react";
 import { useApp, Pizza, PricingRule } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
@@ -1230,6 +1230,10 @@ export default function AdminProducts() {
     navigate(`/painel/products/landing/${productId}/${promotionId}`);
   };
 
+  const openProductLandingEditor = (product: Pizza) => {
+    navigate(`/painel/products/landing/${product.id}`);
+  };
+
   const handleTogglePromotionWeekday = (day: number) => {
     setPromotionForm((form) => {
       const exists = form.valid_weekdays.includes(day);
@@ -1804,6 +1808,11 @@ export default function AdminProducts() {
                         {canManageRecipe && <button onClick={() => setRecipeModalProduct(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-emerald-500/10 hover:border-emerald-500/40 text-parchment hover:text-emerald-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                           <ClipboardList size={15} />
                           Ficha tecnica
+                        </button>}
+
+                        {canManagePromotions && <button onClick={() => openProductLandingEditor(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-gold/10 hover:border-gold/40 text-parchment hover:text-gold font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
+                          <Images size={15} />
+                          Criar Landing Page da Pizza
                         </button>}
 
                         {canManageCrust && !isPizza && (

@@ -69,6 +69,17 @@ class PromotionLandingService:
             .first()
         )
 
+    def get_by_product(self, product_id: str) -> PromotionLandingPage | None:
+        return (
+            self._query(PromotionLandingPage)
+            .filter(
+                PromotionLandingPage.product_id == product_id,
+                PromotionLandingPage.landing_type == "product",
+            )
+            .order_by(PromotionLandingPage.updated_at.desc())
+            .first()
+        )
+
     def get_public_by_slug(self, slug: str) -> PromotionLandingPage:
         landing = (
             self._query(PromotionLandingPage)
@@ -79,12 +90,34 @@ class PromotionLandingService:
             )
             .first()
         )
-        if not landing or not self.promotion_is_active_now(landing.promotion):
+        if not landing:
+            raise PromotionLandingNotFound()
+        if landing.landing_type == "promotion" and not self.promotion_is_active_now(landing.promotion):
             raise PromotionLandingNotFound()
         return landing
 
     def create(self, data: dict) -> PromotionLandingPage:
-        product, promotion = self._validate_product_promotion(data["product_id"], data["promotion_id"])
+        landing_type = data.get("landing_type") or ("promotion" if data.get("promotion_id") else "product")
+        if landing_type == "product":
+            if data.get("promotion_id") is not None:
+                raise PromotionLandingRuleError(
+                    "Uma landing independente nao pode receber promotion_id.",
+                    code="ProductLandingPromotionConflict",
+                )
+            product = self._validate_product(data["product_id"])
+            promotion = None
+        else:
+            if not data.get("promotion_id"):
+                raise PromotionLandingRuleError(
+                    "Uma landing promocional precisa de promotion_id.",
+                    code="PromotionRequired",
+                )
+            product, promotion = self._validate_product_promotion(data["product_id"], data["promotion_id"])
+        if landing_type == "product" and self.get_by_product(data["product_id"]):
+            raise PromotionLandingRuleError(
+                "O produto ja possui uma landing independente.",
+                code="ProductLandingAlreadyExists",
+            )
         base_slug = data.get("slug") or product.name
         status = data.get("status") or "draft"
         data["media_order"] = self._normalize_media_order(data.get("media_order"))
@@ -92,6 +125,7 @@ class PromotionLandingService:
             id=f"plp-{uuid.uuid4().hex[:10]}",
             **{
                 **data,
+                "landing_type": landing_type,
                 "slug": self._unique_slug(base_slug),
                 "status": status,
                 "published_at": datetime.now(timezone.utc) if status == "published" else None,
@@ -137,6 +171,25 @@ class PromotionLandingService:
         return landing
 
     def active_landing_for_product(self, product: Product) -> PromotionLandingPage | None:
+        independent = self.get_active_product_landing(product.id)
+        if independent:
+            return independent
+        return self.active_promotion_landing_for_product(product)
+
+    def get_active_product_landing(self, product_id: str) -> PromotionLandingPage | None:
+        return (
+            self._query(PromotionLandingPage)
+            .filter(
+                PromotionLandingPage.product_id == product_id,
+                PromotionLandingPage.landing_type == "product",
+                PromotionLandingPage.status == "published",
+                PromotionLandingPage.is_active == True,  # noqa: E712
+            )
+            .order_by(PromotionLandingPage.published_at.desc().nullslast(), PromotionLandingPage.updated_at.desc())
+            .first()
+        )
+
+    def active_promotion_landing_for_product(self, product: Product) -> PromotionLandingPage | None:
         active_promotion_ids = self._active_promotion_ids_for_product(product)
         if not active_promotion_ids:
             return None
@@ -168,9 +221,7 @@ class PromotionLandingService:
         return ordered
 
     def _validate_product_promotion(self, product_id: str, promotion_id: str) -> tuple[Product, ProductPromotion]:
-        product = self._query(Product).filter(Product.id == product_id).first()
-        if not product:
-            raise PromotionLandingRuleError("Produto vinculado nao encontrado.", code="ProductNotFound")
+        product = self._validate_product(product_id)
         promotion = (
             self._query(ProductPromotion)
             .filter(ProductPromotion.id == promotion_id, ProductPromotion.product_id == product_id)
@@ -182,6 +233,12 @@ class PromotionLandingService:
                 code="PromotionNotLinkedToProduct",
             )
         return product, promotion
+
+    def _validate_product(self, product_id: str) -> Product:
+        product = self._query(Product).filter(Product.id == product_id).first()
+        if not product:
+            raise PromotionLandingRuleError("Produto vinculado nao encontrado.", code="ProductNotFound")
+        return product
 
     def _active_promotion_ids_for_product(self, product: Product) -> set[str]:
         pricing = ProductPricingService(self._db, self._tenant_context)

@@ -530,12 +530,19 @@ export interface ApiProduct {
   promotion_landing_page_id?: string | null;
   promotion_landing_slug?: string | null;
   promotion_landing_url?: string | null;
+  product_landing_page_id?: string | null;
+  product_landing_slug?: string | null;
+  product_landing_url?: string | null;
   best_seller_badge_mode?: "off" | "manual" | "auto";
   show_best_seller_badge?: boolean;
   inventory_available?: boolean;
   inventory_status?: "disabled" | "not_configured" | "available" | "unavailable" | string | null;
   inventory_unavailable_message?: string | null;
 }
+
+/** Public catalog precedence: permanent product landing, active promotion landing, normal product. */
+export const getProductLandingUrl = (product: Pick<ApiProduct, "id" | "product_landing_url" | "promotion_landing_url">) =>
+  product.product_landing_url || product.promotion_landing_url || `/product/${product.id}`;
 
 export interface ApiBestSellerConfig {
   id: string;
@@ -581,6 +588,7 @@ export interface ApiProductPromotion {
 }
 
 export type ApiPromotionLandingStatus = "draft" | "published";
+export type ApiPromotionLandingType = "product" | "promotion";
 export type ApiPromotionLandingImagePosition = "center" | "top" | "bottom" | "left" | "right";
 export type ApiPromotionLandingAlignment = "left" | "center" | "right";
 export type ApiPromotionLandingOverlay = "dark-gradient" | "dark" | "light" | "brand";
@@ -589,7 +597,8 @@ export type ApiPromotionLandingMediaSlot = "image_url" | "image_url_2" | "video_
 export interface ApiPromotionLandingPage {
   id: string;
   product_id: string;
-  promotion_id: string;
+  promotion_id: string | null;
+  landing_type?: ApiPromotionLandingType;
   title: string;
   subtitle: string | null;
   description: string | null;
@@ -629,7 +638,8 @@ export interface ApiPromotionLandingDecision {
 
 export type ApiPromotionLandingPayload = {
   product_id: string;
-  promotion_id: string;
+  promotion_id?: string | null;
+  landing_type: ApiPromotionLandingType;
   title: string;
   subtitle?: string | null;
   description?: string | null;
@@ -6072,6 +6082,9 @@ export const promotionLandingsApi = {
 
   getByProductPromotion: (productId: string, promotionId: string) =>
     get<ApiPromotionLandingPage | null>(`/promotion-landings/by-product/${productId}/promotion/${promotionId}`),
+
+  getByProduct: (productId: string) =>
+    get<ApiPromotionLandingPage | null>(`/promotion-landings/by-product/${productId}`),
 
   getBySlug: (slug: string) =>
     get<ApiPromotionLandingPage>(`/promotion-landings/slug/${slug}`),

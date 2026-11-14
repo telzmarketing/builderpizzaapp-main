@@ -14,6 +14,7 @@ import {
   type ApiPromotionLandingOverlay,
   type ApiPromotionLandingPage,
   type ApiPromotionLandingStatus,
+  type ApiPromotionLandingType,
 } from "@/lib/api";
 
 type FormState = {
@@ -131,29 +132,21 @@ export default function PromotionalLandingEditor() {
     };
   }, [routeProductId, routePromotionId]);
 
-  const productId = routeProductId?.startsWith("prod-") ? routeProductId : pathLandingIds.productId;
-  const promotionId = routePromotionId?.startsWith("pp-") ? routePromotionId : pathLandingIds.promotionId;
+  const productId = routeProductId || pathLandingIds.productId;
+  const promotionId = routePromotionId || pathLandingIds.promotionId;
+  const isIndependent = !promotionId;
 
   useEffect(() => {
-    if (!productId || !promotionId) return;
+    if (!productId) return;
     setLoading(true);
     setError("");
-    Promise.allSettled([
-      productsApi.get(productId),
-      productPromotionsApi.list(productId),
-      promotionLandingsApi.getByProductPromotion(productId, promotionId),
-    ])
-      .then(([prodResult, promotionsResult, existingResult]) => {
-        if (prodResult.status !== "fulfilled") {
-          throw prodResult.reason;
-        }
-        if (promotionsResult.status !== "fulfilled") {
-          throw promotionsResult.reason;
-        }
-        const prod = prodResult.value;
-        const promotions = promotionsResult.value;
-        const existing = existingResult.status === "fulfilled" ? existingResult.value : null;
-        const promo = promotions.find((item) => item.id === promotionId) ?? null;
+    const requests = isIndependent
+      ? Promise.all([productsApi.get(productId), promotionLandingsApi.getByProduct(productId)])
+        .then(([prod, existing]) => ({ prod, existing, promo: null }))
+      : Promise.all([productsApi.get(productId), productPromotionsApi.list(productId), promotionLandingsApi.getByProductPromotion(productId, promotionId)])
+        .then(([prod, promotions, existing]) => ({ prod, existing, promo: promotions.find((item) => item.id === promotionId) ?? null }));
+    requests
+      .then(({ prod, existing, promo }) => {
         setProduct(prod);
         setPromotion(promo);
         setLanding(existing);
@@ -185,7 +178,7 @@ export default function PromotionalLandingEditor() {
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar a landing."))
       .finally(() => setLoading(false));
-  }, [productId, promotionId]);
+  }, [productId, promotionId, isIndependent]);
 
   const validity = useMemo(() => {
     if (!promotion) return "";
@@ -197,7 +190,8 @@ export default function PromotionalLandingEditor() {
 
   const payload = (status: ApiPromotionLandingStatus) => ({
     product_id: productId!,
-    promotion_id: promotionId!,
+    promotion_id: promotionId || null,
+    landing_type: (isIndependent ? "product" : "promotion") as ApiPromotionLandingType,
     title: form.title.trim(),
     subtitle: form.subtitle.trim() || null,
     description: form.description.trim() || null,
@@ -220,7 +214,7 @@ export default function PromotionalLandingEditor() {
   });
 
   const save = async (status: ApiPromotionLandingStatus) => {
-    if (!productId || !promotionId || !form.title.trim()) return;
+    if (!productId || !form.title.trim()) return;
     setSaving(true);
     setError("");
     try {
@@ -267,7 +261,7 @@ export default function PromotionalLandingEditor() {
     );
   }
 
-  if (!product || !promotion) {
+  if (!product || (!isIndependent && !promotion)) {
     return (
       <div className="rounded-lg border border-red-500/25 bg-red-500/10 p-4 text-sm text-red-200">
         Produto ou promocao nao encontrados.
@@ -328,8 +322,8 @@ export default function PromotionalLandingEditor() {
                 <input value={product.name} readOnly className={`${inputClass} opacity-80`} />
               </div>
               <div>
-                <label className={labelClass}>Promocao vinculada</label>
-                <input value={promotion.name} readOnly className={`${inputClass} opacity-80`} />
+                <label className={labelClass}>{isIndependent ? "Tipo de landing" : "Promocao vinculada"}</label>
+                <input value={isIndependent ? "Landing permanente da pizza" : promotion?.name ?? ""} readOnly className={`${inputClass} opacity-80`} />
               </div>
             </div>
             {validity && <p className="mt-3 text-xs text-stone">{validity}</p>}
@@ -349,6 +343,19 @@ export default function PromotionalLandingEditor() {
                 <input value={form.slug} onChange={(e) => setForm((current) => ({ ...current, slug: e.target.value }))} className={inputClass} placeholder="pizza-calabresa" />
               </div>
             </div>
+
+            <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-gold/25 bg-gold/10 px-3 py-3 text-sm text-parchment">
+              <input
+                type="checkbox"
+                checked={form.is_active}
+                onChange={(e) => setForm((current) => ({ ...current, is_active: e.target.checked }))}
+                className="h-4 w-4 accent-gold"
+              />
+              <span>
+                <span className="block font-semibold text-cream">Habilitar landing no catalogo</span>
+                <span className="block text-xs text-stone">Quando publicada e habilitada, esta landing sera usada no clique do produto.</span>
+              </span>
+            </label>
 
             <div>
               <label className={labelClass}>Titulo principal</label>
@@ -514,8 +521,8 @@ export default function PromotionalLandingEditor() {
           </div>
           <div className="space-y-3 text-sm text-stone">
             <p><span className="text-parchment">URL:</span> /promocao/{landing?.slug || form.slug || "slug-automatico"}</p>
-            <p><span className="text-parchment">Promocao ativa agora:</span> {landing?.promotion_active_now ? "sim" : "nao"}</p>
-            <p><span className="text-parchment">Catalogo:</span> so redireciona quando estiver publicada e a promocao estiver valida agora.</p>
+            <p><span className="text-parchment">Disponibilidade:</span> {isIndependent ? "quando habilitada e publicada" : landing?.promotion_active_now ? "promocao ativa agora" : "aguardando promocao valida"}</p>
+            <p><span className="text-parchment">Catalogo:</span> {isIndependent ? "usa esta landing quando ativa; depois a landing promocional." : "redireciona quando publicada e a promocao estiver valida agora."}</p>
           </div>
         </aside>
       </div>
