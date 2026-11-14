@@ -112,6 +112,32 @@ export function productMatchesConfiguredHomeCategory(
     || normalizeHomeCategory(product.subcategory) === selectedKey;
 }
 
+export function getConfiguredHomeCatalogCategories(
+  products: HomeCatalogProduct[],
+  categories: ApiProductCategory[],
+  selectedCategories: string[],
+): HomeCatalogCategory[] {
+  const activeProducts = products.filter((product) => product.active);
+  const result: HomeCatalogCategory[] = [];
+  const seen = new Set<string>();
+
+  for (const selectedCategory of selectedCategories) {
+    const selectedKey = normalizeHomeCategory(selectedCategory);
+    const selected = categories.find((item) => (
+      item.id === selectedCategory || normalizeHomeCategory(item.name) === selectedKey
+    ));
+    const label = selected?.name?.trim() || selectedCategory.trim();
+    if (!label || seen.has(normalizeHomeCategory(label))) continue;
+    if (selectedKey === normalizeHomeCategory(PROMO_LABEL)
+      || activeProducts.some((product) => productMatchesConfiguredHomeCategory(product, selectedCategory, categories))) {
+      result.push(label);
+      seen.add(normalizeHomeCategory(label));
+    }
+  }
+
+  return result;
+}
+
 export function getHomeCatalogCategories(
   products: HomeCatalogProduct[],
   categories: ApiProductCategory[],

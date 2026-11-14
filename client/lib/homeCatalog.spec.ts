@@ -6,6 +6,7 @@ import {
   getHomeCatalogCategories,
   productMatchesHomeCategory,
   productMatchesConfiguredHomeCategory,
+  getConfiguredHomeCatalogCategories,
   getHomeCatalogParentName,
   getHomeCatalogSubcategories,
   productMatchesHomeSubcategory,
@@ -95,5 +96,18 @@ describe("home catalog navigation", () => {
     expect(productMatchesConfiguredHomeCategory(classic, "ClÃ¡ssicas", categories)).toBe(true);
     expect(productMatchesConfiguredHomeCategory(special, "ClÃ¡ssicas", categories)).toBe(false);
     expect(productMatchesConfiguredHomeCategory(special, "Pizzas", categories)).toBe(true);
+  });
+
+  it("shows selected subcategories without forcing the parent category", () => {
+    const categories = [
+      { id: "pizza", parent_id: null, name: "Pizzas", active: true, sort_order: 0 },
+      { id: "classic", parent_id: "pizza", name: "Pizzas Clássicas", active: true, sort_order: 0 },
+    ] as ApiProductCategory[];
+    const products = [
+      { active: true, category_id: "pizza", subcategory_id: "classic", category: null, subcategory: null },
+    ];
+    expect(getConfiguredHomeCatalogCategories(products, categories, ["classic"])).toEqual(["Pizzas Clássicas"]);
+    expect(products.filter((product) => productMatchesConfiguredHomeCategory(product, "Pizzas Clássicas", categories)))
+      .toHaveLength(1);
   });
 });

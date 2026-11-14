@@ -4,7 +4,7 @@ import { Menu, Search, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, T
 
 import { useApp } from "@/context/AppContext";
 import { categoriesApi, homeCatalogApi, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl, type ApiProductCategory } from "@/lib/api";
-import { ALL_PRODUCTS_CATEGORY, getHomeCatalogCategories, productMatchesConfiguredHomeCategory, productMatchesHomeCategory, type HomeCatalogCategory } from "@/lib/homeCatalog";
+import { ALL_PRODUCTS_CATEGORY, getConfiguredHomeCatalogCategories, getHomeCatalogCategories, productMatchesConfiguredHomeCategory, productMatchesHomeCategory, type HomeCatalogCategory } from "@/lib/homeCatalog";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import StoreStatusBanner from "@/components/StoreStatusBanner";
@@ -99,9 +99,17 @@ export default function Home() {
     return products;
   }, [products, homeConfig, catalogCategories]);
 
-  const effectiveCategories = useMemo(
-    () => getHomeCatalogCategories(catalogProducts, catalogCategories),
-    [catalogProducts, catalogCategories]
+  const effectiveCategories = useMemo(() => {
+    if (homeConfig.mode === "categories" && homeConfig.selectedCategories.length > 0) {
+      return getConfiguredHomeCatalogCategories(catalogProducts, catalogCategories, homeConfig.selectedCategories);
+    }
+    return getHomeCatalogCategories(catalogProducts, catalogCategories);
+  }, [catalogProducts, catalogCategories, homeConfig]);
+
+  const matchesDisplayedCategory = (product: typeof products[number], category: HomeCatalogCategory) => (
+    homeConfig.mode === "categories" && homeConfig.selectedCategories.length > 0 && typeof category === "string"
+      ? productMatchesConfiguredHomeCategory(product, category, catalogCategories)
+      : productMatchesHomeCategory(product, category, catalogCategories)
   );
 
   useEffect(() => {
@@ -119,13 +127,13 @@ export default function Home() {
 
   const categoryProducts =
     activeCategory
-      ? catalogProducts.filter((p) => p.active && productMatchesHomeCategory(p, activeCategory, catalogCategories))
+      ? catalogProducts.filter((p) => p.active && matchesDisplayedCategory(p, activeCategory))
       : [];
 
   const categoryCounts = useMemo(() => (
     effectiveCategories.map<{ category: HomeCatalogCategory; count: number }>((category) => ({
       category,
-      count: catalogProducts.filter((p) => p.active && productMatchesHomeCategory(p, category, catalogCategories)).length,
+      count: catalogProducts.filter((p) => p.active && matchesDisplayedCategory(p, category)).length,
     }))
   ), [catalogProducts, effectiveCategories, catalogCategories]);
 
