@@ -484,6 +484,8 @@ const MarketingWorkflow = lazy(() => import("./pages/admin/marketing/MarketingWo
 const MarketingCupons = lazy(() => import("./pages/admin/marketing/MarketingCupons"));
 const MarketingStoreNotifications = lazy(() => import("./pages/admin/marketing/MarketingStoreNotifications"));
 const MarketingUpsell = lazy(() => import("./pages/admin/marketing/MarketingUpsell"));
+const Avaliacoes = lazy(() => import("./pages/Avaliacoes"));
+const MarketingReviews = lazy(() => import("./pages/admin/marketing/MarketingReviews"));
 const CrmDashboard = lazy(() => import("./pages/admin/crm/CrmDashboard"));
 const CrmPipeline = lazy(() => import("./pages/admin/crm/CrmPipeline"));
 const CrmGrupos = lazy(() => import("./pages/admin/crm/CrmGrupos"));
@@ -573,6 +575,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
               <Route path="/fidelidade" element={<Fidelidade />} />
               <Route path="/cupons" element={<Cupons />} />
               <Route path="/pedidos" element={<Pedidos />} />
+              <Route path="/avaliacoes" element={<Avaliacoes />} />
               <Route path="/conta" element={<Conta />} />
               <Route path="/localizacao" element={<Localizacao />} />
               <Route path="/blog" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
@@ -717,6 +720,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/marketing/cupons" element={<MarketingCupons />} />
                 <Route path="/painel/marketing/notificacoes" element={<MarketingStoreNotifications />} />
                 <Route path="/painel/marketing/upsell" element={<MarketingUpsell />} />
+                <Route path="/painel/marketing/avaliacoes" element={<MarketingReviews />} />
                 {/* ── CRM routes ── */}
                 <Route path="/painel/crm" element={<CrmDashboard />} />
                 <Route path="/painel/crm/inteligencia" element={<CrmInteligencia />} />

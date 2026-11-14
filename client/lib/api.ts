@@ -1265,6 +1265,31 @@ export interface ApiOrder {
   } | null;
 }
 
+export type CustomerReviewType = "order" | "item" | "product" | "delivery";
+export type CustomerReviewStatus = "pending" | "approved" | "rejected";
+export interface ApiCustomerReview {
+  id: string;
+  tenant_id: string;
+  order_id: string;
+  order_item_id: string | null;
+  product_id: string | null;
+  delivery_id: string | null;
+  customer_id: string | null;
+  review_type: CustomerReviewType;
+  rating: number;
+  comment: string | null;
+  author_name: string | null;
+  status: CustomerReviewStatus;
+  source: string;
+  moderation_note: string | null;
+  created_at: string;
+  updated_at: string;
+  product_name?: string | null;
+  order_code?: string | null;
+  moderated_by_admin_id?: string | null;
+  moderated_at?: string | null;
+}
+
 export interface ApiCustomerDeliveryLocation {
   order_id: string;
   delivery_status: string | null;
@@ -6187,6 +6212,27 @@ export const ordersApi = {
 
   updateWhatsappNotifications: (body: ApiOrderWhatsappNotificationSettings) =>
     put<ApiOrderWhatsappNotificationConfig>("/orders/new-order-whatsapp-notifications", body),
+};
+
+export const reviewsApi = {
+  listProduct: (productId: string, limit = 20) =>
+    get<{ product_id: string; average_rating: number | null; count: number; reviews: ApiCustomerReview[] }>(`/reviews/products/${encodeURIComponent(productId)}?limit=${limit}`),
+  listPublic: (productId?: string) => get<ApiCustomerReview[]>(`/reviews/public${productId ? `?product_id=${encodeURIComponent(productId)}` : ""}`),
+  submitOrder: (orderId: string, rating: number, comment?: string) =>
+    request<ApiCustomerReview>("POST", `/reviews/orders/${encodeURIComponent(orderId)}`, { order_id: orderId, review_type: "order", rating, comment: comment || null }, orderAccessHeaders(orderId)),
+  submitItem: (orderId: string, orderItemId: string, productId: string, rating: number, comment?: string) =>
+    request<ApiCustomerReview>("POST", `/reviews/order-items/${encodeURIComponent(orderItemId)}`, { order_id: orderId, order_item_id: orderItemId, product_id: productId, review_type: "item", rating, comment: comment || null }, orderAccessHeaders(orderId)),
+  submitDelivery: (orderId: string, deliveryId: string, rating: number, comment?: string) =>
+    request<ApiCustomerReview>("POST", `/reviews/deliveries/${encodeURIComponent(deliveryId)}`, { order_id: orderId, delivery_id: deliveryId, review_type: "delivery", rating, comment: comment || null }, orderAccessHeaders(orderId)),
+  adminList: (params?: { review_type?: CustomerReviewType; status?: CustomerReviewStatus }) => {
+    const qs = new URLSearchParams();
+    if (params?.review_type) qs.set("review_type", params.review_type);
+    if (params?.status) qs.set("status", params.status);
+    return get<ApiCustomerReview[]>(`/reviews/admin${qs.toString() ? `?${qs}` : ""}`);
+  },
+  adminCreate: (body: Record<string, unknown>) => post<ApiCustomerReview>("/reviews/admin", body),
+  moderate: (reviewId: string, status: CustomerReviewStatus, moderation_note?: string) =>
+    patch<ApiCustomerReview>(`/reviews/admin/${encodeURIComponent(reviewId)}/moderation`, { status, moderation_note: moderation_note || null }),
 };
 
 export const marketplaceSettlementsApi = {

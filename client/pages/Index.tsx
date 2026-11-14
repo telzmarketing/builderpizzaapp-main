@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Menu, Search, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, Tag, Heart, UtensilsCrossed, Plus, Check } from "lucide-react";
+import { Menu, Search, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, Tag, Heart, UtensilsCrossed, Plus, Check, Star } from "lucide-react";
 
 import { useApp } from "@/context/AppContext";
 import { categoriesApi, homeCatalogApi, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl, type ApiProductCategory } from "@/lib/api";
@@ -307,6 +307,7 @@ export default function Home() {
                 { icon: <ShoppingCart size={20} />, label: "Carrinho", path: "/cart" },
                 { icon: <Bell size={20} />, label: "Meus Pedidos", path: "/pedidos" },
                 { icon: <Tag size={20} />, label: "Cupons", path: "/cupons" },
+                { icon: <Star size={20} />, label: "Avaliações de clientes", path: "/avaliacoes" },
                 ...(loyaltySettings.enabled ? [{ icon: <Heart size={20} />, label: "Fidelidade", path: "/fidelidade" }] : []),
                 { icon: <User size={20} />, label: "Minha Conta", path: "/conta" },
               ].map(({ icon, label, path }) => (
@@ -329,7 +330,7 @@ export default function Home() {
         <button onClick={() => setMenuOpen(true)} className="text-parchment hover:text-cream transition-colors">
           <Menu size={24} />
         </button>
-        <button onClick={() => navigate("/")} aria-label="Ir para a home da loja">
+        <button onClick={() => navigate("/")} aria-label="Ir para a home da loja" className="translate-y-2">
           <MoschettieriLogo className="text-cream text-base scale-[1.31] origin-center" />
         </button>
         <button onClick={() => setSearchOpen(true)} className="text-parchment hover:text-cream transition-colors">
@@ -510,15 +511,21 @@ export default function Home() {
                     Indisponivel no momento
                   </p>
                 )}
-                <button
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-1 text-xs text-gold" aria-label={`Avaliação ${product.rating?.toFixed(1) ?? "0.0"} de 5`}>
+                    <Star size={14} className="fill-gold" />
+                    <span>{product.rating?.toFixed(1) ?? "0.0"}</span>
+                  </div>
+                  <button
                   type="button"
                   aria-label={product.inventory_available === false ? `${product.name} indisponível` : `Adicionar ${product.name}`}
                   disabled={product.inventory_available === false}
                   onClick={(event) => handleQuickAdd(event, product)}
-                  className={`mt-3 ml-auto grid h-10 w-10 place-items-center rounded-full transition-all active:scale-90 ${product.inventory_available === false ? "bg-surface-03 text-stone" : justAdded === product.id ? "bg-green-500 text-cream scale-110" : "bg-gold text-cream hover:bg-gold/80"}`}
+                    className={`grid h-10 w-10 place-items-center rounded-full transition-all active:scale-90 ${product.inventory_available === false ? "bg-surface-03 text-stone" : justAdded === product.id ? "bg-green-500 text-cream scale-110" : "bg-gold text-cream hover:bg-gold/80"}`}
                 >
                   {justAdded === product.id ? <Check size={17} /> : <Plus size={18} />}
-                </button>
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -568,15 +575,21 @@ export default function Home() {
                       Indisponivel no momento
                     </p>
                   )}
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-1 text-xs text-gold" aria-label={`Avaliação ${currentPizza?.rating?.toFixed(1) ?? "0.0"} de 5`}>
+                      <Star size={13} className="fill-gold" />
+                      <span>{currentPizza?.rating?.toFixed(1) ?? "0.0"}</span>
+                    </div>
                   <button
                     type="button"
                     aria-label={currentPizza?.inventory_available === false ? `${currentPizza?.name} indisponível` : `Adicionar ${currentPizza?.name}`}
                     disabled={currentPizza?.inventory_available === false}
                     onClick={(event) => handleQuickAdd(event, currentPizza)}
-                    className={`mt-3 ml-auto grid h-9 w-9 place-items-center rounded-full transition-all active:scale-90 ${currentPizza?.inventory_available === false ? "bg-surface-03 text-stone" : justAdded === currentPizza?.id ? "bg-green-500 text-cream scale-110" : "bg-gold text-cream hover:bg-gold/80"}`}
+                    className={`grid h-9 w-9 place-items-center rounded-full transition-all active:scale-90 ${currentPizza?.inventory_available === false ? "bg-surface-03 text-stone" : justAdded === currentPizza?.id ? "bg-green-500 text-cream scale-110" : "bg-gold text-cream hover:bg-gold/80"}`}
                   >
                     {justAdded === currentPizza?.id ? <Check size={16} /> : <Plus size={17} />}
                   </button>
+                  </div>
                 </div>
               </div>
 

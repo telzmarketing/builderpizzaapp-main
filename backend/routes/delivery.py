@@ -50,6 +50,7 @@ from backend.models.delivery import Delivery, DeliveryPerson
 from backend.routes.admin_auth import get_current_admin
 from backend.routes.order_access import require_order_or_admin
 from backend.services.delivery_service import DeliveryService
+from backend.services.customer_review_service import CustomerReviewService
 from backend.schemas.delivery import (
     DeliveryPersonCreate,
     DeliveryPersonUpdate,
@@ -969,6 +970,16 @@ def rate_delivery(
             expected_tenant_id=existing_delivery.tenant_id,
         )
         delivery = service.rate(delivery_id, body.rating, body.comment)
+        # Preserve the legacy delivery columns while exposing the same rating
+        # through the moderated customer-review ledger.
+        review_context = trusted_process_context(
+            existing_delivery.tenant_id,
+            source=TenantSource.JOB,
+            correlation_id=f"delivery-review:{delivery_id}",
+        )
+        CustomerReviewService(db, review_context).sync_legacy_delivery_rating(
+            delivery_id, body.rating, body.comment,
+        )
         return ok(delivery, "Avaliação registrada. Obrigado!")
     except DomainError as exc:
         return err(exc)

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { ChevronLeft, Loader2, ShoppingBag, Star } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { deliveryApi, isAssetUrl, ordersApi, resolveAssetUrl, type ApiOrder } from "@/lib/api";
+import { isAssetUrl, ordersApi, resolveAssetUrl, reviewsApi, type ApiOrder } from "@/lib/api";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
@@ -23,12 +23,12 @@ const statusStyle: Record<string, string> = {
 // ── Rating widget ──────────────────────────────────────────────────────────────
 
 interface RatingWidgetProps {
-  orderId: string;
-  deliveryId: string;
-  existingRating?: number;
+  label: string;
+  onSubmit: (rating: number, comment?: string) => Promise<unknown>;
+  existingRating?: number | null;
 }
 
-function RatingWidget({ orderId: _orderId, deliveryId, existingRating }: RatingWidgetProps) {
+function RatingWidget({ label, onSubmit, existingRating }: RatingWidgetProps) {
   const [hovered, setHovered] = useState(0);
   const [selected, setSelected] = useState(existingRating ?? 0);
   const [comment, setComment] = useState("");
@@ -56,11 +56,10 @@ function RatingWidget({ orderId: _orderId, deliveryId, existingRating }: RatingW
     if (!selected) return;
     setSubmitting(true);
     try {
-      await deliveryApi.rateDelivery(deliveryId, selected, comment.trim() || undefined);
+      await onSubmit(selected, comment.trim() || undefined);
       setSubmitted(true);
     } catch {
-      // silently ignore — rating is optional
-      setSubmitted(true);
+      // Keep the form available so the customer can retry after a transient error.
     } finally {
       setSubmitting(false);
     }
@@ -68,7 +67,7 @@ function RatingWidget({ orderId: _orderId, deliveryId, existingRating }: RatingW
 
   return (
     <div className="px-4 py-3 border-t border-surface-03 bg-surface-01/60">
-      <p className="text-parchment text-xs font-bold mb-2">Avalie seu pedido e entrega</p>
+      <p className="text-parchment text-xs font-bold mb-2">{label}</p>
       <div className="flex gap-1 mb-2">
         {[1, 2, 3, 4, 5].map((s) => (
           <button
@@ -240,12 +239,27 @@ export default function Pedidos() {
                 </div>
 
                 {/* Post-sale rating — only for delivered orders with a delivery */}
-                {order.status === "delivered" && order.delivery?.id && (
-                  <RatingWidget
-                    orderId={order.id}
-                    deliveryId={order.delivery.id}
-                    existingRating={order.delivery.rating}
-                  />
+                {order.status === "delivered" && (
+                  <div className="space-y-px">
+                    <RatingWidget
+                      label="Avalie o pedido"
+                      onSubmit={(rating, comment) => reviewsApi.submitOrder(order.id, rating, comment)}
+                    />
+                    {order.items.map((item) => (
+                      <RatingWidget
+                        key={`review-${item.id}`}
+                        label={`Avalie: ${item.product_name}`}
+                        onSubmit={(rating, comment) => reviewsApi.submitItem(order.id, item.id, item.product_id, rating, comment)}
+                      />
+                    ))}
+                    {order.delivery?.id && (
+                      <RatingWidget
+                        label="Avalie a entrega"
+                        existingRating={order.delivery.rating}
+                        onSubmit={(rating, comment) => reviewsApi.submitDelivery(order.id, order.delivery!.id, rating, comment)}
+                      />
+                    )}
+                  </div>
                 )}
               </div>
             ))}

@@ -23,7 +23,7 @@ _logger = logging.getLogger(__name__)
 
 from backend.config import get_settings
 from backend.database import create_all_tables, SessionLocal, engine
-from backend.routes import products, orders, payments, shipping, coupons, loyalty, customers, promotions, admin, delivery, auth, admin_auth, campaigns, webhooks, store_operation
+from backend.routes import products, orders, payments, shipping, coupons, loyalty, customers, promotions, admin, delivery, auth, admin_auth, campaigns, webhooks, store_operation, customer_reviews
 from backend.routes import print_order as print_order_routes
 from backend.routes import marketplace_settlements as marketplace_settlement_routes
 from backend.routes import ai_credentials as ai_credentials_routes
@@ -1391,6 +1391,7 @@ app.include_router(delivery.router)
 app.include_router(auth.router)
 app.include_router(admin_auth.router)
 app.include_router(campaigns.router)
+app.include_router(customer_reviews.router)
 app.include_router(chatbot_routes.router)
 app.include_router(admin_chatbot_routes.router)
 app.include_router(upload_routes.router)
@@ -1455,6 +1456,7 @@ app.include_router(delivery.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(admin_auth.router, prefix="/api")
 app.include_router(campaigns.router, prefix="/api")
+app.include_router(customer_reviews.router, prefix="/api")
 app.include_router(chatbot_routes.router, prefix="/api")
 app.include_router(admin_chatbot_routes.router, prefix="/api")
 app.include_router(upload_routes.router, prefix="/api")
