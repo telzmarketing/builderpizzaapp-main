@@ -29,6 +29,9 @@ importers:
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
+      qz-tray:
+        specifier: 2.3.0
+        version: 2.3.0
       react-leaflet:
         specifier: ^5.0.0
         version: 5.0.0(leaflet@1.9.4)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -168,6 +171,9 @@ importers:
       '@types/node':
         specifier: ^24.2.1
         version: 24.2.1
+      '@types/qz-tray':
+        specifier: 2.2.2
+        version: 2.2.2
       '@types/react':
         specifier: ^18.3.23
         version: 18.3.23
@@ -2446,6 +2452,9 @@ packages:
   '@types/qs@6.14.0':
     resolution: {integrity: sha512-eOunJqu0K1923aExK6y8p6fsihYEn/BYuQ4g0CxAAgFc4b/ZLN4CrsRZ55srTdqoiLzU2B2evC+apEIxprEzkQ==}
 
+  '@types/qz-tray@2.2.2':
+    resolution: {integrity: sha512-/a0wZ5ZMd4kvD3KgafoXY07DVXd7JkEWOAoJQNf1Gvygb32y8cyxeHlfM93ic8NNGLC9bHMKxrafRyFFPsgASg==}
+
   '@types/range-parser@1.2.7':
     resolution: {integrity: sha512-hKormJbkJqzQGhziax5PItDUTMAM9uE2XXQmM37dyd4hVM+5aVl7oVxMVUiVQn2oCQFN/LKCZdvSM0pFRqbSmQ==}
 
@@ -4086,6 +4095,9 @@ packages:
 
   quick-format-unescaped@4.0.4:
     resolution: {integrity: sha512-tYC1Q1hgyRuHgloV/YXs2w15unPVh8qfu/qCTfhTYamaw7fyhumKa2yGpdSo87vY32rIclj+4fWYQXUMs9EHvg==}
+
+  qz-tray@2.3.0:
+    resolution: {integrity: sha512-hviWThaaUHdjSTjs1q7D8ow8F7l1iBUhbM3J+sOL2DgkTlXO5DmxQewMdirdQgnUQAuaiSzVB9wIhiltOn1aaQ==}
 
   range-parser@1.2.1:
     resolution: {integrity: sha512-Hrgsx+orqoygnmhFbKaHE6c296J+HTAQXoxEF6gNupROmmGJRoyzfG3ccAveqCBrwr/2yxQ5BVd/GTl5agOwSg==}
@@ -7344,6 +7356,8 @@ snapshots:
 
   '@types/qs@6.14.0': {}
 
+  '@types/qz-tray@2.2.2': {}
+
   '@types/range-parser@1.2.7': {}
 
   '@types/react-dom@18.3.7(@types/react@18.3.23)':
@@ -9000,6 +9014,8 @@ snapshots:
   queue-microtask@1.2.3: {}
 
   quick-format-unescaped@4.0.4: {}
+
+  qz-tray@2.3.0: {}
 
   range-parser@1.2.1: {}
 
