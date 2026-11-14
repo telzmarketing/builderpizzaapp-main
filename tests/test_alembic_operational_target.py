@@ -113,6 +113,8 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20261112_tenant_ai_credentials:20261113_marketplace_settlements",
         "20261113_marketplace_settlements:20261114_product_landing_pages",
         "20261114_product_landing_pages:20261113_marketplace_settlements",
+        "20261113_customer_reviews:20261114_product_landing_pages",
+        "20261114_product_landing_pages:20261113_customer_reviews",
     }
 
     sources = {
@@ -190,6 +192,8 @@ def test_schema_predicates_allow_reviewed_recovery_and_reject_unknown_pairs():
             ("20261112_tenant_ai_credentials", "20261113_marketplace_settlements", 0),
             ("20261113_marketplace_settlements", "20261114_product_landing_pages", 0),
             ("20261114_product_landing_pages", "20261113_marketplace_settlements", 0),
+            ("20261113_customer_reviews", "20261114_product_landing_pages", 0),
+            ("20261114_product_landing_pages", "20261113_customer_reviews", 0),
             ("unknown", "20261017_runtime_schema", 1),
         )
         for code, database, expected in cases:

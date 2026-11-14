@@ -19,8 +19,9 @@ A construcao transacional dos indices pode bloquear escritas nas tabelas;
 agende janela operacional para bases grandes e ensaie primeiro em clone.
 O downgrade permanece bloqueado. A migration de landing de produto e aditiva:
 adiciona campos/indices, torna `promotion_id` opcional para o novo tipo e mantem
-as colunas existentes. Por isso o par direcional entre
-`20261113_marketplace_settlements` e `20261114_product_landing_pages` permite
+as colunas existentes. Por isso os pares direcionais entre
+`20261113_customer_reviews`/`20261114_product_landing_pages` e
+`20261113_marketplace_settlements`/`20261114_product_landing_pages` permitem
 rollback de codigo com o schema expandido; isso nao autoriza downgrade do banco.
 Qualquer par nao listado permanece bloqueado e so pode prosseguir com
 `TELZ_FORWARD_ONLY_CUTOVER=true` e `TELZ_FORWARD_ONLY_CUTOVER_CONFIRM="FORWARD_ONLY <SHA-completo>"`.

@@ -84,7 +84,9 @@ schema_pair_is_compatible() {
       return 0
       ;;
     "20261113_marketplace_settlements:20261114_product_landing_pages" | \
-    "20261114_product_landing_pages:20261113_marketplace_settlements")
+    "20261114_product_landing_pages:20261113_marketplace_settlements" | \
+    "20261113_customer_reviews:20261114_product_landing_pages" | \
+    "20261114_product_landing_pages:20261113_customer_reviews")
       return 0
       ;;
     *)
