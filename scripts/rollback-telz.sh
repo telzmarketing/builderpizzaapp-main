@@ -270,6 +270,10 @@ schema_pair_is_compatible() {
     "20261112_tenant_ai_credentials:20261113_marketplace_settlements")
       return 0
       ;;
+    "20261113_marketplace_settlements:20261114_product_landing_pages" | \
+    "20261114_product_landing_pages:20261113_marketplace_settlements")
+      return 0
+      ;;
     *)
       return 1
       ;;

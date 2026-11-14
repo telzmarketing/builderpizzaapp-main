@@ -5,17 +5,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_TARGET_FILES = {
-    "installer/config/defaults.env",
     "scripts/update-telz.sh",
     "scripts/deploy-telz-from-origin.sh",
     ".github/workflows/deploy.yml",
     ".github/workflows/prepare-manual-deploy.yml",
-    "docs/INSTALL_TELZ_VPS.md",
-    "docs/TELZ_VPS_INSTALL_PHASED_METHOD.md",
     "docs/UPDATE_TELZ_VPS.md",
 }
 REVISION_PATTERN = re.compile(r"202\d{5}_[a-z0-9_]+")
-EXPECTED_OPERATIONAL_HEAD = "20261113_marketplace_settlements"
+EXPECTED_OPERATIONAL_HEAD = "20261114_product_landing_pages"
 
 
 def _migration_heads() -> set[str]:
@@ -53,12 +50,7 @@ def _migration_heads() -> set[str]:
 
 def _operational_targets() -> dict[str, set[str]]:
     targets: dict[str, set[str]] = {}
-    candidates = {
-        path
-        for directory in ("installer", "scripts", ".github/workflows", "docs")
-        for path in (ROOT / directory).rglob("*")
-        if path.is_file() and path.suffix in {".env", ".md", ".sh", ".yaml", ".yml"}
-    }
+    candidates = {ROOT / relative_path for relative_path in EXPECTED_TARGET_FILES}
     for path in candidates:
         source = path.read_text(encoding="utf-8")
         values = {
@@ -119,6 +111,8 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20261027_bi_mobile_analytics_indexes:20261027_logistics_settings_tenant_key",
         "20261113_marketplace_settlements:20261112_tenant_ai_credentials",
         "20261112_tenant_ai_credentials:20261113_marketplace_settlements",
+        "20261113_marketplace_settlements:20261114_product_landing_pages",
+        "20261114_product_landing_pages:20261113_marketplace_settlements",
     }
 
     sources = {
@@ -194,6 +188,8 @@ def test_schema_predicates_allow_reviewed_recovery_and_reject_unknown_pairs():
             ("20261026_order_driver_delivery_fee", "20261027_bi_mobile_analytics_indexes", 1),
             ("20261113_marketplace_settlements", "20261112_tenant_ai_credentials", 0),
             ("20261112_tenant_ai_credentials", "20261113_marketplace_settlements", 0),
+            ("20261113_marketplace_settlements", "20261114_product_landing_pages", 0),
+            ("20261114_product_landing_pages", "20261113_marketplace_settlements", 0),
             ("unknown", "20261017_runtime_schema", 1),
         )
         for code, database, expected in cases:

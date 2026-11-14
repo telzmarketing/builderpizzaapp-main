@@ -137,7 +137,7 @@ validate_operational_config
 BRANCH="${BRANCH:-main}"
 RUN_TESTS="${RUN_TESTS:-false}"
 EXPECTED_COMMIT="${TELZ_EXPECTED_COMMIT:-}"
-ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261113_marketplace_settlements}"
+ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261114_product_landing_pages}"
 FORWARD_ONLY_CUTOVER="${TELZ_FORWARD_ONLY_CUTOVER:-false}"
 FORWARD_ONLY_CUTOVER_CONFIRM="${TELZ_FORWARD_ONLY_CUTOVER_CONFIRM:-}"
 EXPLICIT_RECOVERY="${TELZ_EXPLICIT_RECOVERY:-false}"
@@ -649,6 +649,10 @@ schema_is_rollback_compatible() {
       return 0
       ;;
     "20261112_tenant_ai_credentials:20261113_marketplace_settlements")
+      return 0
+      ;;
+    "20261113_marketplace_settlements:20261114_product_landing_pages" | \
+    "20261114_product_landing_pages:20261113_marketplace_settlements")
       return 0
       ;;
     *)
