@@ -1290,6 +1290,23 @@ export interface ApiCustomerReview {
   moderated_at?: string | null;
 }
 
+export interface ApiCustomerReviewAdminCreate {
+  order_id: string;
+  review_type: CustomerReviewType;
+  rating: number;
+  order_item_id?: string | null;
+  product_id?: string | null;
+  delivery_id?: string | null;
+  comment?: string | null;
+  author_name?: string | null;
+  status?: CustomerReviewStatus;
+}
+
+export interface ApiCustomerReviewModeration {
+  status: CustomerReviewStatus;
+  moderation_note?: string | null;
+}
+
 export interface ApiCustomerDeliveryLocation {
   order_id: string;
   delivery_status: string | null;
@@ -6230,9 +6247,15 @@ export const reviewsApi = {
     if (params?.status) qs.set("status", params.status);
     return get<ApiCustomerReview[]>(`/reviews/admin${qs.toString() ? `?${qs}` : ""}`);
   },
-  adminCreate: (body: Record<string, unknown>) => post<ApiCustomerReview>("/reviews/admin", body),
+  adminCreate: (body: ApiCustomerReviewAdminCreate) => post<ApiCustomerReview>("/reviews/admin", body),
   moderate: (reviewId: string, status: CustomerReviewStatus, moderation_note?: string) =>
-    patch<ApiCustomerReview>(`/reviews/admin/${encodeURIComponent(reviewId)}/moderation`, { status, moderation_note: moderation_note || null }),
+    patch<ApiCustomerReview>(`/reviews/admin/${encodeURIComponent(reviewId)}/moderation`, { status, moderation_note: moderation_note || null } satisfies ApiCustomerReviewModeration),
+  submitOrderReview: (orderId: string, rating: number, comment?: string) => reviewsApi.submitOrder(orderId, rating, comment),
+  submitProductReview: (orderId: string, orderItemId: string, productId: string, rating: number, comment?: string) => reviewsApi.submitItem(orderId, orderItemId, productId, rating, comment),
+  submitDeliveryReview: (orderId: string, deliveryId: string, rating: number, comment?: string) => reviewsApi.submitDelivery(orderId, deliveryId, rating, comment),
+  listProductReviews: (productId: string, limit = 20) => reviewsApi.listProduct(productId, limit),
+  listAdmin: (params?: { review_type?: CustomerReviewType; status?: CustomerReviewStatus }) => reviewsApi.adminList(params),
+  createAdminReview: (body: ApiCustomerReviewAdminCreate) => reviewsApi.adminCreate(body),
 };
 
 export const marketplaceSettlementsApi = {

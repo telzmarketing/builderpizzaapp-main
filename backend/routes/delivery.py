@@ -978,7 +978,7 @@ def rate_delivery(
             correlation_id=f"delivery-review:{delivery_id}",
         )
         CustomerReviewService(db, review_context).sync_legacy_delivery_rating(
-            delivery_id, body.rating, body.comment,
+            existing_delivery, body.rating, body.comment,
         )
         return ok(delivery, "Avaliação registrada. Obrigado!")
     except DomainError as exc:
