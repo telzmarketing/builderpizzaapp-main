@@ -27,6 +27,7 @@ import {
 } from "@/lib/api";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
+import { applyUpsellTrigger, getUpsellTriggerMode, type UpsellTriggerMode } from "@/lib/upsellTrigger";
 
 const IC = "w-full rounded-xl border border-surface-03 bg-surface-03 px-3 py-2 text-sm text-cream outline-none transition-colors focus:border-gold";
 const LB = "block text-xs text-stone mb-1.5";
@@ -239,11 +240,16 @@ export default function MarketingUpsell() {
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<ApiUpsellInput>(emptyForm());
+  const [triggerMode, setTriggerMode] = useState<UpsellTriggerMode>("product");
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const activeProducts = useMemo(() => products.filter((p) => p.active), [products]);
+  const triggerCategories = useMemo(
+    () => [...new Set(activeProducts.map((p) => p.category?.trim()).filter((category): category is string => Boolean(category)))].sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [activeProducts],
+  );
 
   const selectedTriggerProduct = activeProducts.find((p) => p.id === form.trigger_product_id) ?? null;
   const selectedUpsellProduct = activeProducts.find((p) => p.id === form.product_id) ?? null;
@@ -273,6 +279,7 @@ export default function MarketingUpsell() {
   function openCreate() {
     setEditId(null);
     setForm(emptyForm());
+    setTriggerMode("product");
     setSelectedWeekdays([0, 1, 2, 3, 4, 5, 6]);
     setShowAdvanced(false);
     setError("");
@@ -288,7 +295,7 @@ export default function MarketingUpsell() {
       main_text: u.main_text,
       secondary_text: u.secondary_text,
       promotional_price: u.promotional_price,
-      trigger_type: "product_in_cart",
+      trigger_type: u.trigger_type,
       trigger_product_id: u.trigger_product_id,
       trigger_category: u.trigger_category,
       trigger_min_value: u.trigger_min_value,
@@ -300,6 +307,7 @@ export default function MarketingUpsell() {
       display_limit: u.display_limit,
       active: u.active,
     });
+    setTriggerMode(getUpsellTriggerMode(u));
     setSelectedWeekdays(parseWeekdaysString(u.allowed_weekdays));
     setShowAdvanced(false);
     setError("");
@@ -315,6 +323,14 @@ export default function MarketingUpsell() {
       setError("Preencha o texto principal do upsell.");
       return;
     }
+    if (triggerMode === "product" && !form.trigger_product_id) {
+      setError("Selecione o produto que deve estar no carrinho.");
+      return;
+    }
+    if (triggerMode === "category" && !form.trigger_category) {
+      setError("Selecione a categoria que deve estar no carrinho.");
+      return;
+    }
     // Auto-generate internal_name if empty
     const internalName = form.internal_name.trim() ||
       `${selectedTriggerProduct?.name ?? "Geral"} → ${selectedUpsellProduct?.name ?? form.product_id}`;
@@ -323,9 +339,8 @@ export default function MarketingUpsell() {
     setError("");
     try {
       const payload: ApiUpsellInput = {
-        ...form,
+        ...applyUpsellTrigger(form, triggerMode, triggerMode === "category" ? form.trigger_category : form.trigger_product_id),
         internal_name: internalName,
-        trigger_type: form.trigger_product_id ? "product_in_cart" : "min_value",
         allowed_weekdays: buildWeekdaysString(selectedWeekdays),
       };
       if (editId) {
@@ -464,7 +479,12 @@ export default function MarketingUpsell() {
 
                         {/* Produto principal (gatilho) */}
                         <div className="flex items-center gap-2 min-w-0 flex-1">
-                          {triggerProd ? (
+                          {u.trigger_type === "category" ? (
+                            <div className="min-w-0">
+                              <p className="text-stone text-[10px] uppercase tracking-wide">Categoria principal</p>
+                              <p className="text-cream text-xs font-medium truncate">{u.trigger_category}</p>
+                            </div>
+                          ) : triggerProd ? (
                             <div className="flex items-center gap-2">
                               <div className="w-9 h-9 rounded-lg bg-surface-03 flex-shrink-0 flex items-center justify-center text-base overflow-hidden">
                                 {isAssetUrl(triggerProd.icon)
@@ -627,14 +647,33 @@ export default function MarketingUpsell() {
 
               {/* 1. Produto principal (gatilho) */}
               <div>
-                <ProductPicker
-                  label="Produto gatilho — opcional (deixe vazio para mostrar em qualquer carrinho)"
+                <label className={LB}>Exibir o upsell quando</label>
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  {([["product", "Produto no carrinho"], ["category", "Categoria no carrinho"], ["any", "Qualquer carrinho"]] as const).map(([mode, label]) => (
+                    <button key={mode} type="button" onClick={() => { setTriggerMode(mode); setForm((f) => ({ ...f, trigger_product_id: null, trigger_category: null })); }} className={`rounded-xl border px-2 py-2 text-xs font-semibold ${triggerMode === mode ? "border-gold bg-gold/15 text-gold" : "border-surface-03 bg-surface-03 text-stone"}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {triggerMode === "product" && <ProductPicker
+                  label="Produto que deve estar no carrinho *"
                   value={form.trigger_product_id ?? ""}
                   products={activeProducts}
                   onChange={(id) => setForm((f) => ({ ...f, trigger_product_id: id || null }))}
                   placeholder="Sem gatilho — aparece para qualquer carrinho"
-                />
-                {!selectedTriggerProduct && (
+                />}
+                {triggerMode === "category" && (
+                  <>
+                    <label className={LB}>Categoria do carrinho</label>
+                    <select className={IC} value={form.trigger_category ?? ""} onChange={(e) => setForm((f) => ({ ...f, trigger_category: e.target.value || null }))}>
+                      <option value="">Selecione uma categoria...</option>
+                      {triggerCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+                    </select>
+                    {!form.trigger_category && <p className="mt-1.5 text-xs text-amber-400">Selecione uma categoria para ativar este gatilho.</p>}
+                  </>
+                )}
+                {triggerMode === "any" && <p className="mt-1.5 text-xs text-green-400">✓ O upsell aparece para qualquer carrinho.</p>}
+                {triggerMode === "product" && !selectedTriggerProduct && (
                   <p className="mt-1.5 text-xs text-green-400 flex items-center gap-1">
                     ✓ Sem gatilho: upsell aparece para todos os clientes
                   </p>
