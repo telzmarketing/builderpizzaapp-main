@@ -16,6 +16,7 @@ import {
   type ApiProduct, type ApiCoupon, type ApiCouponUsage, type ApiMarketingAutomation,
   type CampaignStatus, type CampaignType, type CpDiscountType, type KitType,
 } from "@/lib/api";
+import { addKitItemDraft, removeKitItemDraft, type PromotionalKitItemDraft } from "@/lib/promotionalKitItems";
 
 // ── Shared mini components ────────────────────────────────────────────────────
 
@@ -201,6 +202,9 @@ export default function AdminCampanhas() {
   const [showKitItemsModal, setShowKitItemsModal] = useState(false);
   const [newKitItemProductId, setNewKitItemProductId] = useState("");
   const [newKitItemQty, setNewKitItemQty] = useState(1);
+  const [kitItemDrafts, setKitItemDrafts] = useState<PromotionalKitItemDraft[]>([]);
+  const [kitDraftProductId, setKitDraftProductId] = useState("");
+  const [kitDraftQuantity, setKitDraftQuantity] = useState(1);
 
   const [toast, setToast] = useState("");
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
@@ -480,6 +484,9 @@ export default function AdminCampanhas() {
   const openCreateKit = () => {
     setEditingKitId(null);
     setKitForm(emptyKitForm);
+    setKitItemDrafts([]);
+    setKitDraftProductId("");
+    setKitDraftQuantity(1);
     setShowKitModal(true);
   };
 
@@ -491,6 +498,9 @@ export default function AdminCampanhas() {
       discount_type: k.discount_type ?? "", discount_value: k.discount_value ?? 0,
       valid_until: k.valid_until ? k.valid_until.slice(0, 16) : "", active: k.active,
     });
+    setKitItemDrafts([]);
+    setKitDraftProductId("");
+    setKitDraftQuantity(1);
     setShowKitModal(true);
   };
 
@@ -506,13 +516,18 @@ export default function AdminCampanhas() {
         valid_until: kitForm.valid_until ? new Date(kitForm.valid_until).toISOString() : null,
         description: kitForm.description || null,
       };
+      let savedKit: ApiPromotionalKit;
       if (editingKitId) {
-        await campaignsApi.updateKit(editingKitId, payload as any);
+        savedKit = await campaignsApi.updateKit(editingKitId, payload as any);
         showToast("Kit atualizado!");
       } else {
-        await campaignsApi.createKit(payload as any);
+        savedKit = await campaignsApi.createKit(payload as any);
         showToast("Kit criado!");
       }
+      for (const item of kitItemDrafts) {
+        await campaignsApi.addKitItem(savedKit.id, item.product_id, item.quantity);
+      }
+      setKitItemDrafts([]);
       setShowKitModal(false);
       loadAll();
     } catch { showToast("Erro ao salvar."); }
@@ -530,19 +545,27 @@ export default function AdminCampanhas() {
 
   const openKitItems = (k: ApiPromotionalKit) => {
     setSelectedKit(k);
+    setKitItemDrafts([]);
     setShowKitItemsModal(true);
   };
 
-  const handleAddKitItem = async () => {
-    if (!selectedKit || !newKitItemProductId) return;
+  const addKitDraftItem = () => {
+    if (!kitDraftProductId) return;
+    setKitItemDrafts((current) => addKitItemDraft(current, kitDraftProductId, kitDraftQuantity));
+    setKitDraftProductId("");
+    setKitDraftQuantity(1);
+  };
+
+  const handleAddKitItems = async () => {
+    if (!selectedKit || kitItemDrafts.length === 0) return;
     try {
-      await campaignsApi.addKitItem(selectedKit.id, newKitItemProductId, newKitItemQty);
+      await Promise.all(kitItemDrafts.map((item) => campaignsApi.addKitItem(selectedKit.id, item.product_id, item.quantity)));
       const refreshed = await campaignsApi.listKits();
       setKits(refreshed);
       const updated = refreshed.find((k) => k.id === selectedKit.id);
       if (updated) setSelectedKit(updated);
-      setNewKitItemProductId(""); setNewKitItemQty(1);
-      showToast("Item adicionado!");
+      setKitItemDrafts([]);
+      showToast(`${kitItemDrafts.length} produto(s) adicionado(s)!`);
     } catch { showToast("Erro ao adicionar item."); }
   };
 
@@ -1396,6 +1419,37 @@ export default function AdminCampanhas() {
               <Inp label="Valor do Desconto" type="number" step="0.01" value={kitForm.discount_value} onChange={(e) => setKitForm({ ...kitForm, discount_value: parseFloat(e.target.value) || 0 })} disabled={!kitForm.discount_type} />
             </div>
 
+            {false && <div className="rounded-xl border border-surface-03 bg-surface-03/40 p-4 space-y-3">
+              <div>
+                <p className="text-parchment text-sm font-bold">Produtos do kit</p>
+                <p className="text-stone text-xs mt-1">Adicione vários produtos e informe a quantidade de cada um.</p>
+              </div>
+              <div className="grid grid-cols-[1fr_96px_auto] gap-2 items-end">
+                <Sel label="Produto" value={kitDraftProductId} onChange={(e) => setKitDraftProductId(e.target.value)}>
+                  <option value="">Selecione um produto...</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>{p.icon} {p.name}</option>
+                  ))}
+                </Sel>
+                <Inp label="Quantidade" type="number" min={1} value={kitDraftQuantity} onChange={(e) => setKitDraftQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))} />
+                <button type="button" onClick={addKitDraftItem} disabled={!kitDraftProductId} className="h-[38px] px-3 bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold rounded-lg text-sm inline-flex items-center gap-1">
+                  <Plus size={14} /> Adicionar
+                </button>
+              </div>
+              <div className="space-y-2">
+                {kitItemDrafts.map((item, index) => (
+                  <div key={`${item.product_id}-${index}`} className="flex items-center gap-3 rounded-lg bg-surface-02 px-3 py-2">
+                    <span className="flex-1 text-cream text-sm">{getProductName(item.product_id)}</span>
+                    <span className="text-stone text-xs">Quantidade: {item.quantity}</span>
+                    <button type="button" onClick={() => setKitItemDrafts((current) => removeKitItemDraft(current, index))} className="text-red-400 hover:text-red-300" aria-label={`Remover ${getProductName(item.product_id)}`}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+                {kitItemDrafts.length === 0 && <p className="text-stone text-xs">Nenhum produto adicionado ainda.</p>}
+              </div>
+            </div>}
+
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={kitForm.active} onChange={(e) => setKitForm({ ...kitForm, active: e.target.checked })} className="w-4 h-4 accent-gold" />
               <span className="text-parchment text-sm">Ativo</span>
@@ -1416,7 +1470,8 @@ export default function AdminCampanhas() {
         <Modal title={`Itens — ${selectedKit.name}`} onClose={() => setShowKitItemsModal(false)}>
           <div className="space-y-4">
             <div className="bg-surface-03/50 rounded-xl p-4 space-y-3">
-              <p className="text-parchment text-sm font-medium">Adicionar Item ao Kit</p>
+              <p className="text-parchment text-sm font-medium">Adicionar produtos ao kit</p>
+              <p className="text-stone text-xs">Selecione um produto por vez, informe a quantidade e monte uma lista para inclusão em lote.</p>
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
                   <Sel label="Produto" value={newKitItemProductId} onChange={(e) => setNewKitItemProductId(e.target.value)}>
@@ -1429,12 +1484,32 @@ export default function AdminCampanhas() {
                 <Inp label="Quantidade" type="number" min={1} value={newKitItemQty} onChange={(e) => setNewKitItemQty(parseInt(e.target.value) || 1)} />
               </div>
               <button
-                onClick={handleAddKitItem}
+                type="button"
+                onClick={() => {
+                  if (!newKitItemProductId) return;
+                  setKitItemDrafts((current) => addKitItemDraft(current, newKitItemProductId, newKitItemQty));
+                  setNewKitItemProductId("");
+                  setNewKitItemQty(1);
+                }}
                 disabled={!newKitItemProductId}
                 className="w-full bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold py-2 rounded-lg text-sm transition-colors"
               >
-                Adicionar ao Kit
+                Adicionar à lista
               </button>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-parchment text-sm font-medium">Lista para adicionar</p>
+                <span className="text-stone text-xs">{kitItemDrafts.length} produto(s)</span>
+              </div>
+              {kitItemDrafts.map((item, index) => (
+                <div key={`${item.product_id}-${index}`} className="flex items-center gap-3 bg-surface-02 rounded-lg p-3 border border-surface-03">
+                  <div className="flex-1"><p className="text-cream text-sm">{getProductName(item.product_id)}</p><p className="text-stone text-xs">Qtd: {item.quantity}</p></div>
+                  <button type="button" onClick={() => setKitItemDrafts((current) => removeKitItemDraft(current, index))} className="text-red-400 hover:text-red-300"><Trash2 size={14} /></button>
+                </div>
+              ))}
+              {kitItemDrafts.length > 0 && <button type="button" onClick={handleAddKitItems} className="w-full bg-gold hover:bg-gold/90 text-cream font-bold py-2 rounded-lg text-sm">Adicionar produtos ao kit</button>}
             </div>
 
             <div className="space-y-2">
