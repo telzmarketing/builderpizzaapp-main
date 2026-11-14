@@ -7,6 +7,7 @@ import { agenteWhatsAppApi, resolveAssetUrl, type ApiAgenteWhatsAppConversation,
 import WhatsAppAttendanceControls, { WhatsAppAttendanceBadge } from "./WhatsAppAttendanceControls";
 import WhatsAppOrderWorkspace from "./WhatsAppOrderWorkspace";
 import { whatsappAttendance } from "@/lib/whatsappAttendance";
+import { isPendingChatbotConversation } from "@/lib/chatbotAttendance";
 
 type Channel = "chatbot" | "whatsapp";
 
@@ -56,11 +57,15 @@ export default function OperationsContactPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [chat, wa] = await Promise.all([
+      const [chatOpen, chatHuman, wa] = await Promise.all([
+        chatbotAdminApi.listConversations("aberta", 1),
         chatbotAdminApi.listConversations("em_humano", 1),
         agenteWhatsAppApi.listConversations({ limit: 100 }),
       ]);
-      setChatbot(chat.items ?? []);
+      const conversations = [...(chatOpen.items ?? []), ...(chatHuman.items ?? [])]
+        .filter(isPendingChatbotConversation)
+        .sort((a, b) => new Date(b.iniciada_em).getTime() - new Date(a.iniciada_em).getTime());
+      setChatbot(conversations);
       setWhatsapp(wa ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao atualizar atendimentos.");
@@ -72,7 +77,7 @@ export default function OperationsContactPanel() {
   useEffect(() => { void load(); const id = window.setInterval(() => void load(), 15000); return () => window.clearInterval(id); }, [load]);
 
   const pending = useMemo(() => ({
-    chatbot: chatbot.filter((item) => item.status === "em_humano").length,
+    chatbot: chatbot.filter(isPendingChatbotConversation).length,
     whatsapp: whatsapp.filter((item) => item.status === "open" || item.unread_count > 0).length,
   }), [chatbot, whatsapp]);
 
