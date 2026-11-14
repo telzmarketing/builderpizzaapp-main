@@ -338,7 +338,7 @@ export default function Home() {
         <button onClick={() => setMenuOpen(true)} className="text-parchment hover:text-cream transition-colors">
           <Menu size={24} />
         </button>
-        <button onClick={() => navigate("/")} aria-label="Ir para a home da loja" className="translate-y-2">
+        <button onClick={() => navigate("/")} aria-label="Ir para a home da loja" className="translate-y-4 lg:translate-y-2">
           <MoschettieriLogo className="text-cream text-base scale-[1.31] origin-center" />
         </button>
         <button onClick={() => setSearchOpen(true)} className="text-parchment hover:text-cream transition-colors">
