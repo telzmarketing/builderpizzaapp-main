@@ -1084,7 +1084,7 @@ export default function CrmAgenteWhatsApp() {
     }
   }
 
-  const activeModuleTab = moduleTab as string;
+  const activeModuleTab = String(moduleTab);
 
   return (
     <div className="flex min-h-0 flex-col gap-5">
@@ -2707,7 +2707,7 @@ export default function CrmAgenteWhatsApp() {
       </>
       )}
 
-      {activeModuleTab === "conversations" && (
+      {moduleTab === "conversations" && (
       <div className="grid h-[calc(100dvh-13rem)] min-h-0 max-h-[calc(100dvh-13rem)] grid-cols-1 gap-4 overflow-hidden xl:grid-cols-[380px_minmax(0,1fr)]">
         <section className="h-full min-h-0 bg-surface-02 border border-surface-03 rounded-xl overflow-hidden flex flex-col">
           <div className="p-4 border-b border-surface-03 space-y-3">

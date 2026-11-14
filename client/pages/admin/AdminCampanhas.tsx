@@ -602,7 +602,8 @@ export default function AdminCampanhas() {
       display_subtitle: landing.subtitle || landing.product_name || "",
       media_type: landing.video_url && !landing.image_url ? "video" : "image",
       video_url: landing.video_url || "",
-      product_id: landing.product_id,
+      highlight_type: "product",
+      highlight_id: landing.product_id || "",
       published: false,
       status: "draft",
     };
