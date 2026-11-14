@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, UserCheck, Send, X, Bot, RefreshCw } from "lucide-react";
+import WhatsAppOrderWorkspace from "@/components/admin/WhatsAppOrderWorkspace";
 import { chatbotAdminApi, type ChatbotConversation, type ChatbotMessage } from "@/lib/chatbotApi";
 
 const STATUS_LABEL: Record<string, string> = { aberta: "Aberta", em_humano: "Humano", encerrada: "Encerrada" };
@@ -75,7 +76,7 @@ function ConversationDetail({ conv, onBack, onRefresh }: {
   if (loading || !detail) return <div className="text-stone text-center py-16">Carregando...</div>;
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="w-full space-y-4">
       <div className="flex items-center gap-3">
         <button onClick={onBack} className="text-stone hover:text-parchment transition-colors">
           <ArrowLeft size={18} />
@@ -126,32 +127,39 @@ function ConversationDetail({ conv, onBack, onRefresh }: {
         </div>
       )}
 
-      <div className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
-        <div className="h-96 overflow-y-auto p-4 space-y-3">
-          {(detail.messages ?? []).length === 0 && (
-            <p className="text-stone text-xs text-center pt-8">Sem mensagens.</p>
+      <div className="grid min-h-[32rem] grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
+        <div className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
+          <div className="h-96 overflow-y-auto p-4 space-y-3">
+            {(detail.messages ?? []).length === 0 && (
+              <p className="text-stone text-xs text-center pt-8">Sem mensagens.</p>
+            )}
+            {(detail.messages ?? []).map((m) => <MessageBubble key={m.id} msg={m} />)}
+          </div>
+
+          {detail.status === "em_humano" && (
+            <div className="px-4 pb-4 border-t border-surface-03 pt-3 space-y-2">
+              <div className="flex gap-2">
+                <input
+                  value={reply}
+                  onChange={(e) => setReply(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && sendReply()}
+                  placeholder="Responder como atendente..."
+                  className="flex-1 bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream placeholder-stone text-sm focus:outline-none focus:border-gold"
+                />
+                <button onClick={sendReply} disabled={sending || !reply.trim()}
+                  className="bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold px-4 py-2 rounded-lg text-sm">
+                  <Send size={14} />
+                </button>
+              </div>
+              {replyErr && <p className="text-red-400 text-xs">{replyErr}</p>}
+            </div>
           )}
-          {(detail.messages ?? []).map((m) => <MessageBubble key={m.id} msg={m} />)}
         </div>
 
-        {detail.status === "em_humano" && (
-          <div className="px-4 pb-4 border-t border-surface-03 pt-3 space-y-2">
-            <div className="flex gap-2">
-              <input
-                value={reply}
-                onChange={(e) => setReply(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && sendReply()}
-                placeholder="Responder como atendente..."
-                className="flex-1 bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream placeholder-stone text-sm focus:outline-none focus:border-gold"
-              />
-              <button onClick={sendReply} disabled={sending || !reply.trim()}
-                className="bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold px-4 py-2 rounded-lg text-sm">
-                <Send size={14} />
-              </button>
-            </div>
-            {replyErr && <p className="text-red-400 text-xs">{replyErr}</p>}
-          </div>
-        )}
+        <WhatsAppOrderWorkspace
+          session={{ id: detail.session_id, customer_id: detail.cliente_id, phone: null }}
+          onCreated={() => onRefresh()}
+        />
       </div>
     </div>
   );

@@ -3,13 +3,18 @@ import { ClipboardList, History, Menu, UserRound } from "lucide-react";
 import ManualOrderComposer from "./ManualOrderComposer";
 import {
   customersApi,
-  type ApiAgenteWhatsAppSession,
   type ApiCustomer,
   type ApiCustomerOrder,
   type ApiOrder,
 } from "@/lib/api";
 
 type WorkspaceTab = "order" | "catalog" | "history";
+
+export type CustomerOrderWorkspaceSession = {
+  id: string;
+  customer_id: string | null;
+  phone?: string | null;
+};
 
 function money(value: number) {
   return Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -19,7 +24,7 @@ export default function WhatsAppOrderWorkspace({
   session,
   onCreated,
 }: {
-  session: ApiAgenteWhatsAppSession;
+  session: CustomerOrderWorkspaceSession;
   onCreated?: (order: ApiOrder) => void;
 }) {
   const [tab, setTab] = useState<WorkspaceTab>("order");
@@ -74,7 +79,7 @@ export default function WhatsAppOrderWorkspace({
           </div>
           <div className="flex items-center gap-2 text-xs text-stone">
             <UserRound size={14} />
-            <span className="truncate">{loadingCustomer ? "Identificando..." : customer?.name || session.phone}</span>
+            <span className="truncate">{loadingCustomer ? "Identificando..." : customer?.name || session.phone || "Visitante"}</span>
           </div>
         </div>
         <nav className="mt-3 grid grid-cols-3 gap-1 rounded-xl bg-surface-01 p-1" aria-label="Área comercial">
