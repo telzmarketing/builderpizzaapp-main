@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,7 +11,9 @@ from backend.core.tenant_runtime import resolve_panel_tenant_context
 from backend.database import get_db
 from backend.models.admin import AdminUser
 from backend.models.catalog_global import PizzaGlobalCrust, PizzaGlobalDoughType, PizzaGlobalSize
+from backend.models.order import OrderItem
 from backend.models.product import Product, ProductCrustType, ProductSize
+from backend.models.salao import TableSessionItem
 from backend.schemas.catalog_global import ProductCatalogConfigurationOut, ProductCatalogConfigurationUpdate, ProductOptionAssociationCreate, ProductSizeAssociationCreate
 from backend.routes.admin_auth import get_current_admin
 from backend.schemas.catalog_global import (
@@ -69,6 +72,39 @@ def _delete(db, model, resource_id, context, *, physical=False):
     if resource is None:
         raise HTTPException(status_code=404, detail="Cadastro nao encontrado.")
     if physical:
+        # Product options keep a RESTRICT FK to the global border so historical
+        # rows cannot be removed accidentally. Inactive associations are only
+        # historical links, however, and must not prevent deleting the global
+        # catalog record or recreating the same name later.
+        if model is PizzaGlobalCrust:
+            links = catalog_query(db, ProductCrustType, context).filter(
+                ProductCrustType.global_crust_id == resource.id,
+            ).all()
+            if any(link.active is True for link in links):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Nao e possivel excluir esta borda porque ela esta associada a um ou mais produtos ativos.",
+                )
+            link_ids = [link.id for link in links]
+            if link_ids:
+                # Orders/table sessions retain the displayed border name as a
+                # snapshot. Clear only the technical FK before removing the
+                # obsolete product-option rows.
+                inspector = inspect(db.get_bind())
+                if inspector.has_table(OrderItem.__tablename__):
+                    db.query(OrderItem).filter(
+                        OrderItem.tenant_id == context.tenant_id,
+                        OrderItem.selected_border_id.in_(link_ids),
+                    ).update({OrderItem.selected_border_id: None}, synchronize_session=False)
+                if inspector.has_table(TableSessionItem.__tablename__):
+                    db.query(TableSessionItem).filter(
+                        TableSessionItem.tenant_id == context.tenant_id,
+                        TableSessionItem.selected_border_id.in_(link_ids),
+                    ).update({TableSessionItem.selected_border_id: None}, synchronize_session=False)
+                db.query(ProductCrustType).filter(
+                    ProductCrustType.tenant_id == context.tenant_id,
+                    ProductCrustType.id.in_(link_ids),
+                ).delete(synchronize_session=False)
         db.delete(resource)
         try:
             db.commit()

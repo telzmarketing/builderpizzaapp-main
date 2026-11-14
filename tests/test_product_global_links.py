@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
+from fastapi import HTTPException
 
 from backend.models.product import ProductCrustType, ProductSize
 from backend.models.catalog_global import PizzaGlobalCrust
@@ -81,6 +82,7 @@ def test_migration_is_expand_only_and_chained_to_global_catalog():
 def test_global_crust_create_delete_is_physical_and_recreate_is_new_record():
     engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
     PizzaGlobalCrust.__table__.create(engine)
+    ProductCrustType.__table__.create(engine)
     context = TenantContext(tenant_id="tenant-a", source=TenantSource.JOB)
     with Session(engine) as db:
         created = _create(
@@ -103,4 +105,45 @@ def test_global_crust_create_delete_is_physical_and_recreate_is_new_record():
         assert recreated.description == "Nova"
         assert recreated.price_addition == 16
         assert db.query(PizzaGlobalCrust).filter(PizzaGlobalCrust.tenant_id == "tenant-a").count() == 1
+    engine.dispose()
+
+
+def test_global_crust_delete_detaches_inactive_product_links_but_blocks_active_links():
+    engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
+    PizzaGlobalCrust.__table__.create(engine)
+    ProductCrustType.__table__.create(engine)
+    context = TenantContext(tenant_id="tenant-a", source=TenantSource.JOB)
+    with Session(engine) as db:
+        border = _create(
+            db, PizzaGlobalCrust,
+            GlobalCatalogCreate(name="Cheddar", price_addition=14),
+            context, "global-crust",
+        )
+        db.add(ProductCrustType(
+            id="historical-link", tenant_id="tenant-a", product_id="product-a",
+            global_crust_id=border.id, name="Cheddar", option_kind="border",
+            price_addition=14, active=False,
+        ))
+        db.commit()
+
+        _delete(db, PizzaGlobalCrust, border.id, context, physical=True)
+        assert db.get(PizzaGlobalCrust, border.id) is None
+        assert db.get(ProductCrustType, "historical-link") is None
+
+        recreated = _create(
+            db, PizzaGlobalCrust,
+            GlobalCatalogCreate(name="Cheddar", price_addition=16),
+            context, "global-crust",
+        )
+        db.add(ProductCrustType(
+            id="active-link", tenant_id="tenant-a", product_id="product-a",
+            global_crust_id=recreated.id, name="Cheddar", option_kind="border",
+            price_addition=16, active=True,
+        ))
+        db.commit()
+
+        with pytest.raises(HTTPException) as exc:
+            _delete(db, PizzaGlobalCrust, recreated.id, context, physical=True)
+        assert getattr(exc.value, "status_code", None) == 409
+        assert db.get(PizzaGlobalCrust, recreated.id) is not None
     engine.dispose()
