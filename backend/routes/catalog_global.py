@@ -34,25 +34,17 @@ def _create(db, model, body, context, prefix):
     values = body.model_dump()
     if isinstance(values.get("name"), str):
         values["name"] = values["name"].strip()
-    # Soft-deleted global options still occupy the tenant/name unique key.
-    # Reuse the historical row so existing product links and audit history keep
-    # pointing to the same catalog identity when an option is recreated.
     resource = catalog_query(db, model, context).filter(model.name == values["name"]).with_for_update().first()
     if resource is not None:
-        if resource.active:
-            raise HTTPException(status_code=409, detail="Ja existe um cadastro com este nome neste tenant.")
-        for key, value in values.items():
-            setattr(resource, key, value)
-        resource.active = True
-    else:
-        resource = model(id=f"{prefix}-{uuid.uuid4().hex}", **values)
-        assign_catalog_tenant(resource, context)
+        raise HTTPException(status_code=409, detail="Ja existe um cadastro com este nome neste tenant, ativo ou inativo.")
+    resource = model(id=f"{prefix}-{uuid.uuid4().hex}", **values)
+    assign_catalog_tenant(resource, context)
     db.add(resource)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Ja existe um cadastro com este nome neste tenant.")
+        raise HTTPException(status_code=409, detail="Ja existe um cadastro com este nome neste tenant, ativo ou inativo.")
     db.refresh(resource)
     return resource
 
@@ -72,12 +64,23 @@ def _update(db, model, resource_id, body, context):
     return resource
 
 
-def _delete(db, model, resource_id, context):
+def _delete(db, model, resource_id, context, *, physical=False):
     resource = catalog_query(db, model, context).filter(model.id == resource_id).first()
     if resource is None:
         raise HTTPException(status_code=404, detail="Cadastro nao encontrado.")
-    resource.active = False
-    db.commit()
+    if physical:
+        db.delete(resource)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="Nao e possivel excluir esta borda porque ela esta associada a um ou mais produtos.",
+            )
+    else:
+        resource.active = False
+        db.commit()
 
 
 def _product(db, product_id: str, context):
@@ -232,7 +235,7 @@ def delete_size(resource_id: str, request: Request, db: Session = Depends(get_db
     _delete(db, PizzaGlobalSize, resource_id, _context(request, db, admin))
 
 
-def _catalog_routes(path: str, model, output, create_schema, update_schema, prefix: str):
+def _catalog_routes(path: str, model, output, create_schema, update_schema, prefix: str, *, physical_delete: bool = False):
     @router.get(path, response_model=list[output])
     def list_resource(request: Request, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin), _=Depends(require_rbac_permission("cardapio", "view"))):
         return _list(db, model, _context(request, db, admin))
@@ -247,8 +250,8 @@ def _catalog_routes(path: str, model, output, create_schema, update_schema, pref
 
     @router.delete(f"{path}/{{resource_id}}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_rbac_permission("cardapio", "delete"))])
     def delete_resource(resource_id: str, request: Request, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
-        _delete(db, model, resource_id, _context(request, db, admin))
+        _delete(db, model, resource_id, _context(request, db, admin), physical=physical_delete)
 
 
 _catalog_routes("/dough-types", PizzaGlobalDoughType, GlobalCatalogOut, GlobalCatalogCreate, GlobalCatalogUpdate, "global-dough")
-_catalog_routes("/pizza-crusts", PizzaGlobalCrust, GlobalCatalogOut, GlobalCatalogCreate, GlobalCatalogUpdate, "global-crust")
+_catalog_routes("/pizza-crusts", PizzaGlobalCrust, GlobalCatalogOut, GlobalCatalogCreate, GlobalCatalogUpdate, "global-crust", physical_delete=True)

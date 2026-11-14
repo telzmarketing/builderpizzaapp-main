@@ -78,7 +78,7 @@ def test_migration_is_expand_only_and_chained_to_global_catalog():
     assert "DROP TABLE" not in sql.upper()
 
 
-def test_global_crust_create_and_soft_delete_use_the_catalog_routes():
+def test_global_crust_create_delete_is_physical_and_recreate_is_new_record():
     engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
     PizzaGlobalCrust.__table__.create(engine)
     context = TenantContext(tenant_id="tenant-a", source=TenantSource.JOB)
@@ -90,17 +90,17 @@ def test_global_crust_create_and_soft_delete_use_the_catalog_routes():
         )
         assert created.id.startswith("global-crust-")
         assert created.tenant_id == "tenant-a"
-        _delete(db, PizzaGlobalCrust, created.id, context)
-        assert db.get(PizzaGlobalCrust, created.id).active is False
+        _delete(db, PizzaGlobalCrust, created.id, context, physical=True)
+        assert db.get(PizzaGlobalCrust, created.id) is None
 
         recreated = _create(
             db, PizzaGlobalCrust,
-            GlobalCatalogCreate(name="Catupiry", description="Reativada", price_addition=16),
+            GlobalCatalogCreate(name="Catupiry", description="Nova", price_addition=16),
             context, "global-crust",
         )
-        assert recreated.id == created.id
+        assert recreated.id != created.id
         assert recreated.active is True
-        assert recreated.description == "Reativada"
+        assert recreated.description == "Nova"
         assert recreated.price_addition == 16
         assert db.query(PizzaGlobalCrust).filter(PizzaGlobalCrust.tenant_id == "tenant-a").count() == 1
     engine.dispose()

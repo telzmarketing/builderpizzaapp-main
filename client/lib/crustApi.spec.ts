@@ -48,10 +48,17 @@ describe("massas e bordas no contrato de catálogo", () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ option_kind: kind, price_addition: 15 });
   });
 
-  it("remove uma borda global pelo endpoint de exclusao logica", async () => {
+  it("remove uma borda global pelo endpoint de exclusao fisica", async () => {
     const fetchMock = mockApi();
     await globalCatalogApi.crusts.remove("global-crust-1");
     expect(fetchMock.mock.calls[0][0]).toMatch(/\/catalog\/pizza-crusts\/global-crust-1$/);
     expect(fetchMock.mock.calls[0][1].method).toBe("DELETE");
+  });
+
+  it("edita nome, descricao e adicional da borda global via PUT", async () => {
+    const fetchMock = mockApi({ id: "global-crust-1", name: "Nova", description: "Detalhe", price_addition: 16 });
+    await globalCatalogApi.crusts.update("global-crust-1", { name: "Nova", description: "Detalhe", price_addition: 16 });
+    expect(fetchMock.mock.calls[0][1].method).toBe("PUT");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ name: "Nova", description: "Detalhe", price_addition: 16 });
   });
 });
