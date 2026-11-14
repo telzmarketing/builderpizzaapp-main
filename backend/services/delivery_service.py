@@ -44,6 +44,28 @@ from backend.services.qr_code_service import qr_token_hash, verify_qr_payload
 
 _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Official neighborhood names published in the Osasco Municipal Culture Plan
+# (Lei Municipal 4.707/2015, Map 01; https://participa.osasco.sp.gov.br/Upload/Artistas/lei-4707-plano-cultura-osasco.pdf).
+# These are suggestions only: the
+# tenant's ShippingNeighborhood rows remain the source of truth for freight
+# values and coverage.
+OSASCO_OFFICIAL_NEIGHBORHOODS = (
+    "Adalgisa", "Aliança", "Ayrosa", "Bandeiras", "Baronesa", "Bela Vista",
+    "Bonança", "Bonfim", "Bussocaba", "Castelo Branco", "Centro",
+    "Cidade das Flores", "Cidade de Deus", "Cipava", "City Bussocaba",
+    "Helena Maria", "I.A.P.I.", "Industrial Altino", "Industrial Anhanguera",
+    "Industrial Autonomistas", "Industrial Centro", "Industrial Mazzei",
+    "Industrial Remédios", "Jaguaribe", "Jardim Conceição", "Jardim D'Abril",
+    "Jardim das Flores", "Jardim Elvira", "Jardim Novo Osasco", "Jardim Roberto",
+    "Km 18", "Metalúrgicos", "Munhoz Júnior", "Mutinga", "Padroeira",
+    "Paiva Ramos", "Parque Continental", "Pestana", "Piratininga", "Platina",
+    "Portal D'Oeste", "Presidente Altino", "Quitaúna", "Raposo Tavares",
+    "Remédios", "Rochdale", "Santa Fé", "Santa Maria", "Santo Antônio",
+    "São Pedro", "Setor Militar", "Três Montanhas", "Umuarama", "Veloso",
+    "Vila Campesina", "Vila Menck", "Vila Militar", "Vila Osasco", "Vila Yara",
+    "Vila Yolanda",
+)
+
 
 def _driver_delivery_earning_amount(order: Order, configured_rate: float) -> float:
     """Resolve courier pay from the checkout snapshot, falling back for legacy orders."""
@@ -1819,11 +1841,17 @@ class DeliveryService:
                 raise TenantContextMismatch("Tenant da busca geográfica diverge do contexto confiavel.")
 
         query = ", ".join(part for part in (term, city, "Brasil") if part)
+        # Nominatim applies ``limit`` before our city filter.  A small limit
+        # can therefore be exhausted by homonymous neighborhoods returned
+        # from another municipality, making a valid neighborhood disappear
+        # from the administrative picker.  Fetch a bounded window first and
+        # apply the user-facing limit only after filtering and de-duplication.
+        provider_limit = min(max(limit * 4, 20), 50)
         params = urllib.parse.urlencode({
             "q": query,
             "format": "jsonv2",
             "addressdetails": 1,
-            "limit": limit,
+            "limit": provider_limit,
             "countrycodes": "br",
             "dedupe": 1,
         })
@@ -1837,11 +1865,20 @@ class DeliveryService:
 
         def normalize(value: str | None) -> str:
             text = unicodedata.normalize("NFKD", str(value or ""))
-            return "".join(c for c in text if not unicodedata.combining(c)).casefold().strip()
+            text = "".join(c for c in text if not unicodedata.combining(c)).casefold()
+            return " ".join("".join(c if c.isalnum() else " " for c in text).split())
 
         city_key = normalize(city)
         suggestions: list[dict] = []
-        seen: set[tuple[str, float, float]] = set()
+        if city_key == "osasco":
+            suggestions.extend({
+                "display_name": f"{name}, Osasco, SP, Brasil",
+                "neighborhood": name,
+                "city": "Osasco",
+                "lat": None,
+                "lng": None,
+            } for name in OSASCO_OFFICIAL_NEIGHBORHOODS
+               if not term or normalize(term) in normalize(name))
         for item in data if isinstance(data, list) else []:
             if not isinstance(item, dict):
                 continue
@@ -1866,10 +1903,15 @@ class DeliveryService:
                 lng = float(item["lon"])
             except (KeyError, TypeError, ValueError):
                 continue
-            key = (normalize(neighborhood), round(lat, 6), round(lng, 6))
-            if key in seen:
+            key = normalize(neighborhood)
+            if any(normalize(row["neighborhood"]) == key for row in suggestions):
+                # Prefer the geocoder's coordinates when it returned one for
+                # an official name already present in the curated list.
+                for row in suggestions:
+                    if normalize(row["neighborhood"]) == key:
+                        row.update(lat=lat, lng=lng, display_name=str(item.get("display_name") or row["display_name"]))
+                        break
                 continue
-            seen.add(key)
             suggestions.append({
                 "display_name": str(item.get("display_name") or f"{neighborhood}, {resolved_city}"),
                 "neighborhood": str(neighborhood),
@@ -1879,4 +1921,9 @@ class DeliveryService:
             })
             if len(suggestions) >= limit:
                 break
-        return suggestions
+        # Exact requested names must win over partial matches and provider
+        # ordering, while preserving the official Osasco spelling.
+        term_key = normalize(term)
+        if term_key:
+            suggestions.sort(key=lambda row: (normalize(row["neighborhood"]) != term_key, normalize(row["neighborhood"])))
+        return suggestions[:limit]

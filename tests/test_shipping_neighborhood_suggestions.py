@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from backend.models.shipping_v2 import ShippingNeighborhood
-from backend.services.delivery_service import DeliveryService
+from backend.services.delivery_service import DeliveryService, OSASCO_OFFICIAL_NEIGHBORHOODS
 from backend.services.shipping_service import ShippingService
 
 
@@ -87,6 +87,47 @@ def test_delivery_geocoder_returns_empty_list_when_nominatim_fails(monkeypatch):
     service._tenant_id = None
 
     assert service.search_neighborhoods("São Paulo") == []
+
+
+def test_osasco_uses_official_60_neighborhood_list_and_exact_term(monkeypatch):
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_args, **_kwargs: _Response([]))
+    service = DeliveryService.__new__(DeliveryService)
+    service._wave7_enabled = False
+    service._tenant_context = None
+    service._tenant_id = None
+
+    assert len(OSASCO_OFFICIAL_NEIGHBORHOODS) == 60
+    result = service.search_neighborhoods("Osasco", term="Jardim D Abril", limit=8)
+
+    assert [item["neighborhood"] for item in result] == ["Jardim D'Abril"]
+    assert result[0]["city"] == "Osasco"
+
+
+def test_neighborhood_search_filters_city_before_applying_limit(monkeypatch):
+    payload = [
+        {
+            "display_name": f"Centro, Cidade {index}, Brasil",
+            "lat": str(-23.5 - index / 100),
+            "lon": str(-46.6 - index / 100),
+            "address": {"neighbourhood": "Centro", "city": f"Cidade {index}"},
+        }
+        for index in range(8)
+    ] + [{
+        "display_name": "Jardim D'Abril, Osasco, Brasil",
+        "lat": "-23.54",
+        "lon": "-46.78",
+        "address": {"neighbourhood": "Jardim D'Abril", "city": "Osasco"},
+    }]
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_args, **_kwargs: _Response(payload))
+    service = DeliveryService.__new__(DeliveryService)
+    service._wave7_enabled = False
+    service._tenant_context = None
+    service._tenant_id = None
+
+    result = service.search_neighborhoods("Osasco", term="Jardim D'Abril", limit=1)
+
+    assert result[0]["neighborhood"] == "Jardim D'Abril"
+    assert result[0]["city"] == "Osasco"
 
 
 def test_shipping_service_delegates_suggestions_with_tenant_context(monkeypatch):

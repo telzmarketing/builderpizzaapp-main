@@ -685,8 +685,8 @@ function TabNeighborhoods({ neighborhoods, setNeighborhoods, showToast }: {
           display_name: string;
           neighborhood: string;
           city: string;
-          lat: number;
-          lng: number;
+          lat: number | null;
+          lng: number | null;
         }>>("GET", `/shipping/neighborhoods/suggestions?${query.toString()}`);
         setSuggestions(result.map(item => ({
           name: item.neighborhood,

@@ -157,8 +157,8 @@ class ShippingNeighborhoodSuggestionOut(BaseModel):
     display_name: str
     neighborhood: str
     city: str
-    lat: float
-    lng: float
+    lat: Optional[float] = None
+    lng: Optional[float] = None
 
 
 # ─── CEP Range ───────────────────────────────────────────────────────────────
