@@ -9,12 +9,12 @@ import ImageUpload from "@/components/admin/ImageUpload";
 import MediaUpload from "@/components/admin/MediaUpload";
 import PromotionLandingsTab from "@/components/admin/PromotionLandingsTab";
 import {
-  campaignsApi, productsApi, couponsApi, marketingAutomationsApi,
+  campaignsApi, productsApi, couponsApi, marketingAutomationsApi, categoriesApi,
   isAssetUrl, resolveAssetUrl,
   type ApiCampaign, type ApiCampaignProduct, type ApiPromotionalKit,
   type ApiPromotionLandingPage,
   type ApiProduct, type ApiCoupon, type ApiCouponUsage, type ApiMarketingAutomation,
-  type CampaignStatus, type CampaignType, type CpDiscountType, type KitType,
+  type CampaignStatus, type CampaignType, type CpDiscountType, type KitType, type ApiProductCategory, type CampaignHighlightType,
 } from "@/lib/api";
 import { addKitItemDraft, removeKitItemDraft, type PromotionalKitItemDraft } from "@/lib/promotionalKitItems";
 
@@ -110,7 +110,8 @@ interface CampaignForm {
   card_bg_color: string;
   media_type: "image" | "video";
   video_url: string;
-  product_id: string;
+  highlight_type: CampaignHighlightType;
+  highlight_id: string;
 }
 
 interface KitForm {
@@ -143,7 +144,7 @@ const emptyCampaignForm: CampaignForm = {
   banner: "", slug: "", campaign_type: "products_promo",
   display_title: "", display_subtitle: "", display_order: 0, published: false,
   schedule_enabled: false, active_days: [], card_bg_color: "",
-  media_type: "image", video_url: "", product_id: "",
+  media_type: "image", video_url: "", highlight_type: "product", highlight_id: "",
 };
 
 const emptyKitForm: KitForm = {
@@ -165,6 +166,7 @@ export default function AdminCampanhas() {
   const [campaigns, setCampaigns] = useState<ApiCampaign[]>([]);
   const [kits, setKits] = useState<ApiPromotionalKit[]>([]);
   const [products, setProducts] = useState<ApiProduct[]>([]);
+  const [categories, setCategories] = useState<ApiProductCategory[]>([]);
   const [giftProducts, setGiftProducts] = useState<ApiProduct[]>([]);
   const [usage, setUsage] = useState<ApiCouponUsage[]>([]);
   const [couponsList, setCouponsList] = useState<ApiCoupon[]>([]);
@@ -211,7 +213,7 @@ export default function AdminCampanhas() {
 
   const loadAll = useCallback(async () => {
     setLoadingData(true);
-    const [c, k, p, gifts, u, cps, autos] = await Promise.allSettled([
+    const [c, k, p, gifts, u, cps, autos, cats] = await Promise.allSettled([
       campaignsApi.list(),
       campaignsApi.listKits(),
       productsApi.list(true),
@@ -219,14 +221,16 @@ export default function AdminCampanhas() {
       couponsApi.listUsage(),
       couponsApi.list(),
       marketingAutomationsApi.list(),
+      categoriesApi.list(true),
     ]);
     if (c.status === "fulfilled") setCampaigns(c.value);
     if (k.status === "fulfilled") setKits(k.value);
     if (p.status === "fulfilled") setProducts(p.value);
     if (gifts.status === "fulfilled") setGiftProducts(gifts.value);
     if (u.status === "fulfilled") setUsage(u.value);
-    if (cps.status === "fulfilled") setCouponsList(cps.value);
     if (autos.status === "fulfilled") setAutomations(autos.value);
+    if (cps.status === "fulfilled") setCouponsList(cps.value);
+    if (cats.status === "fulfilled") setCategories(cats.value);
     setLoadingData(false);
   }, []);
 
@@ -334,7 +338,8 @@ export default function AdminCampanhas() {
       card_bg_color: c.card_bg_color ?? "",
       media_type: (c.media_type as "image" | "video") ?? "image",
       video_url: c.video_url ?? "",
-      product_id: c.product_id ?? "",
+      highlight_type: c.highlight_type ?? (c.product_id ? "product" : "product"),
+      highlight_id: c.highlight_id ?? c.product_id ?? "",
     };
     setEditingCampaignId(c.id);
     setCampaignForm(nextForm);
@@ -373,7 +378,9 @@ export default function AdminCampanhas() {
         card_bg_color: campaignForm.card_bg_color || null,
         media_type: campaignForm.media_type,
         video_url: campaignForm.video_url || null,
-        product_id: campaignForm.product_id || null,
+        product_id: campaignForm.highlight_type === "product" ? campaignForm.highlight_id || null : null,
+        highlight_type: campaignForm.highlight_id ? campaignForm.highlight_type : null,
+        highlight_id: campaignForm.highlight_id || null,
       };
       if (editingCampaignId) {
         await campaignsApi.update(editingCampaignId, payload as any);
@@ -1260,18 +1267,23 @@ export default function AdminCampanhas() {
             </div>
 
             <div>
+              <Sel label="Tipo de destaque" value={campaignForm.highlight_type} onChange={(e) => setCampaignForm({ ...campaignForm, highlight_type: e.target.value as CampaignHighlightType, highlight_id: "" })}>
+                <option value="product">Produto</option>
+                <option value="category">Categoria</option>
+                <option value="kit">Kit</option>
+              </Sel>
               <label className="block text-parchment text-xs font-medium mb-1">Produto em Destaque (clique no banner)</label>
               <select
-                value={campaignForm.product_id}
-                onChange={(e) => setCampaignForm({ ...campaignForm, product_id: e.target.value })}
+                value={campaignForm.highlight_id}
+                onChange={(e) => setCampaignForm({ ...campaignForm, highlight_id: e.target.value })}
                 className="w-full bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold"
               >
                 <option value="">— Nenhum (vai para a página da campanha) —</option>
-                {products.filter((p) => p.active).map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
+                {campaignForm.highlight_type === "product" && products.filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {campaignForm.highlight_type === "category" && categories.filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.parent_id ? `↳ ${c.name}` : c.name}</option>)}
+                {campaignForm.highlight_type === "kit" && kits.filter((k) => k.active).map((k) => <option key={k.id} value={k.id}>{k.icon} {k.name}</option>)}
               </select>
-              {campaignForm.product_id && (
+              {campaignForm.highlight_id && (
                 <p className="text-stone text-[11px] mt-1">O clique no banner levará o cliente diretamente para a página deste produto.</p>
               )}
             </div>

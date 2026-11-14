@@ -6,7 +6,7 @@ from backend.core.tenant_context import TenantContext
 from backend.core.tenant_context import TenantContextMissing
 from backend.core.tenant_ownership import assign_tenant_on_create, scope_query_to_tenant
 from backend.models.campaign import Campaign, CampaignProduct, PromotionalKit, PromotionalKitItem, CampaignStatus
-from backend.models.product import Product
+from backend.models.product import Product, ProductCategory
 from backend.schemas.campaign import (
     CampaignCreate, CampaignUpdate,
     CampaignProductCreate, CampaignProductUpdate,
@@ -45,6 +45,23 @@ class CampaignService:
         if not self._query(Product).filter(Product.id == product_id).first():
             from fastapi import HTTPException
             raise HTTPException(404, "Produto nao encontrado.")
+
+    def _require_highlight(self, highlight_type: str | None, highlight_id: str | None) -> None:
+        if not highlight_id:
+            return
+        if highlight_type == "product":
+            self._require_product(highlight_id)
+        elif highlight_type == "category":
+            if not self._query(ProductCategory).filter(ProductCategory.id == highlight_id, ProductCategory.active == True).first():  # noqa: E712
+                from fastapi import HTTPException
+                raise HTTPException(404, "Categoria nao encontrada ou inativa.")
+        elif highlight_type == "kit":
+            if not self._query(PromotionalKit).filter(PromotionalKit.id == highlight_id, PromotionalKit.active == True).first():
+                from fastapi import HTTPException
+                raise HTTPException(404, "Kit nao encontrado ou inativo.")
+        else:
+            from fastapi import HTTPException
+            raise HTTPException(422, "Tipo de destaque invalido.")
 
     # ── Campaigns ─────────────────────────────────────────────────────────────
 
@@ -88,6 +105,7 @@ class CampaignService:
             from fastapi import HTTPException
             raise HTTPException(400, f"Slug '{payload.slug}' já está em uso.")
         self._require_product(payload.product_id)
+        self._require_highlight(payload.highlight_type, payload.highlight_id)
         campaign = self._own(Campaign(id=str(uuid.uuid4()), **payload.model_dump()))
         self._db.add(campaign)
         self._db.commit()
@@ -102,6 +120,8 @@ class CampaignService:
         data = payload.model_dump(exclude_none=True)
         if "product_id" in data:
             self._require_product(data["product_id"])
+        if "highlight_type" in data or "highlight_id" in data:
+            self._require_highlight(data.get("highlight_type", campaign.highlight_type), data.get("highlight_id", campaign.highlight_id))
         if "slug" in data:
             dup = self._query(Campaign).filter(
                 Campaign.slug == data["slug"], Campaign.id != campaign_id

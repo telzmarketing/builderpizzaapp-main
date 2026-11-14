@@ -349,8 +349,12 @@ export default function Home() {
               className="w-full text-left focus:outline-none"
               onClick={() => {
                 if (!displayBanner) return;
-                if (displayBanner.product_id) {
-                  navigate(`/product/${displayBanner.product_id}`);
+                if (displayBanner.highlight_type === "category" && displayBanner.highlight_id) {
+                  navigate(`/cardapio?category=${encodeURIComponent(displayBanner.highlight_id)}`);
+                } else if (displayBanner.highlight_type === "kit" && displayBanner.highlight_id) {
+                  navigate(`/campanha/${displayBanner.slug}?kit=${encodeURIComponent(displayBanner.highlight_id)}`);
+                } else if (displayBanner.highlight_id || displayBanner.product_id) {
+                  navigate(`/product/${displayBanner.highlight_id || displayBanner.product_id}`);
                 } else if (displayBanner.slug) {
                   navigate(`/campanha/${displayBanner.slug}`);
                 }

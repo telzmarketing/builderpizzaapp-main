@@ -51,6 +51,8 @@ class Campaign(Base):
     media_type = Column(String(10), default="image", nullable=True)  # 'image' | 'video'
     video_url = Column(Text, nullable=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    highlight_type = Column(String(20), nullable=True, default="product")
+    highlight_id = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

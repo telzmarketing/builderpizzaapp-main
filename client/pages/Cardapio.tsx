@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ChevronLeft, Search, Plus, Check } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { categoriesApi, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl, type ApiProductCategory } from "@/lib/api";
@@ -13,6 +13,7 @@ import { ALL_PRODUCTS_CATEGORY, getHomeCatalogCategories, getHomeCatalogSubcateg
 
 export default function Cardapio() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { products, productsLoaded, productsError, retryProducts, addToCart } = useApp();
   const PROMO_LABEL = "Promoções";
   const [activeCategory, setActiveCategory] = useState<HomeCatalogCategory>("");
@@ -20,6 +21,13 @@ export default function Cardapio() {
   const [search, setSearch] = useState("");
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
+
+  useEffect(() => {
+    const requestedCategory = searchParams.get("category");
+    if (!requestedCategory) return;
+    const category = catalogCategories.find((item) => item.id === requestedCategory);
+    setActiveCategory(category?.name ?? requestedCategory);
+  }, [catalogCategories, searchParams]);
 
   useEffect(() => {
     categoriesApi.list(true)

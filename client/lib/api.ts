@@ -1053,6 +1053,7 @@ export type CampaignStatus = "draft" | "active" | "paused" | "ended";
 export type CampaignType = "exclusive_page" | "products_promo";
 export type CpDiscountType = "percentage" | "fixed";
 export type KitType = "kit" | "product" | "item";
+export type CampaignHighlightType = "product" | "category" | "kit";
 
 export interface ApiCampaign {
   id: string;
@@ -1073,6 +1074,8 @@ export interface ApiCampaign {
   media_type: string | null;
   video_url: string | null;
   product_id: string | null;
+  highlight_type: CampaignHighlightType | null;
+  highlight_id: string | null;
   created_at: string;
   updated_at: string;
 }
