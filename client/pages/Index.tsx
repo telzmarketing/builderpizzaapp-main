@@ -335,7 +335,7 @@ export default function Home() {
 
       {/* Header */}
       <div className="bg-brand-dark px-4 py-3 flex justify-between items-center sticky top-0 z-30">
-        <button onClick={() => setMenuOpen(true)} className="text-parchment hover:text-cream transition-colors">
+        <button onClick={() => setMenuOpen(true)} className="translate-y-4 text-parchment transition-colors hover:text-cream lg:translate-y-2">
           <Menu size={24} />
         </button>
         <button onClick={() => navigate("/")} aria-label="Ir para a home da loja" className="translate-y-4 lg:translate-y-2">
