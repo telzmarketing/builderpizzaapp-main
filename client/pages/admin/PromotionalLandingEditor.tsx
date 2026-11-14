@@ -140,10 +140,20 @@ export default function PromotionalLandingEditor() {
     if (!productId) return;
     setLoading(true);
     setError("");
+    const productRequest = isIndependent
+      ? productsApi.list(false).then((products) => {
+          const matchedProduct = products.find((item) => item.id === productId);
+          if (!matchedProduct) throw new Error("Produto nao encontrado no catalogo administrativo.");
+          return matchedProduct;
+        })
+      : productsApi.get(productId);
     const requests = isIndependent
-      ? Promise.all([productsApi.get(productId), promotionLandingsApi.getByProduct(productId)])
+      ? Promise.all([
+          productRequest,
+          promotionLandingsApi.getByProduct(productId).catch(() => null),
+        ])
         .then(([prod, existing]) => ({ prod, existing, promo: null }))
-      : Promise.all([productsApi.get(productId), productPromotionsApi.list(productId), promotionLandingsApi.getByProductPromotion(productId, promotionId)])
+      : Promise.all([productRequest, productPromotionsApi.list(productId), promotionLandingsApi.getByProductPromotion(productId, promotionId)])
         .then(([prod, promotions, existing]) => ({ prod, existing, promo: promotions.find((item) => item.id === promotionId) ?? null }));
     requests
       .then(({ prod, existing, promo }) => {
