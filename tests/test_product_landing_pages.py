@@ -69,7 +69,7 @@ def test_only_one_independent_landing_is_allowed_per_product():
     assert error.value.code == "ProductLandingAlreadyExists"
 
 
-def test_landing_decision_prefers_independent_page_before_promotion():
+def test_landing_decision_prefers_active_promotion_before_independent_page():
     service = _service()
     independent = SimpleNamespace(landing_type="product")
     promotional = SimpleNamespace(landing_type="promotion")
@@ -78,8 +78,20 @@ def test_landing_decision_prefers_independent_page_before_promotion():
 
     result = service.active_landing_for_product(SimpleNamespace(id="product-1"))
 
+    assert result is promotional
+    service.get_active_product_landing.assert_not_called()
+
+
+def test_landing_decision_falls_back_to_independent_page_without_active_promotion():
+    service = _service()
+    independent = SimpleNamespace(landing_type="product")
+    service.active_promotion_landing_for_product = MagicMock(return_value=None)
+    service.get_active_product_landing = MagicMock(return_value=independent)
+
+    result = service.active_landing_for_product(SimpleNamespace(id="product-1"))
+
     assert result is independent
-    service.active_promotion_landing_for_product.assert_not_called()
+    service.get_active_product_landing.assert_called_once_with("product-1")
 
 
 def test_promotion_create_without_promotion_id_is_rejected():

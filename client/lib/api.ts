@@ -540,9 +540,9 @@ export interface ApiProduct {
   inventory_unavailable_message?: string | null;
 }
 
-/** Public catalog precedence: permanent product landing, active promotion landing, normal product. */
+/** Public catalog precedence: active promotion landing, permanent product landing, normal product. */
 export const getProductLandingUrl = (product: Pick<ApiProduct, "id" | "product_landing_url" | "promotion_landing_url">) =>
-  product.product_landing_url || product.promotion_landing_url || `/product/${product.id}`;
+  product.promotion_landing_url || product.product_landing_url || `/product/${product.id}`;
 
 export interface ApiBestSellerConfig {
   id: string;

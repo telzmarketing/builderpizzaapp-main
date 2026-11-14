@@ -86,9 +86,9 @@ const normalizeFreeShippingLabel = (value?: string | null) => {
   return normalized;
 };
 
-const emptyForm = (productName = ""): FormState => ({
-  title: productName ? `${productName} em promocao` : "",
-  subtitle: "Oferta especial por tempo limitado",
+const emptyForm = (productName = "", independent = false): FormState => ({
+  title: productName ? (independent ? productName : `${productName} em promocao`) : "",
+  subtitle: independent ? "Conheca esta pizza" : "Oferta especial por tempo limitado",
   description: "",
   cta_text: "Quero essa pizza",
   image_url: "",
@@ -98,7 +98,7 @@ const emptyForm = (productName = ""): FormState => ({
   image_position: "center",
   content_alignment: "center",
   overlay_style: "dark-gradient",
-  badge_text: "Oferta do dia",
+  badge_text: independent ? "Destaque da casa" : "Oferta do dia",
   free_shipping_label: FREE_SHIPPING_LABEL,
   gift_label_prefix: "Brinde",
   gift_fallback_label: "Brinde incluído",
@@ -173,7 +173,7 @@ export default function PromotionalLandingEditor() {
             is_active: existing.is_active,
           });
         } else {
-          setForm(emptyForm(prod.name));
+          setForm(emptyForm(prod.name, isIndependent));
         }
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar a landing."))
@@ -264,7 +264,7 @@ export default function PromotionalLandingEditor() {
   if (!product || (!isIndependent && !promotion)) {
     return (
       <div className="rounded-lg border border-red-500/25 bg-red-500/10 p-4 text-sm text-red-200">
-        Produto ou promocao nao encontrados.
+        {isIndependent ? "Produto nao encontrado." : "Produto ou promocao nao encontrados."}
       </div>
     );
   }

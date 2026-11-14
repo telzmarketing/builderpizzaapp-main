@@ -206,10 +206,13 @@ def _product_payload(
     ]
     if promotion_quotes:
         quote = min(promotion_quotes, key=lambda candidate: candidate.final_price)
+    landing_service = PromotionLandingService(db, context)
     try:
-        landing = PromotionLandingService(db, context).active_landing_for_product(product)
+        promotion_landing = landing_service.active_promotion_landing_for_product(product)
+        product_landing = landing_service.get_active_product_landing(product.id)
     except Exception:
-        landing = None
+        promotion_landing = None
+        product_landing = None
 
     mode = product.best_seller_badge_mode or "off"
     if mode == "manual":
@@ -234,12 +237,12 @@ def _product_payload(
         "promotion_gift_name": quote.gift_name,
         "promotion_gift_icon": quote.gift_icon,
         "promotion_blocks_other_coupons": quote.blocks_other_coupons,
-        "promotion_landing_page_id": landing.id if landing and landing.landing_type == "promotion" else None,
-        "promotion_landing_slug": landing.slug if landing and landing.landing_type == "promotion" else None,
-        "promotion_landing_url": f"/promocao/{landing.slug}" if landing and landing.landing_type == "promotion" else None,
-        "product_landing_page_id": landing.id if landing and landing.landing_type == "product" else None,
-        "product_landing_slug": landing.slug if landing and landing.landing_type == "product" else None,
-        "product_landing_url": f"/promocao/{landing.slug}" if landing and landing.landing_type == "product" else None,
+        "promotion_landing_page_id": promotion_landing.id if promotion_landing else None,
+        "promotion_landing_slug": promotion_landing.slug if promotion_landing else None,
+        "promotion_landing_url": f"/promocao/{promotion_landing.slug}" if promotion_landing else None,
+        "product_landing_page_id": product_landing.id if product_landing else None,
+        "product_landing_slug": product_landing.slug if product_landing else None,
+        "product_landing_url": f"/promocao/{product_landing.slug}" if product_landing else None,
         "show_best_seller_badge": show_badge,
     })
     if inventory_payload:

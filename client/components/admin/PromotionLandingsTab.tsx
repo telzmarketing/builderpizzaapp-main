@@ -149,7 +149,11 @@ export default function PromotionLandingsTab({
                   </button>
                   <button
                     type="button"
-                    onClick={() => navigate(`/painel/products/landing/${landing.product_id}/${landing.promotion_id}`)}
+                    onClick={() => navigate(
+                      landing.landing_type === "product"
+                        ? `/painel/products/landing/${landing.product_id}`
+                        : `/painel/products/landing/${landing.product_id}/${landing.promotion_id}`
+                    )}
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-surface-03 px-3 py-2 text-sm font-semibold text-parchment hover:text-cream"
                   >
                     <Pencil size={15} />

@@ -27,7 +27,7 @@ export const adminPageMeta: Record<string, PageMeta> = {
   "/painel/bi": { eyebrow: "Business Intelligence", title: "BI", subtitle: "Motor de analise, recomendacao e acao do negocio" },
   "/painel/bi-mobile": { eyebrow: "Business Intelligence", title: "BI Mobile", subtitle: "Resumo operacional do dia" },
   "/painel/products": { eyebrow: "Catalogo", title: "Produtos", subtitle: "Gestão do cardapio e categorias" },
-  "/painel/products/landing": { eyebrow: "Catalogo", title: "Landing Promocional", subtitle: "Pagina de conversao vinculada a promocao da pizza" },
+  "/painel/products/landing": { eyebrow: "Catalogo", title: "Landing da Pizza", subtitle: "Pagina exclusiva da pizza, independente de promocao" },
   "/painel/home-config": { eyebrow: "Catalogo", title: "Catalogo da Home", subtitle: "Organizacao da vitrine da loja" },
   "/painel/orders": { eyebrow: "Operacoes", title: "Pedidos", subtitle: "Acompanhamento e gestão dos pedidos" },
   "/painel/orders/historico": { eyebrow: "Operacoes", title: "Histórico de Pedidos", subtitle: "Consulta e conciliação de pedidos entregues" },

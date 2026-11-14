@@ -171,10 +171,11 @@ class PromotionLandingService:
         return landing
 
     def active_landing_for_product(self, product: Product) -> PromotionLandingPage | None:
-        independent = self.get_active_product_landing(product.id)
-        if independent:
-            return independent
-        return self.active_promotion_landing_for_product(product)
+        # A currently valid promotion supersedes the product's permanent page.
+        # The permanent page is the fallback for days without an active
+        # promotional landing.
+        promotional = self.active_promotion_landing_for_product(product)
+        return promotional or self.get_active_product_landing(product.id)
 
     def get_active_product_landing(self, product_id: str) -> PromotionLandingPage | None:
         return (

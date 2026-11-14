@@ -1810,10 +1810,10 @@ export default function AdminProducts() {
                           Ficha tecnica
                         </button>}
 
-                        {canManagePromotions && <button onClick={() => openProductLandingEditor(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-gold/10 hover:border-gold/40 text-parchment hover:text-gold font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
+                        <button onClick={() => openProductLandingEditor(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-gold/10 hover:border-gold/40 text-parchment hover:text-gold font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                           <Images size={15} />
                           Criar Landing Page da Pizza
-                        </button>}
+                        </button>
 
                         {canManageCrust && !isPizza && (
                           <button onClick={() => openCrustModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-amber-500/10 hover:border-amber-500/40 text-parchment hover:text-amber-400 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
