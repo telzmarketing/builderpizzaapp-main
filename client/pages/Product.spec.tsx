@@ -4,7 +4,7 @@ import { StaticRouter } from "react-router-dom/server";
 import { Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useApp } from "@/context/AppContext";
-import Product from "./Product";
+import Product, { filterFlavorCandidates, getFlavorSubcategories } from "./Product";
 
 vi.mock("@/context/AppContext", () => ({ useApp: vi.fn() }));
 
@@ -15,6 +15,18 @@ function renderProduct() {
 describe("product page direct access", () => {
   beforeEach(() => {
     vi.mocked(useApp).mockReturnValue({ products: [], loading: true, productsLoaded: false, siteContent: { pages: { product: {} } }, multiFlavorsConfig: { pricingRule: "average", maxFlavors: 3 }, customer: null } as ReturnType<typeof useApp>);
+  });
+
+  it("keeps flavor subcategories in catalog order and filters by search or subcategory", () => {
+    const candidates = [
+      { id: "classic-1", name: "Margherita", description: "Molho e queijo", category: "Pizzas", subcategory: "Clássicas" },
+      { id: "special-1", name: "Baiana", description: "Calabresa picante", category: "Pizzas", subcategory: "Especiais" },
+      { id: "classic-2", name: "Quatro Queijos", description: "Queijo cremoso", category: "Pizzas", subcategory: "Clássicas" },
+    ] as unknown as Parameters<typeof getFlavorSubcategories>[0];
+
+    expect(getFlavorSubcategories(candidates)).toEqual(["Clássicas", "Especiais"]);
+    expect(filterFlavorCandidates(candidates, "picante").map((candidate) => candidate.id)).toEqual(["special-1"]);
+    expect(filterFlavorCandidates(candidates, "", "Clássicas").map((candidate) => candidate.id)).toEqual(["classic-1", "classic-2"]);
   });
 
   it("renders loading before any products arrive without crashing", () => {

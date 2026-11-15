@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useId, type PointerEvent } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ChevronLeft, Minus, Plus, AlertCircle, Check, Loader2, X, ZoomIn } from "lucide-react";
+import { ChevronLeft, Minus, Plus, AlertCircle, Check, Loader2, Search, X, ZoomIn } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import CategorySeal from "@/components/CategorySeal";
 import BestSellerSeal from "@/components/BestSellerSeal";
@@ -110,6 +110,23 @@ const productSearchText = (candidate?: Pizza | null) =>
       candidate?.product_type,
     ].filter(Boolean).join(" ")
   );
+
+export function getFlavorSubcategories(candidates: Pizza[]) {
+  return [...new Set(
+    candidates
+      .map((candidate) => candidate.subcategory?.trim())
+      .filter((subcategory): subcategory is string => !!subcategory),
+  )];
+}
+
+export function filterFlavorCandidates(candidates: Pizza[], query = "", subcategory = "") {
+  const normalizedQuery = normalizeProductText(query);
+  const normalizedSubcategory = normalizeProductText(subcategory);
+  return candidates.filter((candidate) => (
+    (!normalizedQuery || productSearchText(candidate).includes(normalizedQuery))
+    && (!normalizedSubcategory || normalizeProductText(candidate.subcategory) === normalizedSubcategory)
+  ));
+}
 
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -372,6 +389,8 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
   const [division, setDivision] = useState<FlavorDivision>(1);
   const [flavorSlots, setFlavorSlots] = useState<(Pizza | null)[]>([product ?? null, null, null]);
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
+  const [flavorSearch, setFlavorSearch] = useState("");
+  const [flavorSubcategory, setFlavorSubcategory] = useState("");
   const [cartError, setCartError] = useState(false);
 
   // Dynamic sizes from backend
@@ -420,6 +439,8 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     setDivision(1);
     setFlavorSlots([product, null, null]);
     setActiveSlot(null);
+    setFlavorSearch("");
+    setFlavorSubcategory("");
     setCartError(false);
     setSelectedCrust(null);
     setSelectedBorder(null);
@@ -689,6 +710,8 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     }
     setDivision(d);
     setActiveSlot(null);
+    setFlavorSearch("");
+    setFlavorSubcategory("");
     setCartError(false);
     setFlavorSlots((prev) => {
       const next = [...prev];
@@ -708,12 +731,16 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
       return next;
     });
     setActiveSlot(null);
+    setFlavorSearch("");
+    setFlavorSubcategory("");
     setCartError(false);
   };
 
   const handleSlotToggle = (i: number) => {
     if (isFixedFlavorCombination) return;
     setActiveSlot((prev) => (prev === i ? null : i));
+    setFlavorSearch("");
+    setFlavorSubcategory("");
     setCartError(false);
   };
 
@@ -1152,47 +1179,93 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                     {isOpen && (
                       <div className="mt-2 bg-brand-dark rounded-xl p-3 border border-gold/30 animate-in slide-in-from-top-1">
                         <p className="text-stone text-xs mb-3">Selecione o sabor {i + 1}:</p>
-                        <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                          {availableForSlot(i).map((p) => {
-                            const isSelected = flavorSlots[i]?.id === p.id;
-                            const displayPrice = getFlavorDisplayPrice(p);
-                            return (
-                              <button
-                                key={p.id}
-                                onClick={() => handleSelectFlavor(i, p)}
-                                className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all active:scale-[0.99] ${
-                                  isSelected ? "bg-gold/20 border-gold shadow-sm" : "bg-surface-02 border-surface-03 hover:border-gold/40"
-                                }`}
-                              >
-                                <div className="w-12 h-12 flex-shrink-0 flex items-center justify-center text-2xl overflow-hidden rounded-lg bg-surface-03">
-                                  {isAssetUrl(p.icon)
-                                    ? (
-                                      <img
-                                        src={resolveOptimizedAssetUrl(p.icon, 96)}
-                                        alt=""
-                                        className="w-full h-full object-cover"
-                                        width={48}
-                                        height={48}
-                                        loading="lazy"
-                                        decoding="async"
-                                        fetchPriority="low"
-                                      />
-                                    )
-                                    : <span>{p.icon || "🍕"}</span>}
+                        <label className="relative mb-3 block">
+                          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone" />
+                          <input
+                            type="search"
+                            value={flavorSearch}
+                            onChange={(event) => setFlavorSearch(event.target.value)}
+                            placeholder="Pesquisar sabor"
+                            aria-label={`Pesquisar sabor ${i + 1}`}
+                            className="w-full rounded-lg border border-surface-03 bg-surface-02 py-2.5 pl-9 pr-3 text-sm text-cream outline-none placeholder:text-stone/70 focus:border-gold"
+                          />
+                        </label>
+                        {(() => {
+                          const slotCandidates = availableForSlot(i);
+                          const subcategories = getFlavorSubcategories(slotCandidates);
+                          const visibleCandidates = filterFlavorCandidates(slotCandidates, flavorSearch, flavorSubcategory);
+                          return (
+                            <>
+                              {subcategories.length > 0 && (
+                                <div className="mb-3 flex gap-2 overflow-x-auto pb-1" aria-label="Subcategorias de sabores">
+                                  <button
+                                    type="button"
+                                    onClick={() => setFlavorSubcategory("")}
+                                    className={`min-h-9 shrink-0 rounded-full border px-3 text-xs font-bold transition-colors ${!flavorSubcategory ? "border-gold bg-gold text-black" : "border-surface-03 bg-surface-02 text-stone hover:border-gold/50 hover:text-cream"}`}
+                                  >
+                                    Todas
+                                  </button>
+                                  {subcategories.map((subcategory) => (
+                                    <button
+                                      type="button"
+                                      key={subcategory}
+                                      onClick={() => setFlavorSubcategory(subcategory)}
+                                      className={`min-h-9 shrink-0 rounded-full border px-3 text-xs font-bold transition-colors ${normalizeProductText(flavorSubcategory) === normalizeProductText(subcategory) ? "border-gold bg-gold text-black" : "border-surface-03 bg-surface-02 text-stone hover:border-gold/50 hover:text-cream"}`}
+                                    >
+                                      {subcategory}
+                                    </button>
+                                  ))}
                                 </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-cream text-sm font-semibold leading-tight break-words">{p.name}</p>
-                                  <p className="text-gold-light text-xs mt-1">R$ {displayPrice.toFixed(2)}</p>
-                                </div>
-                                {isSelected && (
-                                  <span className="flex-shrink-0 text-[10px] bg-gold text-cream px-2 py-1 rounded-full">
-                                    Selecionado
-                                  </span>
+                              )}
+                              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                                {visibleCandidates.map((p) => {
+                                  const isSelected = flavorSlots[i]?.id === p.id;
+                                  const displayPrice = getFlavorDisplayPrice(p);
+                                  return (
+                                    <button
+                                      key={p.id}
+                                      onClick={() => handleSelectFlavor(i, p)}
+                                      className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all active:scale-[0.99] ${
+                                        isSelected ? "bg-gold/20 border-gold shadow-sm" : "bg-surface-02 border-surface-03 hover:border-gold/40"
+                                      }`}
+                                    >
+                                      <div className="w-12 h-12 flex-shrink-0 flex items-center justify-center text-2xl overflow-hidden rounded-lg bg-surface-03">
+                                        {isAssetUrl(p.icon)
+                                          ? (
+                                            <img
+                                              src={resolveOptimizedAssetUrl(p.icon, 96)}
+                                              alt=""
+                                              className="w-full h-full object-cover"
+                                              width={48}
+                                              height={48}
+                                              loading="lazy"
+                                              decoding="async"
+                                              fetchPriority="low"
+                                            />
+                                          )
+                                          : <span>{p.icon || "🍕"}</span>}
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-cream text-sm font-semibold leading-tight break-words">{p.name}</p>
+                                        <p className="text-gold-light text-xs mt-1">R$ {displayPrice.toFixed(2)}</p>
+                                      </div>
+                                      {isSelected && (
+                                        <span className="flex-shrink-0 text-[10px] bg-gold text-cream px-2 py-1 rounded-full">
+                                          Selecionado
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                                {visibleCandidates.length === 0 && (
+                                  <p className="rounded-lg border border-surface-03 bg-surface-02 px-3 py-4 text-center text-xs text-stone">
+                                    Nenhum sabor encontrado.
+                                  </p>
                                 )}
-                              </button>
-                            );
-                          })}
-                        </div>
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
