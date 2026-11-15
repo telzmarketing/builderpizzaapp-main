@@ -24,7 +24,7 @@ from backend.models.order import Order, OrderStatus
 from backend.models.admin import AdminUser
 from backend.models.product import Product
 from backend.models.rbac import Role
-from backend.schemas.order import CheckoutIn, ManualOrderIn, OrderStatusUpdate, OrderWhatsAppNotificationSettingsIn, ConfirmedSimulationPurgeIn, TestOrderPurgeIn, TestOrderPurgeOut
+from backend.schemas.order import CheckoutIn, ManualOrderIn, OrderFulfillmentUpdate, OrderStatusUpdate, OrderWhatsAppNotificationSettingsIn, ConfirmedSimulationPurgeIn, TestOrderPurgeIn, TestOrderPurgeOut
 from backend.schemas.checkout_quote import CheckoutQuoteOut
 from backend.services.payment_service import PaymentService
 from backend.services.operational_payment import cash_change_amount
@@ -637,6 +637,28 @@ def patch_order_status(
     _entitlement=Depends(require_operational_entitlement("orders.write", write=True)),
 ):
     return update_order_status(order_id, body, request, db, admin, _entitlement)
+
+
+@router.put("/{order_id}/fulfillment")
+def update_order_fulfillment(
+    order_id: str,
+    body: OrderFulfillmentUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+    _orders_edit_permission=Depends(require_rbac_permission("pedidos", "edit")),
+    _entitlement=Depends(require_operational_entitlement("orders.write", write=True)),
+):
+    try:
+        tenant_context = resolve_panel_tenant_context(request, db, admin)
+        order = OrderService(db, tenant_context).update_fulfillment_type(
+            order_id,
+            body.fulfillment_type,
+            changed_by=str(admin.id),
+        )
+        return ok(_serialize_orders(db, [order])[0], "Tipo de atendimento atualizado.")
+    except DomainError as exc:
+        return err(exc)
 
 
 @router.post("/{order_id}/cancel")

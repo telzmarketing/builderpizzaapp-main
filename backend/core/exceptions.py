@@ -255,3 +255,10 @@ class OrderNotReadyForDelivery(DomainError):
 class DeliveryAlreadyAssigned(DomainError):
     def __init__(self, order_id: str):
         super().__init__(f"Pedido '{order_id}' já possui entrega atribuída.")
+
+
+class DeliveryAlreadyStarted(DomainError):
+    def __init__(self, order_id: str):
+        super().__init__(
+            f"A entrega do pedido '{order_id}' já foi coletada e não pode ter o motoboy alterado."
+        )

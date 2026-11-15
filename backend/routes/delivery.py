@@ -44,6 +44,7 @@ from backend.core.customer_auth import authenticate_customer_token
 from backend.core.response import ok, created, no_content, err, err_msg
 from backend.core.tenant_context import TenantContext, TenantContextMissing, TenantSource, trusted_process_context
 from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
+from backend.core.rbac_authorization import require_rbac_permission
 from backend.database import get_db
 from backend.models.admin import AdminUser
 from backend.models.delivery import Delivery, DeliveryPerson
@@ -767,18 +768,21 @@ def assign_delivery(
     request: Request,
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
+    _orders_edit_permission=Depends(require_rbac_permission("pedidos", "edit")),
 ):
     """
     Assign a delivery person to an order.
 
     Preconditions:
-      - Order must be in 'preparing' or 'ready_for_pickup'
-        (guarantees payment was confirmed — state machine enforces this)
+      - A new delivery must be in 'preparing' or 'ready_for_pickup'.
+        An existing delivery may be reattributed after completion, while
+        cancelled/refunded orders remain blocked.
       - Delivery person must be active and 'available'
-      - No active delivery already assigned to the order
+      - Reassignment history is retained in DeliveryEvent and the new driver
+        receives the normal DeliveryAssigned event/dashboard entry.
 
     On success:
-      - Order advances to 'on_the_way'
+      - Delivery remains 'assigned' until the motoboy starts the route
       - Motoboy status changes to 'busy'
       - DeliveryAssigned event published → push notification to customer
     """

@@ -161,6 +161,10 @@ function canDeleteOrdersFromPermissions(permissions: ApiEffectivePermissions | n
   );
 }
 
+function canEditOrdersFromPermissions(permissions: ApiEffectivePermissions | null) {
+  return Boolean(permissions?.is_master || permissions?.modules?.pedidos?.edit);
+}
+
 function loadAutoPrintedConfirmedOrderIds() {
   try {
     const raw = localStorage.getItem(AUTO_PRINTED_CONFIRMED_ORDERS_KEY);
@@ -300,6 +304,7 @@ export default function AdminOrders() {
   const navigate = useNavigate();
   const [manualOrderOpen, setManualOrderOpen] = useState(false);
   const canDeleteOrders = useMemo(() => canDeleteOrdersFromPermissions(adminPermissions), [adminPermissions]);
+  const canEditOrders = useMemo(() => canEditOrdersFromPermissions(adminPermissions), [adminPermissions]);
   const orderSearchQuery = searchParams.get("q")?.trim().toLowerCase() ?? "";
 
   // Motoboy assignment modal
@@ -404,6 +409,18 @@ export default function AdminOrders() {
       setUpdatingId(null);
     }
   }, [orders]);
+
+  const handleFulfillmentChange = useCallback(async (orderId: string, fulfillmentType: "delivery" | "pickup") => {
+    setUpdatingId(orderId);
+    try {
+      const updated = await ordersApi.updateFulfillment(orderId, fulfillmentType);
+      setOrders((prev) => prev.map((order) => (order.id === orderId ? updated : order)));
+    } catch (caught) {
+      setStatusActionError(caught instanceof Error ? caught.message : "Nao foi possivel alterar o tipo de atendimento.");
+    } finally {
+      setUpdatingId(null);
+    }
+  }, []);
 
   const handleApprovePayment = useCallback(async (orderId: string) => {
     setUpdatingId(orderId);
@@ -763,6 +780,9 @@ export default function AdminOrders() {
                                 onCancelRemotePayment={() => handlePaymentOperation(order.id, "cancel")}
                                 onRefundPayment={() => handlePaymentOperation(order.id, "refund")}
                                 onAssignMotoboy={() => openAssignModal(order)}
+                                canAssignMotoboy={canEditOrders}
+                                onFulfillmentChange={(fulfillmentType) => void handleFulfillmentChange(order.id, fulfillmentType)}
+                                canEditFulfillment={canEditOrders}
                                 onPrint={(tpl) => printOrder(order, tpl)}
                                 onLabels={() => setLabelOrder(order)}
                                 canDelete={canDeleteOrders}
@@ -938,6 +958,9 @@ interface OrderCardProps {
   onCancelRemotePayment: () => void;
   onRefundPayment: () => void;
   onAssignMotoboy?: () => void;
+  canAssignMotoboy?: boolean;
+  onFulfillmentChange?: (fulfillmentType: "delivery" | "pickup") => void;
+  canEditFulfillment?: boolean;
   onPrint: (template: PrintTemplate) => void;
   onLabels: () => void;
   canDelete: boolean;
@@ -954,6 +977,9 @@ export function OrderCard({
   onCancelRemotePayment,
   onRefundPayment,
   onAssignMotoboy,
+  canAssignMotoboy = false,
+  onFulfillmentChange,
+  canEditFulfillment = false,
   onPrint,
   onLabels,
   canDelete,
@@ -971,6 +997,7 @@ export function OrderCard({
   const isReadyForPickup = order.status === "ready_for_pickup";
   const canPrintLabels = ["ready_for_pickup", "on_the_way", "delivered"].includes(order.status);
   const isWaitingPayment = WAITING_PAYMENT_STATUSES.has(order.status);
+  const canChangeFulfillment = canEditFulfillment && order.status === "pending" && !order.delivery && order.sales_channel !== "dine_in";
   const nextLabel = isReadyForPickup ? (order.sales_channel === "dine_in" ? "Marcar servido" : null) : NEXT_LABEL[order.status];
   const unresolvedDeliveryProblem = Boolean(order.delivery?.problem_report && !order.delivery.problem_resolved_at);
   const payOnDeliveryPaymentProblem = Boolean(
@@ -1050,6 +1077,24 @@ export function OrderCard({
           <p className="text-[9px] uppercase tracking-widest text-stone">Entrega</p>
           <p className="text-[11px] font-semibold text-parchment">{order.estimated_time} min</p>
         </div>
+      </div>
+
+      <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-surface-03 bg-surface-02/80 px-2 py-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-stone">Atendimento</span>
+        {canChangeFulfillment ? (
+          <select
+            aria-label="Tipo de atendimento"
+            value={order.fulfillment_type === "pickup" ? "pickup" : "delivery"}
+            onChange={(event) => onFulfillmentChange?.(event.target.value as "delivery" | "pickup")}
+            disabled={updating}
+            className="rounded-md border border-surface-03 bg-surface-03 px-2 py-1 text-[11px] font-bold text-cream outline-none"
+          >
+            <option value="delivery">Entrega</option>
+            <option value="pickup">Retirada</option>
+          </select>
+        ) : (
+          <span className="text-[11px] font-semibold text-parchment">{order.fulfillment_type === "pickup" ? "Retirada" : "Entrega"}</span>
+        )}
       </div>
 
       {paymentInfo && (
@@ -1173,15 +1218,15 @@ export function OrderCard({
 
       {/* Action buttons */}
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {/* Assign motoboy — for ready_for_pickup orders */}
-        {isReadyForPickup && order.sales_channel !== "dine_in" && order.fulfillment_type !== "pickup" && !order.delivery && (
+        {/* Assign/reassign motoboy; existing deliveries may be corrected after completion. */}
+        {canAssignMotoboy && (isReadyForPickup || Boolean(order.delivery)) && !["cancelled", "refunded"].includes(order.status) && order.sales_channel !== "dine_in" && order.fulfillment_type !== "pickup" && (
           <button
             onClick={onAssignMotoboy}
             disabled={updating}
             className="flex min-w-[6.5rem] flex-1 items-center justify-center gap-1 rounded-lg bg-blue-500/15 px-2 py-2 text-[11px] font-bold text-blue-300 transition-colors hover:bg-blue-500/25 disabled:opacity-50"
           >
             <Truck size={13} />
-            Atribuir Motoboy
+            {order.delivery ? "Alterar Motoboy" : "Atribuir Motoboy"}
           </button>
         )}
 

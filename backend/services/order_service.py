@@ -1535,6 +1535,69 @@ class OrderService:
     def get(self, order_id: str) -> Order:
         return self._get_order(order_id)
 
+    def update_fulfillment_type(
+        self,
+        order_id: str,
+        fulfillment_type: str,
+        *,
+        changed_by: str = "system",
+    ) -> Order:
+        """Change delivery vs. pickup without bypassing order invariants.
+
+        This is intentionally limited to untouched pending orders. Once a
+        payment or operational delivery exists, changing the mode could make
+        the stored freight/payment snapshot inconsistent with the order's
+        history, so the operation fails closed.
+        """
+        if fulfillment_type not in {"delivery", "pickup"}:
+            raise DomainError("Tipo de atendimento invalido.", code="OrderFulfillmentInvalid")
+
+        order = self._get_order(order_id)
+        current = order.fulfillment_type or "delivery"
+        if current == fulfillment_type:
+            return order
+
+        if order.status != OrderStatus.pending:
+            raise DomainError(
+                "O tipo de atendimento so pode ser alterado enquanto o pedido estiver pendente.",
+                code="OrderFulfillmentNotEditable",
+            )
+        if order.sales_channel == "dine_in" or order.table_id or order.table_session_id:
+            raise DomainError(
+                "Pedidos do salao nao permitem alterar o tipo de atendimento.",
+                code="OrderFulfillmentNotEditable",
+            )
+        if order.delivery is not None:
+            raise DomainError(
+                "Este pedido ja possui uma operacao de entrega e nao pode trocar o atendimento.",
+                code="OrderFulfillmentNotEditable",
+            )
+        if order.payment is not None and order.payment.status != PaymentStatus.pending:
+            raise DomainError(
+                "O pagamento deste pedido ja foi iniciado e o atendimento nao pode ser alterado.",
+                code="OrderFulfillmentNotEditable",
+            )
+
+        old_value = current
+        order.fulfillment_type = fulfillment_type
+        order.updated_at = datetime.now(timezone.utc)
+
+        from backend.models.rbac import AdminAuditLog
+        self._db.add(AdminAuditLog(
+            id=str(uuid.uuid4()),
+            tenant_id=order.tenant_id,
+            user_id=changed_by,
+            action="update",
+            module_key="pedidos",
+            entity_type="order",
+            entity_id=order.id,
+            old_value=f"fulfillment_type={old_value}",
+            new_value=f"fulfillment_type={fulfillment_type}",
+        ))
+        self._db.commit()
+        self._db.refresh(order)
+        return order
+
     def archive(
         self,
         order_id: str,

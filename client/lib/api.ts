@@ -6225,6 +6225,9 @@ export const ordersApi = {
   updateStatus: (id: string, status: OrderStatus) =>
     put<ApiOrder>(`/orders/${id}/status`, { status }),
 
+  updateFulfillment: (id: string, fulfillment_type: "delivery" | "pickup") =>
+    put<ApiOrder>(`/orders/${id}/fulfillment`, { fulfillment_type }),
+
   cancel: (id: string) => post<ApiOrder>(`/orders/${id}/cancel`, {}),
 
   remove: async (id: string) => {

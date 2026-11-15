@@ -21,7 +21,7 @@ from passlib.context import CryptContext
 
 from backend.core.exceptions import (
     DeliveryNotFound, DeliveryPersonNotFound, DeliveryPersonUnavailable,
-    OrderNotReadyForDelivery, DeliveryAlreadyAssigned, OrderNotFound,
+    OrderNotReadyForDelivery, DeliveryAlreadyAssigned, DeliveryAlreadyStarted, OrderNotFound,
     DomainError,
 )
 from backend.core.state_machine import delivery_sm, order_sm, payment_sm
@@ -295,14 +295,11 @@ class DeliveryService:
         - No existing active delivery assignment for this order.
 
         On success:
-        - Order advances to 'on_the_way' via order state machine.
+        - Delivery remains 'assigned' until the driver starts the route.
         - Delivery person status changes to 'busy'.
         - DeliveryAssigned event is published.
         """
         order = self._get_order(order_id)
-
-        if order.status not in self._ASSIGNABLE_STATUSES:
-            raise OrderNotReadyForDelivery(order_id, order.status.value)
 
         # Check for existing delivery
         existing = (
@@ -310,13 +307,18 @@ class DeliveryService:
             .filter(Delivery.order_id == order_id)
             .first()
         )
-        if existing and existing.status not in (
-            DeliveryStatus.failed, DeliveryStatus.cancelled
-        ):
-            raise DeliveryAlreadyAssigned(order_id)
+        # New dispatches require the normal kitchen checkpoint. Existing
+        # deliveries may be reattributed after completion, but terminal
+        # orders must remain immutable.
+        if order.status in (OrderStatus.cancelled, OrderStatus.refunded):
+            raise OrderNotReadyForDelivery(order_id, order.status.value)
+        if existing is None and order.status not in self._ASSIGNABLE_STATUSES:
+            raise OrderNotReadyForDelivery(order_id, order.status.value)
 
         person = self._get_delivery_person(delivery_person_id)
-        if person.status == DeliveryPersonStatus.busy:
+        if person.status == DeliveryPersonStatus.busy and (
+            not existing or existing.delivery_person_id != delivery_person_id
+        ):
             raise DeliveryPersonUnavailable(delivery_person_id)
 
         now = datetime.now(timezone.utc)
@@ -325,11 +327,51 @@ class DeliveryService:
         code = "".join(random.choices("0123456789", k=4))
 
         # Create or reuse delivery record
+        previous_person = None
+        previous_status = existing.status.value if existing else None
+        previous_assigned_at = existing.assigned_at if existing else None
+        previous_picked_up_at = existing.picked_up_at if existing else None
+        previous_delivered_at = existing.delivered_at if existing else None
         if existing:
+            if existing.delivery_person_id and existing.delivery_person_id != delivery_person_id:
+                previous_person = self._get_any_delivery_person(existing.delivery_person_id)
+
+            # A completed delivery is historical evidence, not an open
+            # dispatch. Reassigning it only changes who is credited with the
+            # delivery; never erase proof/timestamps or regress its status.
+            if existing.status in (DeliveryStatus.delivered, DeliveryStatus.completed):
+                delivery = existing
+                delivery.delivery_person_id = delivery_person_id
+                self._add_event(
+                    delivery.id,
+                    "assigned",
+                    description=(
+                        f"Motoboy {person.name} reatribuído no histórico."
+                        if previous_person is not None
+                        else f"Motoboy {person.name} atribuído ao histórico."
+                    ),
+                    actor_type="admin",
+                    metadata={
+                        "delivery_person_id": delivery_person_id,
+                        "previous_delivery_person_id": previous_person.id if previous_person is not None else None,
+                        "previous_status": previous_status,
+                        "previous_delivery_person_status": (
+                            previous_person.status.value if previous_person is not None else None
+                        ),
+                    },
+                )
+                self._db.commit()
+                self._db.refresh(delivery)
+                return delivery
+
             delivery = existing
             delivery.delivery_person_id = delivery_person_id
             delivery.status = DeliveryStatus.assigned
             delivery.assigned_at = now
+            delivery.picked_up_at = None
+            delivery.delivered_at = None
+            delivery.delivery_photo_url = None
+            delivery.recipient_name = None
             delivery.estimated_minutes = estimated_minutes
             delivery.confirmation_code = code
             delivery.confirmed_by_code_at = None
@@ -348,15 +390,29 @@ class DeliveryService:
 
         # Mark motoboy as busy
         person.status = DeliveryPersonStatus.busy
+        if previous_person is not None:
+            previous_person.status = DeliveryPersonStatus.available
 
         self._db.flush()
 
         self._add_event(
             delivery.id,
             "assigned",
-            description=f"Motoboy {person.name} atribuido.",
+            description=(
+                f"Motoboy {person.name} reatribuído."
+                if previous_person is not None
+                else f"Motoboy {person.name} atribuído."
+            ),
             actor_type="admin",
-            metadata={"delivery_person_id": delivery_person_id, "estimated_minutes": estimated_minutes},
+            metadata={
+                "delivery_person_id": delivery_person_id,
+                "previous_delivery_person_id": previous_person.id if previous_person is not None else None,
+                "previous_status": previous_status,
+                "previous_assigned_at": previous_assigned_at,
+                "previous_picked_up_at": previous_picked_up_at,
+                "previous_delivered_at": previous_delivered_at,
+                "estimated_minutes": estimated_minutes,
+            },
         )
         self._db.commit()
         self._db.refresh(delivery)

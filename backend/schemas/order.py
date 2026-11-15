@@ -227,6 +227,10 @@ class OrderStatusUpdate(BaseModel):
     status: OrderStatus
 
 
+class OrderFulfillmentUpdate(BaseModel):
+    fulfillment_type: Literal["delivery", "pickup"]
+
+
 class TestOrderPurgeIn(BaseModel):
     order_id: str = Field(min_length=1, max_length=100)
     confirmation: Literal["PURGE_TEST_ORDER"]
