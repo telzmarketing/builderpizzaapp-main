@@ -995,10 +995,14 @@ validate_release_compatibility() {
   local release_revision="$2"
   local expected_database_revision="$3"
   local -a release_heads release_currents
+  local heads_output
   validate_runtime_artifacts "$release_app"
-  mapfile -t release_heads < <(alembic_at "$release_app" heads | awk 'NF {print $1}')
+  if ! heads_output="$(alembic_at "$release_app" heads 2>&1)"; then
+    die "alembic heads falhou na release ($release_app): ${heads_output//$'\n'/ | }"
+  fi
+  mapfile -t release_heads < <(printf '%s\n' "$heads_output" | awk 'NF {print $1}')
   [[ "${#release_heads[@]}" -eq 1 && "${release_heads[0]}" == "$release_revision" ]] || \
-    die "release diverge da revision esperada"
+    die "release diverge da revision esperada (esperada=$release_revision; encontrada=${release_heads[*]:-nenhuma})"
   mapfile -t release_currents < <(database_current_at "$release_app")
   [[ "${#release_currents[@]}" -eq 1 && "${release_currents[0]}" == "$expected_database_revision" ]] || \
     die "release nao acessa a revision atual do banco"
