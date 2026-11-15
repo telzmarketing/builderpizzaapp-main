@@ -640,6 +640,7 @@ function TabNeighborhoods({ neighborhoods, setNeighborhoods, showToast }: {
 
   useEffect(() => {
     if (!modal) return;
+    let active = true;
     const city = String(modal.data.city ?? "").trim();
     setCitySearchError("");
     setCityLocation(null);
@@ -653,22 +654,25 @@ function TabNeighborhoods({ neighborhoods, setNeighborhoods, showToast }: {
       setCitySearching(true);
       try {
         const result = await api<GeocodeResult>("GET", `/delivery/geocode?q=${encodeURIComponent(`${city}, Brasil`)}`);
+        if (!active) return;
         if (Number.isFinite(result.lat) && Number.isFinite(result.lng)) {
           setCityLocation({ city, lat: Number(result.lat), lng: Number(result.lng) });
         } else {
           setCitySearchError("Cidade não localizada. Confira a grafia ou continue com o preenchimento manual.");
         }
       } catch (e: unknown) {
+        if (!active) return;
         setCitySearchError(`Não foi possível buscar a cidade. ${(e as Error).message || "Tente novamente."}`);
       } finally {
-        setCitySearching(false);
+        if (active) setCitySearching(false);
       }
     }, 500);
-    return () => window.clearTimeout(timer);
+    return () => { active = false; window.clearTimeout(timer); };
   }, [modal?.data.city]);
 
   useEffect(() => {
     if (!modal) return;
+    let active = true;
     const city = String(modal.data.city ?? "").trim();
     const term = String(modal.data.name ?? "").trim();
     setSuggestionsError("");
@@ -688,6 +692,7 @@ function TabNeighborhoods({ neighborhoods, setNeighborhoods, showToast }: {
           lat: number | null;
           lng: number | null;
         }>>("GET", `/shipping/neighborhoods/suggestions?${query.toString()}`);
+        if (!active) return;
         setSuggestions(result.map(item => ({
           name: item.neighborhood,
           display_name: item.display_name,
@@ -696,13 +701,14 @@ function TabNeighborhoods({ neighborhoods, setNeighborhoods, showToast }: {
           lng: item.lng,
         })));
       } catch (e: unknown) {
+        if (!active) return;
         setSuggestions([]);
         setSuggestionsError(`Não foi possível buscar os bairros. ${(e as Error).message || "Tente novamente."}`);
       } finally {
-        setSuggestionsSearching(false);
+        if (active) setSuggestionsSearching(false);
       }
     }, 500);
-    return () => window.clearTimeout(timer);
+    return () => { active = false; window.clearTimeout(timer); };
   }, [modal?.data.city, modal?.data.name]);
 
   const openModal = (mode: "add" | "edit", data: Partial<Neighborhood>) => {

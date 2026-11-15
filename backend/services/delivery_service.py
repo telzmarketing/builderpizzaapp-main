@@ -1869,6 +1869,19 @@ class DeliveryService:
             return " ".join("".join(c if c.isalnum() else " " for c in text).split())
 
         city_key = normalize(city)
+        term_key = normalize(term)
+
+        # Osasco has a curated official catalog. A non-empty lookup must be
+        # exact after accent/punctuation/spacing normalization; never present
+        # another neighborhood as a fallback suggestion.
+        if city_key == "osasco" and term_key:
+            official_name = next(
+                (name for name in OSASCO_OFFICIAL_NEIGHBORHOODS if normalize(name) == term_key),
+                None,
+            )
+            if official_name is None:
+                return []
+
         suggestions: list[dict] = []
         if city_key == "osasco":
             suggestions.extend({
@@ -1878,7 +1891,7 @@ class DeliveryService:
                 "lat": None,
                 "lng": None,
             } for name in OSASCO_OFFICIAL_NEIGHBORHOODS
-               if not term or normalize(term) in normalize(name))
+                if not term_key or normalize(name) == term_key)
         for item in data if isinstance(data, list) else []:
             if not isinstance(item, dict):
                 continue
@@ -1919,11 +1932,15 @@ class DeliveryService:
                 "lat": lat,
                 "lng": lng,
             })
-            if len(suggestions) >= limit:
+            if len(suggestions) >= limit and not term_key:
                 break
         # Exact requested names must win over partial matches and provider
         # ordering, while preserving the official Osasco spelling.
-        term_key = normalize(term)
         if term_key:
-            suggestions.sort(key=lambda row: (normalize(row["neighborhood"]) != term_key, normalize(row["neighborhood"])))
+            exact = [row for row in suggestions if normalize(row["neighborhood"]) == term_key]
+            if exact:
+                return exact[:limit]
+            if city_key == "osasco":
+                return []
+            suggestions.sort(key=lambda row: normalize(row["neighborhood"]))
         return suggestions[:limit]

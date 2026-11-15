@@ -103,6 +103,48 @@ def test_osasco_uses_official_60_neighborhood_list_and_exact_term(monkeypatch):
     assert result[0]["city"] == "Osasco"
 
 
+def test_osasco_does_not_return_partial_or_other_neighborhood_for_unknown_term(monkeypatch):
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_args, **_kwargs: _Response([
+        {
+            "display_name": "Centro, Osasco, Brasil",
+            "lat": "-23.53",
+            "lon": "-46.79",
+            "address": {"neighbourhood": "Centro", "city": "Osasco"},
+        },
+    ]))
+    service = DeliveryService.__new__(DeliveryService)
+    service._wave7_enabled = False
+    service._tenant_context = None
+    service._tenant_id = None
+
+    assert service.search_neighborhoods("Osasco", term="Bairro Que Nao Existe") == []
+
+
+def test_provider_exact_match_is_not_replaced_by_partial_results(monkeypatch):
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_args, **_kwargs: _Response([
+        {
+            "display_name": "Centro, Campinas, Brasil",
+            "lat": "-22.90",
+            "lon": "-47.06",
+            "address": {"neighbourhood": "Centro", "city": "Campinas"},
+        },
+        {
+            "display_name": "Jardim Centro, Campinas, Brasil",
+            "lat": "-22.91",
+            "lon": "-47.07",
+            "address": {"neighbourhood": "Jardim Centro", "city": "Campinas"},
+        },
+    ]))
+    service = DeliveryService.__new__(DeliveryService)
+    service._wave7_enabled = False
+    service._tenant_context = None
+    service._tenant_id = None
+
+    result = service.search_neighborhoods("Campinas", term="Centro", limit=1)
+
+    assert [item["neighborhood"] for item in result] == ["Centro"]
+
+
 def test_neighborhood_search_filters_city_before_applying_limit(monkeypatch):
     payload = [
         {
