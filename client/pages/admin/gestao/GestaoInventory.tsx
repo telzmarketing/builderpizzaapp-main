@@ -336,17 +336,21 @@ function IngredientStockSection({ data, saving, onRequestPurchase, onAdjusted }:
         </button>
       </div>
       <InventoryTableControls search={search} onSearch={setSearch} sort={sort} onSort={(value) => setSort(value as typeof sort)} options={[{ value: "name", label: "Insumo (A-Z)" }, { value: "current_stock", label: "Saldo atual" }, { value: "min_stock", label: "Mínimo" }]} />
-      <div className="overflow-x-auto"><div className="min-w-[900px]">
-      <TableHeader columns={["Insumo", "Unidade", "Local", "Saldo atual", "Mínimo", "Situação", "Ação"]} />
+      <div className="overflow-x-auto"><div className="min-w-[1180px]">
+      <TableHeader columns={["Insumo", "Unidade", "Local", "Saldo atual", "Reservado/indisponível", "Disponível", "Mínimo", "Situação", "Ação"]} />
       {visibleIngredients.map((item) => {
         const current = item.current_stock ?? 0;
+        const reserved = item.reserved_stock ?? 0;
+        const available = item.available_stock ?? Math.max(current - reserved, 0);
         const belowMinimum = current < item.min_stock;
         return (
-          <div key={item.id} className="grid grid-cols-7 items-center gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
+          <div key={item.id} className="grid grid-cols-9 items-center gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
             <span className="font-bold text-cream">{item.name}<small className="block text-stone">{item.sku || "Sem SKU"}</small></span>
             <span className="text-stone">{item.unit_symbol || item.unit_name || "-"}</span>
             <span className="text-stone">{item.default_location_name || "-"}</span>
-            <span className={belowMinimum ? "font-bold text-amber-200" : "text-emerald-200"}>{quantity(current)}</span>
+            <span className="text-emerald-200">{quantity(current)}</span>
+            <span className="text-amber-200">{quantity(reserved)}</span>
+            <span className={available < item.min_stock ? "font-bold text-amber-200" : "text-emerald-200"}>{quantity(available)}</span>
             <span className="text-stone">{quantity(item.min_stock)}</span>
             <span className={belowMinimum ? "font-bold text-amber-200" : "text-emerald-200"}>{belowMinimum ? "Abaixo do mínimo" : "Disponível"}</span>
             <button type="button" className="rounded-lg border border-surface-03 px-2 py-2 text-xs font-bold text-cream hover:bg-surface-03 disabled:opacity-50" disabled={saving} onClick={() => setAdjusting({ id: item.id, name: item.name, unitSymbol: item.unit_symbol || item.unit_name || "unid." })}>Corrigir / registrar perda{hasUnresolvedAdjustment(item.id) && <small className="block text-amber-300">Resultado pendente</small>}</button>

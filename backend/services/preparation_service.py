@@ -301,7 +301,13 @@ class PreparationService:
                 raise PreparationInvalid(f"O insumo {item_id} precisa de local padrao para reservar o preparo.")
             available = foundation._available(item_id, location_id, None)
             if available < quantities[item_id]:
-                raise PreparationConflict(f"Saldo insuficiente para reservar o insumo {item_id}.")
+                location = foundation._get(InventoryLocation, location_id)
+                raise PreparationConflict(
+                    f"Saldo insuficiente para reservar o insumo {item.name} ({item_id}): "
+                    f"quantidade necessaria {_d(quantities[item_id])}; "
+                    f"saldo livre {_d(available)}; "
+                    f"local padrao {location.name} ({location_id})."
+                )
         operation_key = f"preparation-reservation:{order.id}"
         operation = InventoryOperation(
             id=uuid.uuid4().hex, tenant_id=self.tenant_id, kind="reservation",

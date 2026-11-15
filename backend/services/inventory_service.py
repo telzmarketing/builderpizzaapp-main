@@ -6,7 +6,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.exceptions import DomainError
@@ -28,6 +28,7 @@ from backend.models.inventory import (
     InventorySupplier,
     InventoryUnit,
 )
+from backend.models.inventory_foundation import InventoryReservation
 from backend.models.order import Order, OrderItem
 from backend.models.finance import FinanceTransaction
 from backend.models.rbac import AdminAuditLog
@@ -244,7 +245,8 @@ class InventoryService:
             .all()
         )
         balances = self._stock_balance_map()
-        return [self._serialize_item(row, balances) for row in rows]
+        reservations = self._reserved_stock_map()
+        return [self._serialize_item(row, balances, reservations) for row in rows]
 
     def create_item(self, payload: InventoryItemIn) -> dict:
         data = payload.model_dump()
@@ -895,6 +897,27 @@ class InventoryService:
         )
         return {item_id: decimal_value(total) for item_id, total in rows}
 
+    def _reserved_stock_map(self) -> dict[str, Decimal]:
+        """Return unexpired active reservations for this tenant by item."""
+        now = datetime.now(timezone.utc)
+        rows = (
+            self._db.query(
+                InventoryReservation.item_id,
+                func.coalesce(func.sum(InventoryReservation.quantity), 0),
+            )
+            .filter(
+                InventoryReservation.tenant_id == self._tenant_id,
+                InventoryReservation.status == "active",
+                or_(
+                    InventoryReservation.expires_at.is_(None),
+                    InventoryReservation.expires_at > now,
+                ),
+            )
+            .group_by(InventoryReservation.item_id)
+            .all()
+        )
+        return {item_id: decimal_value(quantity) for item_id, quantity in rows}
+
     def _module_settings(self) -> dict:
         item = (
             self._db.query(GestaoModuleSettings)
@@ -1156,8 +1179,14 @@ class InventoryService:
             notes=json.dumps({"actor_id": self._actor_id, "notes": entry.notes}),
         ))
 
-    def _serialize_item(self, item: InventoryItem, balances: dict[str, float] | None = None) -> dict:
-        stock = (balances or self._stock_balance_map()).get(item.id, 0.0)
+    def _serialize_item(
+        self,
+        item: InventoryItem,
+        balances: dict[str, float] | None = None,
+        reservations: dict[str, Decimal] | None = None,
+    ) -> dict:
+        stock = decimal_value((balances or self._stock_balance_map()).get(item.id, 0.0))
+        reserved = (reservations if reservations is not None else self._reserved_stock_map()).get(item.id, ZERO)
         return {
             "id": item.id,
             "tenant_id": item.tenant_id,
@@ -1178,7 +1207,8 @@ class InventoryService:
             "default_location_name": item.default_location.name if item.default_location else None,
             "min_stock": item.min_stock,
             "current_stock": round(stock, 6),
-            "available_stock": round(max(stock, 0.0), 6),
+            "reserved_stock": round(reserved, 6),
+            "available_stock": round(max(stock - reserved, ZERO), 6),
             "notes": item.notes,
             "active": item.active,
             "created_at": item.created_at,

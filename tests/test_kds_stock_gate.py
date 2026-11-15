@@ -240,16 +240,69 @@ def test_start_persists_five_second_deadline_without_debit_and_replays(gate):
     assert task["state"] == "checking_stock" and task["started_at"] is None
     assert task["stock_check_after"] - task["stock_requested_at"] == timedelta(seconds=5)
     assert balance(gate) == Decimal("1")
-    # Acceptance removes the unit from the waiting queue immediately.  The
-    # current attempt remains persisted in the preparation state so the stock
-    # confirmation can continue safely.
-    assert {row["task_id"] for row in gate.service.queue("cook")} == {"task2"}
+    # Acceptance keeps the operator-owned task visible so the Pizzaiolo can
+    # continue the stock gate and subsequent production steps.
+    assert {row["task_id"] for row in gate.service.queue("cook")} == {"task1", "task2"}
     assert {row["task_id"] for row in gate.service.all_queued()} == {"task2"}
     replay = gate.service.command("task1", "cook", command(1), "start")
     assert replay["version"] == task["version"]
     with pytest.raises(DomainError, match="cinco segundos"):
         gate.service.command("task1", "cook", command(task["version"]), "confirm-stock")
     assert balance(gate) == Decimal("1")
+
+
+def test_operator_queue_keeps_owned_active_states_and_excludes_unowned_or_final(gate):
+    active_states = (
+        "checking_stock", "aguardando_analise", "atendimento",
+        "assembling", "assembled", "baking", "checking",
+    )
+    for index, state in enumerate(active_states, start=10):
+        order_id = f"active-{state}"
+        item_id = f"active-item-{index}"
+        unit_id = f"active-unit-{index}"
+        task_id = f"active-task-{index}"
+        gate.db.add(Order(
+            id=order_id, tenant_id="tenant", status="preparing", subtotal=50,
+            total=50, fulfillment_type="delivery",
+        ))
+        gate.db.add(ProductionUnit(
+            id=unit_id, tenant_id="tenant", order_id=order_id,
+            order_item_id=item_id, unit_index=1, state=state,
+        ))
+        gate.db.add(ProductionAttempt(
+            id=task_id, tenant_id="tenant", production_unit_id=unit_id,
+            attempt_number=1, state=state, operator_id="cook",
+        ))
+
+    for suffix, state, operator_id in (
+        ("unowned-active", "assembling", None),
+        ("other-owner", "assembling", "other-cook"),
+        ("ready", "ready", "cook"),
+        ("cancelled", "cancelled", "cook"),
+    ):
+        order_id = f"active-{suffix}"
+        item_id = f"active-item-{suffix}"
+        unit_id = f"active-unit-{suffix}"
+        task_id = f"active-task-{suffix}"
+        gate.db.add(Order(
+            id=order_id, tenant_id="tenant", status="preparing", subtotal=50,
+            total=50, fulfillment_type="delivery",
+        ))
+        gate.db.add(ProductionUnit(
+            id=unit_id, tenant_id="tenant", order_id=order_id,
+            order_item_id=item_id, unit_index=1, state=state,
+        ))
+        gate.db.add(ProductionAttempt(
+            id=task_id, tenant_id="tenant", production_unit_id=unit_id,
+            attempt_number=1, state=state, operator_id=operator_id,
+        ))
+
+    gate.db.commit()
+    tasks = gate.service.queue("cook")
+    task_ids = {row["task_id"] for row in tasks}
+    assert {f"active-task-{index}" for index in range(10, 17)} <= task_ids
+    assert not {"active-task-unowned-active", "active-task-other-owner"} & task_ids
+    assert not {"active-task-ready", "active-task-cancelled"} & task_ids
 
 
 def test_later_confirmation_cannot_overtake_first_request_and_loser_returns(gate):

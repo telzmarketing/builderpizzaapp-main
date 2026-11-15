@@ -377,14 +377,21 @@ class KdsProductionService:
 
     def queue(self, actor_id, station_id="pizza"):
         station_id = self.normalize_station(station_id)
-        # The queue is the waiting projection only.  Once the operator accepts
-        # a unit, ``start_stock_check`` moves it to ``checking_stock`` and the
-        # unit must leave this projection immediately.  In-progress states are
-        # still available through the preparation/order projections and retain
-        # their current attempt for the stock gate and subsequent steps.
-        rows = [row for row in self._current_queue_attempts()
-                if row.state == "queued" and row.unit.station_id in station_scope(station_id)
-                and (row.operator_id == actor_id or row.operator_id is None)]
+        # Keep the operator's accepted work in this projection.  The stock
+        # gate changes an accepted task from ``queued`` to ``checking_stock``;
+        # dropping it here makes the Pizzaiolo lose the task and its progress.
+        active_states = {
+            "checking_stock", "aguardando_analise", "atendimento",
+            "assembling", "assembled", "baking", "checking",
+        }
+        rows = [
+            row for row in self._current_queue_attempts()
+            if row.unit.station_id in station_scope(station_id)
+            and (
+                (row.state == "queued" and (row.operator_id is None or row.operator_id == actor_id))
+                or (row.state in active_states and row.operator_id == actor_id)
+            )
+        ]
         rows.sort(key=lambda row: row.created_at)
         drink_item_ids = self._drink_item_ids([r.unit.order_item_id for r in rows])
         return [self._payload(r) for r in rows if r.unit.order_item_id not in drink_item_ids]

@@ -2267,6 +2267,7 @@ export interface InventoryItem {
   default_location_name?: string | null;
   min_stock: number;
   current_stock?: number;
+  reserved_stock?: number;
   available_stock?: number;
   notes?: string | null;
   active: boolean;
