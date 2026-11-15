@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Float, Integer, Enum, DateTime, Date, ForeignKey, ForeignKeyConstraint, Index, Text, UniqueConstraint, func
+from sqlalchemy import Column, String, Boolean, Float, Integer, Enum, DateTime, Date, ForeignKey, ForeignKeyConstraint, Index, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -18,6 +18,7 @@ class LogisticsSettings(Base):
     default_estimated_minutes  = Column(Integer, default=40)
     confirmation_code_enabled  = Column(Boolean, default=True)
     rate_per_delivery          = Column(Float, default=0.0, nullable=True)
+    daily_allowance_amount     = Column(Float, default=50.0, nullable=False)
     updated_at                 = Column(DateTime(timezone=True),
                                         default=lambda: datetime.now(timezone.utc),
                                         onupdate=lambda: datetime.now(timezone.utc))
@@ -72,6 +73,7 @@ class DeliveryPerson(Base):
     cpf           = Column(String(14), nullable=True)
     cnh           = Column(String(20), nullable=True)
     pix_key       = Column(String(200), nullable=True)
+    daily_allowance_amount = Column(Float, nullable=True)
 
     # Real-time location (updated by mobile app)
     location_lat        = Column(Float, nullable=True)
@@ -191,9 +193,10 @@ class DeliveryEarning(Base):
 
     id                 = Column(String, primary_key=True)
     tenant_id          = Column(String, ForeignKey("tenants.id", name="fk_delivery_earnings_tenant_id_tenants"), nullable=False)
-    delivery_id        = Column(String, ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False)
+    delivery_id        = Column(String, ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=True)
     delivery_person_id = Column(String, ForeignKey("delivery_persons.id", ondelete="CASCADE"), nullable=False)
     amount             = Column(Float, default=0.0, nullable=False)
+    earning_type       = Column(String(30), default="delivery", nullable=False)  # delivery | daily_allowance
     status             = Column(String(20), default="pending", nullable=False)  # pending | paid | cancelled
     period_date        = Column(Date, nullable=False)
     paid_at            = Column(DateTime(timezone=True), nullable=True)
@@ -203,7 +206,16 @@ class DeliveryEarning(Base):
 
     delivery        = relationship("Delivery")
     delivery_person = relationship("DeliveryPerson")
-    __table_args__ = (Index("uq_delivery_earnings_tenant_id_id", "tenant_id", "id", unique=True),)
+    __table_args__ = (
+        Index("uq_delivery_earnings_tenant_id_id", "tenant_id", "id", unique=True),
+        Index(
+            "uq_delivery_earnings_daily_allowance",
+            "tenant_id", "delivery_person_id", "period_date", "earning_type",
+            unique=True,
+            postgresql_where=text("earning_type = 'daily_allowance'"),
+            sqlite_where=text("earning_type = 'daily_allowance'"),
+        ),
+    )
 
 
 class GeocodeCache(Base):

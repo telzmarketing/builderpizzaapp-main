@@ -17,6 +17,7 @@ class DeliveryPersonCreate(BaseModel):
     cpf: Optional[str] = None
     cnh: Optional[str] = None
     pix_key: Optional[str] = None
+    daily_allowance_amount: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     password: Optional[str] = Field(default=None, min_length=1, max_length=72)
 
 
@@ -28,6 +29,7 @@ class DeliveryPersonUpdate(BaseModel):
     cpf: Optional[str] = None
     cnh: Optional[str] = None
     pix_key: Optional[str] = None
+    daily_allowance_amount: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     password: Optional[str] = Field(default=None, min_length=1, max_length=72)
 
 
@@ -68,6 +70,7 @@ class DeliveryPersonOut(BaseModel):
     cpf: Optional[str] = None
     cnh: Optional[str] = None
     pix_key: Optional[str] = None
+    daily_allowance_amount: Optional[float] = None
     location_lat: Optional[float] = None
     location_lng: Optional[float] = None
     location_updated_at: Optional[datetime] = None
@@ -219,6 +222,7 @@ class LogisticsSettingsOut(BaseModel):
     default_estimated_minutes: int
     confirmation_code_enabled: bool
     rate_per_delivery: Optional[float] = 0.0
+    daily_allowance_amount: float = 50.0
     updated_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
@@ -230,6 +234,7 @@ class LogisticsSettingsUpdate(BaseModel):
     default_estimated_minutes: Optional[int] = None
     confirmation_code_enabled: Optional[bool] = None
     rate_per_delivery: Optional[float] = None
+    daily_allowance_amount: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 # ── Phase 3 — Earnings / Analytics / Alerts ───────────────────────────────────
@@ -241,11 +246,12 @@ class BulkPayIn(BaseModel):
 
 class DeliveryEarningOut(BaseModel):
     id: str
-    delivery_id: str
+    delivery_id: Optional[str] = None
     delivery_person_id: str
     person_name: Optional[str] = None
     person_phone: Optional[str] = None
     amount: float
+    earning_type: str = "delivery"
     status: str
     period_date: Optional[str] = None
     paid_at: Optional[datetime] = None

@@ -9014,6 +9014,7 @@ export interface DeliveryPerson {
   cpf?: string;
   cnh?: string;
   pix_key?: string;
+  daily_allowance_amount?: number | null;
   total_deliveries: number;
   average_rating: number;
   location_lat?: number;
@@ -9103,6 +9104,7 @@ export interface LogisticsSettings {
   default_estimated_minutes: number;
   confirmation_code_enabled: boolean;
   rate_per_delivery: number;
+  daily_allowance_amount: number;
   updated_at?: string;
 }
 
@@ -9115,6 +9117,7 @@ export interface DeliveryEarning {
   person_name?: string;
   person_phone?: string;
   amount: number;
+  earning_type: "delivery" | "daily_allowance" | string;
   status: "pending" | "paid" | "cancelled";
   period_date?: string;
   paid_at?: string;

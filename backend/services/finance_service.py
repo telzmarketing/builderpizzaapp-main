@@ -211,6 +211,7 @@ class FinanceService:
                 "delivery_person_id": row.delivery_person_id,
                 "delivery_person_name": row.delivery_person.name,
                 "amount": round(float(row.amount or 0), 2),
+                "earning_type": row.earning_type,
                 "status": row.status,
                 "period_date": row.period_date,
                 "paid_at": row.paid_at,

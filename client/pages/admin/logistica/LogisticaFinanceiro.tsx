@@ -359,7 +359,11 @@ export default function LogisticaFinanceiro() {
                             </td>
                             <td className="px-2 py-2.5 text-stone">{fmtDate(e.period_date)}</td>
                             <td className="px-2 py-2.5 text-parchment font-mono">
-                              #{e.delivery_id.slice(0, 8).toUpperCase()}
+                              {e.earning_type === "daily_allowance"
+                                ? "Diária"
+                                : e.delivery_id
+                                  ? `#${e.delivery_id.slice(0, 8).toUpperCase()}`
+                                  : "—"}
                             </td>
                             <td className="px-2 py-2.5 text-right text-cream font-bold">{fmtBRL(e.amount)}</td>
                             <td className="px-2 py-2.5 text-center">

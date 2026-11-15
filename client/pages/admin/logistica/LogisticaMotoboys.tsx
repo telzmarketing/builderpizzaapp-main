@@ -25,6 +25,7 @@ type FormData = {
   cpf: string;
   cnh: string;
   pix_key: string;
+  daily_allowance_amount: string;
   password: string;
 };
 
@@ -36,6 +37,7 @@ const BLANK: FormData = {
   cpf: "",
   cnh: "",
   pix_key: "",
+  daily_allowance_amount: "",
   password: "",
 };
 
@@ -138,6 +140,7 @@ export default function LogisticaMotoboys() {
       cpf: p.cpf ?? "",
       cnh: p.cnh ?? "",
       pix_key: p.pix_key ?? "",
+      daily_allowance_amount: p.daily_allowance_amount == null ? "" : String(p.daily_allowance_amount),
       password: "",
     });
     setFormError("");
@@ -165,6 +168,7 @@ export default function LogisticaMotoboys() {
         cpf: form.cpf || undefined,
         cnh: form.cnh || undefined,
         pix_key: form.pix_key || undefined,
+        daily_allowance_amount: form.daily_allowance_amount === "" ? null : Number(form.daily_allowance_amount),
       };
       if (form.password) payload.password = form.password;
 
@@ -386,6 +390,7 @@ export default function LogisticaMotoboys() {
               <Inp label="CPF" name="cpf" value={form.cpf} onChange={handleChange} placeholder="000.000.000-00" />
               <Inp label="CNH" name="cnh" value={form.cnh} onChange={handleChange} placeholder="numero da CNH" />
               <Inp label="Chave PIX" name="pix_key" value={form.pix_key} onChange={handleChange} placeholder="para repasse de valores" />
+              <Inp label="Diária individual (R$)" name="daily_allowance_amount" value={form.daily_allowance_amount} onChange={handleChange} type="number" placeholder="vazio = padrão da logística" />
 
               <label className="flex flex-col gap-1">
                 <span className="text-stone text-xs font-medium">Veiculo</span>

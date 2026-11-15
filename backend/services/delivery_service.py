@@ -14,7 +14,8 @@ import json
 import math
 import unicodedata
 from sqlalchemy.exc import IntegrityError
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
+from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 from sqlalchemy import text, case, func
 from passlib.context import CryptContext
@@ -39,6 +40,7 @@ from backend.models.label import LabelVolume, LabelVersion
 from backend.models.order import Order, OrderStatus
 from backend.models.kds_production import ProductionUnit
 from backend.models.payment import Payment, PaymentStatus
+from backend.models.tenant import Tenant
 from backend.schemas.delivery import ActiveDeliveryOut
 from backend.services.qr_code_service import qr_token_hash, verify_qr_payload
 
@@ -79,9 +81,10 @@ def _collapse_earnings_by_delivery(earnings):
     priority = {"cancelled": 0, "pending": 1, "paid": 2}
     collapsed = {}
     for earning in earnings:
-        current = collapsed.get(earning.delivery_id)
+        key = earning.delivery_id if earning.earning_type == "delivery" else earning.id
+        current = collapsed.get(key)
         if current is None or priority.get(earning.status, -1) > priority.get(current.status, -1):
-            collapsed[earning.delivery_id] = earning
+            collapsed[key] = earning
     return list(collapsed.values())
 
 
@@ -125,6 +128,19 @@ class DeliveryService:
     def _publish_order_status_changed(self, order: Order, old_status: str, new_status: str) -> None:
         from backend.services.automation_event_producer import AutomationEventProducer
         AutomationEventProducer(self._db, order.tenant_id).order_status_changed(order, old_status, new_status)
+
+    def _business_date(self, instant: datetime | None = None) -> date:
+        """Return the tenant operational date using its configured timezone."""
+        instant = instant or datetime.now(timezone.utc)
+        timezone_name = "America/Sao_Paulo"
+        if self._tenant_id:
+            timezone_name = self._db.query(Tenant.timezone).filter(
+                Tenant.id == self._tenant_id
+            ).scalar() or timezone_name
+        try:
+            return instant.astimezone(ZoneInfo(timezone_name)).date()
+        except Exception:
+            return instant.astimezone(ZoneInfo("America/Sao_Paulo")).date()
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -268,8 +284,49 @@ class DeliveryService:
                 delivery_person_id=delivery.delivery_person_id,
                 amount=rate,
                 status="pending",
-                period_date=datetime.now(timezone.utc).date(),
+                period_date=self._business_date(),
+                earning_type="delivery",
             ))
+
+    def ensure_daily_allowances(self, *, person_id: str | None = None, period_date: date | None = None) -> int:
+        """Create one pending daily allowance per active driver and date."""
+        target_date = period_date or self._business_date()
+        query = self._scope(self._db.query(DeliveryPerson), DeliveryPerson).filter(
+            DeliveryPerson.active.is_(True), DeliveryPerson.deleted_at.is_(None)
+        )
+        if person_id:
+            query = query.filter(DeliveryPerson.id == person_id)
+        settings = self._scope(self._db.query(LogisticsSettings), LogisticsSettings).filter(
+            LogisticsSettings.id == "default"
+        ).first()
+        default_amount = float(getattr(settings, "daily_allowance_amount", 50.0) if settings else 50.0)
+        created = 0
+        for person in query.all():
+            existing = self._scope(self._db.query(DeliveryEarning), DeliveryEarning).filter(
+                DeliveryEarning.delivery_person_id == person.id,
+                DeliveryEarning.period_date == target_date,
+                DeliveryEarning.earning_type == "daily_allowance",
+            ).first()
+            if existing:
+                continue
+            self._db.add(DeliveryEarning(
+                id=str(uuid.uuid4()),
+                tenant_id=self._tenant_id if self._tenant_enabled else person.tenant_id,
+                delivery_id=None,
+                delivery_person_id=person.id,
+                amount=round(default_amount if person.daily_allowance_amount is None else float(person.daily_allowance_amount), 2),
+                status="pending",
+                period_date=target_date,
+                earning_type="daily_allowance",
+                notes="Diaria de motoboy",
+            ))
+            created += 1
+        if created:
+            try:
+                self._db.commit()
+            except IntegrityError:
+                self._db.rollback()
+        return created
 
     # ── Assign ────────────────────────────────────────────────────────────────
 
@@ -767,6 +824,7 @@ class DeliveryService:
         cpf: str | None = None,
         cnh: str | None = None,
         pix_key: str | None = None,
+        daily_allowance_amount: float | None = None,
         password: str | None = None,
     ) -> DeliveryPerson:
         from backend.models.delivery import VehicleType
@@ -789,6 +847,7 @@ class DeliveryService:
             cpf=cpf,
             cnh=cnh,
             pix_key=pix_key,
+            daily_allowance_amount=daily_allowance_amount,
             password_hash=_pwd_ctx.hash(normalized_password) if normalized_password else None,
         )
         self._db.add(person)
@@ -815,7 +874,7 @@ class DeliveryService:
                     code="DriverPasswordRequired",
                 )
         for key, value in kwargs.items():
-            if value is None:
+            if value is None and key != "daily_allowance_amount":
                 continue
             if key == "password":
                 normalized_password = value.strip() if isinstance(value, str) else value
@@ -1509,6 +1568,7 @@ class DeliveryService:
     ) -> list[dict]:
         """List earnings with optional filters. Returns plain dicts to avoid lazy-load issues."""
         from sqlalchemy.orm import joinedload
+        self.ensure_daily_allowances(person_id=person_id)
         q = (
             self._scope(self._db.query(DeliveryEarning), DeliveryEarning)
             .options(joinedload(DeliveryEarning.delivery_person))
@@ -1531,6 +1591,7 @@ class DeliveryService:
                 "person_name": e.delivery_person.name if e.delivery_person else None,
                 "person_phone": e.delivery_person.phone if e.delivery_person else None,
                 "amount": e.amount,
+                "earning_type": e.earning_type,
                 "status": e.status,
                 "period_date": str(e.period_date) if e.period_date else None,
                 "paid_at": e.paid_at.isoformat() if e.paid_at else None,

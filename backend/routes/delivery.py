@@ -160,6 +160,7 @@ def create_person(
             cpf=body.cpf,
             cnh=body.cnh,
             pix_key=body.pix_key,
+            daily_allowance_amount=body.daily_allowance_amount,
             password=body.password,
         )
         return created(person, "Motoboy cadastrado.")
@@ -288,7 +289,7 @@ def update_person(
 ):
     """Update motoboy details (name, phone, documents, credentials, etc.)."""
     try:
-        person = _admin_service(request, db, admin).update_person(person_id, **body.model_dump(exclude_none=True))
+        person = _admin_service(request, db, admin).update_person(person_id, **body.model_dump(exclude_unset=True))
         return ok(person, "Motoboy atualizado.")
     except DomainError as exc:
         return err(exc)

@@ -142,6 +142,29 @@ export default function LogisticaConfig() {
             <p className="text-stone/60 text-xs">Deixe em R$ 0,00 para não gerar registros financeiros automaticamente.</p>
           )}
         </label>
+
+        <div className="border-t border-surface-03" />
+
+        <label className="flex flex-col gap-2">
+          <div>
+            <p className="text-cream text-sm font-medium">Diária padrão do motoboy (R$)</p>
+            <p className="text-stone text-xs mt-0.5">
+              Ajuda de custo para gasolina e operação. É creditada uma vez por motoboy no dia operacional da empresa,
+              mesmo sem corrida. Um valor definido no perfil do motoboy prevalece.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-stone text-sm font-medium">R$</span>
+            <input
+              type="number"
+              min={0}
+              step={0.5}
+              value={settings.daily_allowance_amount ?? 50}
+              onChange={(e) => setSettings((s) => ({ ...s, daily_allowance_amount: Number(e.target.value) }))}
+              className="w-28 rounded-lg bg-surface-03 border border-surface-03 text-cream px-3 py-2 text-sm"
+            />
+          </div>
+        </label>
       </div>
 
       {error && <p className="mt-3 text-sm text-red-300">{error}</p>}

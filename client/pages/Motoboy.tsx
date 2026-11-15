@@ -889,7 +889,13 @@ export default function Motoboy() {
               ) : earnings.map((earning) => (
                 <div key={earning.id} className="flex items-center justify-between rounded-xl border border-surface-03 bg-surface-02 px-4 py-3.5">
                   <div>
-                    <p className="font-mono text-sm font-black text-parchment">Entrega #{earning.delivery_id.slice(0, 8).toUpperCase()}</p>
+                    <p className="font-mono text-sm font-black text-parchment">
+                      {earning.earning_type === "daily_allowance"
+                        ? "Diária"
+                        : earning.delivery_id
+                          ? `Entrega #${earning.delivery_id.slice(0, 8).toUpperCase()}`
+                          : "Repasse"}
+                    </p>
                     <p className="mt-0.5 text-xs text-stone">{earning.period_date || earning.created_at || "—"}</p>
                   </div>
                   <div className="text-right">
