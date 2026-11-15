@@ -808,7 +808,20 @@ class WhatsAppGatewayService:
             instance = self.get_instance(instance_id)
             if instance and instance.provider == "baileys" and instance.status == "connected":
                 return instance
-            return None
+
+            # Channel settings intentionally retain the selected instance id
+            # across disconnects and replacement.  Do not make a stale
+            # selection stop the tenant's outbound queue when another owned
+            # Baileys instance is already connected.
+            return (
+                self._scope(self._db.query(WhatsAppGatewayInstance), WhatsAppGatewayInstance)
+                .filter(
+                    WhatsAppGatewayInstance.provider == "baileys",
+                    WhatsAppGatewayInstance.status == "connected",
+                )
+                .order_by(WhatsAppGatewayInstance.last_seen_at.desc().nullslast(), WhatsAppGatewayInstance.created_at.asc())
+                .first()
+            )
 
         return (
             self._scope(self._db.query(WhatsAppGatewayInstance), WhatsAppGatewayInstance)

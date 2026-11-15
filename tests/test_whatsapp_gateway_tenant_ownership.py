@@ -51,6 +51,28 @@ class FakeRuntimeDb:
         return None
 
 
+class FakeSelectionQuery:
+    def __init__(self, instance):
+        self.instance = instance
+
+    def filter(self, *_conditions):
+        return self
+
+    def order_by(self, *_ordering):
+        return self
+
+    def first(self):
+        return self.instance
+
+
+class FakeSelectionDb:
+    def __init__(self, instance):
+        self.instance = instance
+
+    def query(self, _model):
+        return FakeSelectionQuery(self.instance)
+
+
 def test_runtime_route_resolves_instance_owner_even_when_rollout_is_disabled(monkeypatch):
     instance = SimpleNamespace(id="instance-a", tenant_id="tenant-a", company_id="company-a")
     db = FakeRuntimeDb(instance)
@@ -138,6 +160,20 @@ def test_runtime_event_propagates_persisted_instance_owner_to_agent(monkeypatch)
     assert captured["context"].tenant_id == "tenant-a"
     assert captured["context"].source == TenantSource.WEBHOOK
     assert captured["payload"]["_trusted_tenant_id"] == "tenant-a"
+
+
+def test_send_selection_falls_back_to_connected_owned_instance_after_replacement(monkeypatch):
+    stale = SimpleNamespace(id="old-instance", tenant_id="tenant-a", provider="baileys", status="disconnected")
+    replacement = SimpleNamespace(id="new-instance", tenant_id="tenant-a", provider="baileys", status="connected")
+    service = object.__new__(whatsapp_gateway_service.WhatsAppGatewayService)
+    service._db = FakeSelectionDb(replacement)
+    service._tenant_context = TenantContext(tenant_id="tenant-a", source=TenantSource.JOB)
+    monkeypatch.setattr(service, "get_instance", lambda _instance_id: stale)
+    monkeypatch.setattr(service, "_scope", lambda query, _model: query)
+
+    selected = service._select_send_instance(stale.id)
+
+    assert selected is replacement
 
 
 def test_create_instance_uses_legacy_owner_when_wave6_disabled(monkeypatch):

@@ -37,6 +37,9 @@ const eventToken = args.get("event-token") || process.env.WHATSAPP_GATEWAY_EVENT
 const dataDir = path.resolve(
   args.get("data-dir") || process.env.WHATSAPP_GATEWAY_RUNTIME_DATA_DIR || path.join(projectRoot, ".runtime", "baileys"),
 );
+const registryPath = path.join(dataDir, "instances.json");
+const reconnectBaseDelayMs = 1500;
+const reconnectMaxDelayMs = 30000;
 
 const instances = new Map();
 
@@ -76,14 +79,56 @@ function baseState(instanceId) {
     socket: null,
     reconnectAttempts: 0,
     pairingCode: null,
+    displayName: null,
+    generation: 0,
+    reconnectTimer: null,
+    manualStop: false,
   };
 }
 
 function getState(instanceId) {
+  assertSafeInstanceId(instanceId);
   if (!instances.has(instanceId)) {
     instances.set(instanceId, baseState(instanceId));
   }
   return instances.get(instanceId);
+}
+
+function assertSafeInstanceId(instanceId) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(instanceId)) {
+    throw new Error("Identificador de instancia invalido.");
+  }
+}
+
+async function persistRegistry() {
+  const entries = [...instances.values()].map((state) => ({
+    instance_id: state.instanceId,
+    tenant_id: state.tenantId,
+    name: state.displayName,
+  }));
+  const temporaryPath = `${registryPath}.${process.pid}.tmp`;
+  await fs.writeFile(temporaryPath, JSON.stringify(entries, null, 2), "utf8");
+  await fs.rename(temporaryPath, registryPath);
+}
+
+function isCurrentSocket(state, generation, socket) {
+  return state.generation === generation && state.socket === socket;
+}
+
+function scheduleReconnect(instanceId, state) {
+  if (state.manualStop || state.reconnectTimer || state.status === "logged_out") return;
+  const delay = Math.min(reconnectMaxDelayMs, reconnectBaseDelayMs * 2 ** Math.min(state.reconnectAttempts, 5));
+  state.reconnectAttempts += 1;
+  state.reconnectTimer = setTimeout(() => {
+    state.reconnectTimer = null;
+    connectInstance(instanceId, { name: state.displayName, tenant_id: state.tenantId, reconnect: true }).catch((error) => {
+      state.lastError = error instanceof Error ? error.message : String(error);
+      state.status = "disconnected";
+      logRuntime("instance_reconnect_error", { instance_id: instanceId, error: state.lastError });
+      scheduleReconnect(instanceId, state);
+    });
+  }, delay);
+  logRuntime("instance_reconnect_scheduled", { instance_id: instanceId, delay_ms: delay, reconnect_attempts: state.reconnectAttempts });
 }
 
 function publicState(state) {
@@ -494,6 +539,7 @@ async function makeQrDataUrl(qr) {
 }
 
 async function connectInstance(instanceId, body = {}) {
+  assertSafeInstanceId(instanceId);
   const state = getState(instanceId);
   if (state.socket && ["connecting", "connected", "qr_required"].includes(state.status)) {
     return ok("Instancia Baileys ja esta em execucao.", publicState(state));
@@ -503,10 +549,14 @@ async function connectInstance(instanceId, body = {}) {
   await fs.mkdir(sessionDir, { recursive: true });
 
   state.status = "connecting";
+  state.manualStop = false;
+  state.generation += 1;
+  const generation = state.generation;
   state.startedAt = nowIso();
   state.lastSeenAt = nowIso();
   state.lastError = null;
   state.tenantId = textValue(body.tenant_id, state.tenantId);
+  state.displayName = textValue(body.name, state.displayName);
   state.qrCode = null;
   state.qrCodeDataUrl = null;
   if (!body.reconnect) state.reconnectAttempts = 0;
@@ -528,10 +578,11 @@ async function connectInstance(instanceId, body = {}) {
   });
 
   state.socket = socket;
-  state.displayName = body.name || null;
+  await persistRegistry();
 
   socket.ev.on("creds.update", saveCreds);
   socket.ev.on("messages.upsert", async ({ messages }) => {
+    if (!isCurrentSocket(state, generation, socket)) return;
     for (const item of messages || []) {
       const inbound = await extractInboundMessage(item, state);
       if (!inbound) continue;
@@ -550,6 +601,7 @@ async function connectInstance(instanceId, body = {}) {
     }
   });
   socket.ev.on("connection.update", async (update) => {
+    if (!isCurrentSocket(state, generation, socket)) return;
     state.lastSeenAt = nowIso();
 
     if (update.qr) {
@@ -591,6 +643,7 @@ async function connectInstance(instanceId, body = {}) {
       state.disconnectedAt = nowIso();
       state.lastError = update.lastDisconnect?.error?.message || null;
       state.socket = null;
+      state.generation += 1;
       logRuntime("instance_connection_closed", {
         instance_id: instanceId,
         status_code: statusCode || null,
@@ -598,18 +651,7 @@ async function connectInstance(instanceId, body = {}) {
         reconnect_attempts: state.reconnectAttempts,
         error: state.lastError,
       });
-      if (shouldReconnect && state.reconnectAttempts < 3) {
-        state.reconnectAttempts += 1;
-        setTimeout(() => {
-          connectInstance(instanceId, { name: state.displayName, reconnect: true }).catch((error) => {
-            state.lastError = error instanceof Error ? error.message : String(error);
-            logRuntime("instance_reconnect_error", {
-              instance_id: instanceId,
-              error: state.lastError,
-            });
-          });
-        }, 1500);
-      }
+      if (shouldReconnect && !state.manualStop) scheduleReconnect(instanceId, state);
     }
   });
 
@@ -663,9 +705,13 @@ async function requestPairingCode(instanceId, body = {}) {
 }
 
 async function disconnectInstance(instanceId) {
+  assertSafeInstanceId(instanceId);
   const state = getState(instanceId);
+  state.manualStop = true;
+  state.generation += 1;
+  if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+  state.reconnectTimer = null;
   if (state.socket) {
-    await state.socket.logout().catch(() => undefined);
     state.socket.end?.(new Error("manual disconnect"));
   }
   state.socket = null;
@@ -679,15 +725,20 @@ async function disconnectInstance(instanceId) {
 }
 
 async function deleteInstance(instanceId) {
+  assertSafeInstanceId(instanceId);
   const state = getState(instanceId);
+  state.manualStop = true;
+  state.generation += 1;
+  if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+  state.reconnectTimer = null;
   if (state.socket) {
-    await state.socket.logout().catch(() => undefined);
     state.socket.end?.(new Error("instance deleted"));
   }
 
   const sessionDir = path.join(dataDir, "sessions", instanceId);
   await fs.rm(sessionDir, { recursive: true, force: true });
   instances.delete(instanceId);
+  await persistRegistry();
   logRuntime("instance_deleted", { instance_id: instanceId, session_dir: sessionDir });
   return ok("Instancia Baileys removida do runtime.", {
     instance_id: instanceId,
@@ -890,6 +941,26 @@ async function route(request, response) {
 }
 
 await fs.mkdir(path.join(dataDir, "sessions"), { recursive: true });
+
+try {
+  const persisted = JSON.parse(await fs.readFile(registryPath, "utf8"));
+  for (const entry of Array.isArray(persisted) ? persisted : []) {
+    if (!entry?.instance_id) continue;
+    try {
+      const state = getState(entry.instance_id);
+      state.tenantId = textValue(entry.tenant_id);
+      state.displayName = textValue(entry.name);
+      connectInstance(entry.instance_id, { reconnect: true }).catch((error) => {
+        state.lastError = error instanceof Error ? error.message : String(error);
+        scheduleReconnect(entry.instance_id, state);
+      });
+    } catch (error) {
+      logRuntime("instance_restore_skipped", { instance_id: entry.instance_id, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+} catch (error) {
+  if (error?.code !== "ENOENT") logRuntime("instance_restore_error", { error: error instanceof Error ? error.message : String(error) });
+}
 
 const server = http.createServer((request, response) => {
   route(request, response).catch((error) => {
