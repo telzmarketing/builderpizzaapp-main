@@ -26,6 +26,24 @@ class ProductionVisionStation(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
 
+class ProductionVisionDevice(Base):
+    """A tenant-scoped physical KDS device bound to one work station."""
+    __tablename__ = "production_vision_devices"
+    __table_args__ = (
+        Index("uq_production_vision_devices_tenant_identifier", "tenant_id", "identifier", unique=True),
+        Index("uq_production_vision_devices_tenant_station", "tenant_id", "station_id", unique=True),
+        CheckConstraint("status IN ('active','inactive')", name="ck_production_vision_device_status"),
+    )
+    id = Column(String(36), primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
+    identifier = Column(String(120), nullable=False)
+    name = Column(String(120), nullable=False)
+    station_id = Column(String(80), nullable=False)
+    status = Column(String(12), nullable=False, default="active", server_default="active")
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+
 class ProductionVisionCaptureConfig(Base):
     __tablename__ = "production_vision_capture_configs"
     __table_args__ = (

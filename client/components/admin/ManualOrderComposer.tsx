@@ -70,6 +70,8 @@ type Draft = {
   collection: "cash" | "card";
   cashFor: string;
   coupon: string;
+  discountType: "percentage" | "fixed" | "";
+  discountValue: string;
   submission?: ManualOrderIn;
 };
 const input =
@@ -109,6 +111,8 @@ function emptyDraft(): Draft {
     collection: "cash",
     cashFor: "",
     coupon: "",
+    discountType: "",
+    discountValue: "",
   };
 }
 
@@ -305,6 +309,8 @@ export default function ManualOrderComposer({
           ? Number(draft.cashFor.replace(",", "."))
           : null,
       coupon_code: draft.coupon.trim() || undefined,
+      discount_type: draft.discountType || undefined,
+      discount_value: draft.discountValue.trim() ? Number(draft.discountValue.replace(",", ".")) : undefined,
     };
   }, [draft]);
   const signature = payload ? JSON.stringify(payload) : "";
@@ -1060,6 +1066,34 @@ export default function ManualOrderComposer({
                     ))}
                   </select>
                 </label>
+                <div className="space-y-2 rounded-xl border border-surface-03 bg-surface-02/40 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-stone">Desconto manual do PDV</p>
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+                    <select
+                      aria-label="Tipo de desconto manual"
+                      className={input}
+                      value={draft.discountType}
+                      onChange={(event) => patch({ discountType: event.target.value as Draft["discountType"] })}
+                    >
+                      <option value="">Sem desconto</option>
+                      <option value="percentage">Percentual (%)</option>
+                      <option value="fixed">Valor fixo (R$)</option>
+                    </select>
+                    <input
+                      aria-label="Valor do desconto manual"
+                      className={input}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
+                      value={draft.discountValue}
+                      onChange={(event) => patch({ discountValue: event.target.value })}
+                      placeholder={draft.discountType === "percentage" ? "Ex.: 10" : "Ex.: 5,00"}
+                      disabled={!draft.discountType}
+                    />
+                  </div>
+                  <p className="text-[11px] text-stone">O servidor valida o limite e recalcula subtotal, desconto e total líquido.</p>
+                </div>
                 {quoteError && (
                   <p
                     role="alert"
@@ -1585,6 +1619,7 @@ export default function ManualOrderComposer({
                     <p>Produtos: {money(currentQuote.subtotal)}</p>
                     <p>Entrega: {money(currentQuote.delivery_fee_final)}</p>
                     <p>Desconto: {money(currentQuote.discount || 0)}</p>
+                    {(currentQuote.manual_discount || 0) > 0 && <p>Desconto manual: {money(currentQuote.manual_discount || 0)}</p>}
                     {currentQuote.cash_change_amount != null && (
                       <p className="text-xl font-bold text-gold">
                         Troco: {money(currentQuote.cash_change_amount)}

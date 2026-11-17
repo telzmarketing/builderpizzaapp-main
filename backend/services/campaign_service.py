@@ -1,5 +1,8 @@
 import uuid
+import re
+import unicodedata
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.tenant_context import TenantContext
@@ -45,6 +48,30 @@ class CampaignService:
         if not self._query(Product).filter(Product.id == product_id).first():
             from fastapi import HTTPException
             raise HTTPException(404, "Produto nao encontrado.")
+
+    def _kit_prices(self, items: list[KitItemCreate], discount_type, discount_value) -> tuple[float, float]:
+        from fastapi import HTTPException
+        total = Decimal("0.00")
+        seen: set[str] = set()
+        for item in items:
+            if item.product_id in seen:
+                raise HTTPException(422, "O mesmo produto nao pode ser repetido no kit; ajuste a quantidade.")
+            seen.add(item.product_id)
+            product = self._query(Product).filter(Product.id == item.product_id, Product.active == True).first()  # noqa: E712
+            if not product:
+                raise HTTPException(404, "Produto do kit nao encontrado ou inativo.")
+            total += Decimal(str(product.price or 0)) * item.quantity
+        total = total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        discount = Decimal(str(discount_value or 0))
+        if discount < 0 or (discount_type == "percentage" and discount > 100):
+            raise HTTPException(422, "Desconto do kit invalido.")
+        if discount_type == "percentage":
+            promotional = total * (Decimal("1") - discount / Decimal("100"))
+        elif discount_type == "fixed":
+            promotional = total - discount
+        else:
+            promotional = total
+        return float(total), float(max(Decimal("0.00"), promotional).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
     def _require_highlight(self, highlight_type: str | None, highlight_id: str | None) -> None:
         if not highlight_id:
@@ -226,8 +253,16 @@ class CampaignService:
         )
 
     def create_kit(self, payload: PromotionalKitCreate) -> PromotionalKit:
-        kit = self._own(PromotionalKit(id=str(uuid.uuid4()), **payload.model_dump()))
+        items = payload.items
+        original, promotional = self._kit_prices(items, payload.discount_type, payload.discount_value)
+        kit_data = payload.model_dump(exclude={"items"})
+        kit_data["slug"] = self._unique_kit_slug(kit_data.get("slug") or payload.name)
+        kit_data.update(price_original=original, price_promotional=promotional)
+        kit = self._own(PromotionalKit(id=str(uuid.uuid4()), **kit_data))
         self._db.add(kit)
+        self._db.flush()
+        for item in items:
+            self._db.add(self._own(PromotionalKitItem(id=str(uuid.uuid4()), kit_id=kit.id, product_id=item.product_id, quantity=item.quantity)))
         self._db.commit()
         self._db.refresh(kit)
         return self.get_kit(kit.id)
@@ -238,11 +273,41 @@ class CampaignService:
             from fastapi import HTTPException
             raise HTTPException(404, "Kit não encontrado.")
         data = payload.model_dump(exclude_none=True)
+        if "slug" in data:
+            data["slug"] = self._unique_kit_slug(data["slug"], current_id=kit_id)
+        if any(key in data for key in ("discount_type", "discount_value", "price_original", "price_promotional")):
+            items = [KitItemCreate(product_id=item.product_id, quantity=item.quantity) for item in kit.items]
+            original, promotional = self._kit_prices(items, data.get("discount_type", kit.discount_type), data.get("discount_value", kit.discount_value))
+            data["price_original"] = original
+            data["price_promotional"] = promotional
         data["updated_at"] = datetime.now(timezone.utc)
         for k, v in data.items():
             setattr(kit, k, v)
         self._db.commit()
         return self.get_kit(kit_id)
+
+    def get_public_kit_by_slug(self, slug: str) -> PromotionalKit | None:
+        kit = self._query(PromotionalKit).options(joinedload(PromotionalKit.items)).filter(
+            PromotionalKit.slug == slug, PromotionalKit.active == True  # noqa: E712
+        ).first()
+        if kit and kit.valid_until and kit.valid_until < datetime.now(timezone.utc):
+            return None
+        return kit
+
+    def _unique_kit_slug(self, raw: str, current_id: str | None = None) -> str:
+        normalized = unicodedata.normalize("NFKD", raw or "").encode("ascii", "ignore").decode("ascii")
+        base = re.sub(r"[^a-zA-Z0-9]+", "-", normalized.lower()).strip("-") or f"combo-{uuid.uuid4().hex[:8]}"
+        slug = base[:150]
+        suffix = 1
+        while True:
+            query = self._query(PromotionalKit).filter(PromotionalKit.slug == slug)
+            if current_id:
+                query = query.filter(PromotionalKit.id != current_id)
+            if not query.first():
+                return slug
+            suffix += 1
+            tail = f"-{suffix}"
+            slug = f"{base[:150 - len(tail)]}{tail}"
 
     def delete_kit(self, kit_id: str) -> None:
         kit = self._query(PromotionalKit).filter(PromotionalKit.id == kit_id).first()
@@ -258,8 +323,15 @@ class CampaignService:
             from fastapi import HTTPException
             raise HTTPException(404, "Kit não encontrado.")
         self._require_product(payload.product_id)
+        if self._query(PromotionalKitItem).filter(PromotionalKitItem.kit_id == kit_id, PromotionalKitItem.product_id == payload.product_id).first():
+            from fastapi import HTTPException
+            raise HTTPException(422, "O produto ja existe no kit; ajuste a quantidade.")
         item = self._own(PromotionalKitItem(id=str(uuid.uuid4()), kit_id=kit_id, **payload.model_dump()))
         self._db.add(item)
+        self._db.flush()
+        items = [KitItemCreate(product_id=current.product_id, quantity=current.quantity) for current in kit.items] + [payload]
+        kit.price_original, kit.price_promotional = self._kit_prices(items, kit.discount_type, kit.discount_value)
+        kit.updated_at = datetime.now(timezone.utc)
         self._db.commit()
         self._db.refresh(item)
         return item

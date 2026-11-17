@@ -40,6 +40,7 @@ class CheckoutQuoteOut(BaseModel):
     shipping: dict[str, Any]
     coupon: dict[str, Any] | None = None
     discount: float
+    manual_discount: float = 0
     delivery_fee_final: float
     promotion_free_shipping_applied: bool = False
     total: float

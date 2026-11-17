@@ -87,6 +87,7 @@ class PromotionalKit(Base):
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_promotional_kits_tenant_id_tenants"), nullable=True)
     name = Column(String(200), nullable=False)
+    slug = Column(String(200), nullable=True, index=True)
     description = Column(Text, nullable=True)
     icon = Column(String(50), default="🎁")
     kit_type = Column(Enum(KitType), default=KitType.kit)
@@ -96,6 +97,8 @@ class PromotionalKit(Base):
     discount_value = Column(Float, nullable=True)
     valid_until = Column(DateTime(timezone=True), nullable=True)
     active = Column(Boolean, default=True)
+    image_url = Column(Text, nullable=True)
+    video_url = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

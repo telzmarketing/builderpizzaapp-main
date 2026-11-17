@@ -160,6 +160,27 @@ export default function AdminExpedicao() {
     }
   };
 
+  const checkOven = async (order: KdsDispatchOrder, unitId: string, expectedVersion: number) => {
+    if (actionLock.current) return;
+    actionLock.current = true;
+    loadSequence.current += 1;
+    setUpdatingUnitId(unitId);
+    try {
+      const updated = await kdsApi.checkDispatchOven(order.id, unitId, expectedVersion);
+      setOrders((current) => replaceDispatchOrder(current, updated));
+      setError(null);
+      toast({ title: "Forno retirado e conferido", description: `Unidade do pedido #${orderDisplayCode(order)} liberada para embalagem.` });
+    } catch (caught) {
+      const message = errorMessage(caught);
+      setError(message);
+      toast({ title: "Conferência do forno não concluída", description: message, variant: "destructive" });
+    } finally {
+      actionLock.current = false;
+      setUpdatingUnitId(null);
+      void loadData();
+    }
+  };
+
   const updateReturnDraft = (orderId: string, update: Partial<{ unitIds: string[]; reason: string }>) => {
     setReturnDrafts((current) => ({
       ...current,
@@ -268,6 +289,7 @@ export default function AdminExpedicao() {
                   const item = order.items.find((candidate) => candidate.id === unit.order_item_id);
                   const isDrink = unit.product_type === "drink" || Boolean(item && isOperationalDrink(item));
                   const completed = Boolean(unit.dispatch_completed_at);
+                  const canCheckOven = ["baking", "checking"].includes(unit.state) && !completed;
                   const canClose = unit.state === "ready" && !completed;
                   const busy = updatingUnitId === unit.id;
                   return <div key={unit.id} className="flex flex-col gap-3 rounded-lg border border-surface-03 p-3 ">
@@ -275,7 +297,7 @@ export default function AdminExpedicao() {
                     {!completed && <ProductionCaptureChecklist productionUnitId={unit.id} stationId="expedicao" triggerStep={captureTriggers[unit.id] ? "box_closed" : null} />}
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <button type="button" disabled={Boolean(updatingUnitId) || Boolean(assigning)} onClick={() => setLabelOrder(order)} className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-emerald-500/40 px-3 text-sm font-bold text-emerald-200 disabled:opacity-40"><Printer size={16} /> Etiquetas do pedido</button>
-                      <button type="button" disabled={!canClose || Boolean(updatingUnitId) || Boolean(assigning)} onClick={() => void completeUnit(order, unit.id, unit.version)} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-black text-white disabled:opacity-40">{busy ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}{completed ? "Unidade fechada" : canClose ? "Fechar unidade" : "Aguardando preparo"}</button>
+                      {canCheckOven ? <button type="button" disabled={Boolean(updatingUnitId) || Boolean(assigning)} onClick={() => void checkOven(order, unit.id, unit.version)} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-amber-500 px-3 text-sm font-black text-zinc-950 disabled:opacity-40">{busy ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}Retirar e conferir forno</button> : <button type="button" disabled={!canClose || Boolean(updatingUnitId) || Boolean(assigning)} onClick={() => void completeUnit(order, unit.id, unit.version)} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-black text-white disabled:opacity-40">{busy ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}{completed ? "Unidade fechada" : canClose ? "Fechar unidade" : "Aguardando preparo"}</button>}
                     </div>
                   </div>;
                       })}

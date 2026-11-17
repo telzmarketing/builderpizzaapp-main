@@ -17,6 +17,7 @@ export default function AdminHomeConfig() {
 
   const [mode, setMode] = useState<CatalogMode>("all");
   const [showPromotions, setShowPromotions] = useState(true);
+  const [showPromotionsLink, setShowPromotionsLink] = useState(true);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
@@ -54,6 +55,7 @@ export default function AdminHomeConfig() {
       .then((config) => {
         setMode(config.mode as CatalogMode);
         setShowPromotions(config.show_promotions);
+        setShowPromotionsLink(config.show_promotions_link !== false);
         try { setSelectedCategories(JSON.parse(config.selected_categories || "[]")); } catch { /* ignore */ }
         try { setSelectedProductIds(JSON.parse(config.selected_product_ids || "[]")); } catch { /* ignore */ }
       })
@@ -74,6 +76,7 @@ export default function AdminHomeConfig() {
       await homeCatalogApi.update({
         mode,
         show_promotions: showPromotions,
+        show_promotions_link: showPromotionsLink,
         selected_categories: mode === "categories" ? selectedCategories : [],
         selected_product_ids: mode === "products" ? selectedProductIds : [],
       });
@@ -167,6 +170,19 @@ export default function AdminHomeConfig() {
 
                 {/* Banner de Promoções */}
                 <div className="bg-surface-02 rounded-xl p-6 border border-surface-03">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Tag size={18} className="text-gold" />
+                      <div>
+                        <h3 className="text-cream font-bold">Botão Promoções</h3>
+                        <p className="text-stone text-sm">Acesso à página pública com todas as promoções</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setShowPromotionsLink((value) => !value)} className={`flex items-center gap-2 px-4 py-2 rounded-xl border-2 font-medium text-sm ${showPromotionsLink ? "border-gold bg-gold/10 text-gold" : "border-surface-03 text-stone"}`}>
+                      {showPromotionsLink ? <Eye size={15} /> : <EyeOff size={15} />}
+                      {showPromotionsLink ? "Visível" : "Oculto"}
+                    </button>
+                  </div>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-gold/10 flex items-center justify-center">

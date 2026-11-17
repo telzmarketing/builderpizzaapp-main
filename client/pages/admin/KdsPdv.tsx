@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import ManualOrderComposer from "@/components/admin/ManualOrderComposer";
 import KdsBrandLogo from "@/components/kds/KdsBrandLogo";
 import KdsSessionActions from "@/components/kds/KdsSessionActions";
-import PwaInstallButton from "@/components/PwaInstallButton";
 
 type AdminUser = { name?: string; email?: string; role_name?: string };
 
@@ -41,7 +40,6 @@ export default function KdsPdv() {
             <div className="hidden items-center gap-2 rounded-xl border border-surface-03 bg-surface-01 px-3 py-2 sm:flex"><CalendarDays size={15} className="text-gold" /><span>{now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })}</span><Clock3 size={15} className="text-gold" /><span className="tabular-nums">{now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span></div>
             <span className="hidden items-center gap-1.5 rounded-full border border-surface-03 px-3 py-2 xl:inline-flex"><ShoppingCart size={14} className="text-gold" /> Catálogo integrado</span>
             <span className="hidden items-center gap-1.5 rounded-full border border-surface-03 px-3 py-2 xl:inline-flex"><BadgeCheck size={14} className="text-emerald-300" /> Pedido seguro</span>
-            <PwaInstallButton only={["kds-pdv"]} inline />
             <KdsSessionActions />
           </div>
         </div>

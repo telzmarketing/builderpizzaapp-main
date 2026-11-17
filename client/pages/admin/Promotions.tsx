@@ -65,14 +65,14 @@ export default function AdminPromotions() {
 
         <div className="flex-1 overflow-auto">
           <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 flex justify-between items-center sticky top-0 z-20">
-            <h2 className="text-2xl font-bold text-cream">Campanhas e Promoções</h2>
+            <h2 className="text-2xl font-bold text-cream">Promoções</h2>
             <div className="flex items-center gap-3">
               <button
                 onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ title: "", subtitle: "", icon: "🍕", active: true }); }}
                 className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
               >
                 <Plus size={20} />
-                Nova Campanha
+                Nova Promoção
               </button>
               <AdminTopActions />
             </div>
@@ -81,7 +81,7 @@ export default function AdminPromotions() {
           <div className="p-8">
             {showForm && (
               <div className="bg-surface-02 rounded-xl p-6 border border-surface-03 mb-8">
-                <h3 className="text-xl font-bold text-cream mb-4">{editingId ? "Editar Campanha" : "Nova Campanha"}</h3>
+                <h3 className="text-xl font-bold text-cream mb-4">{editingId ? "Editar Promoção" : "Nova Promoção"}</h3>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -117,7 +117,7 @@ export default function AdminPromotions() {
 
                   <div className="flex gap-3 pt-4">
                     <button type="submit" className="flex-1 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors">
-                      {editingId ? "Salvar Alterações" : "Criar Campanha"}
+                      {editingId ? "Salvar Alterações" : "Criar Promoção"}
                     </button>
                     <button type="button" onClick={() => { setShowForm(false); setEditingId(null); }} className="flex-1 bg-surface-03 hover:bg-brand-mid text-cream font-bold py-2 px-4 rounded-lg transition-colors">
                       Cancelar

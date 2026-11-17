@@ -18,6 +18,8 @@ class HomeCatalogConfig(Base):
     selected_product_ids = Column(Text, default="[]")
     # Whether to include the promotions banner section
     show_promotions = Column(Boolean, default=True)
+    # Whether to expose the public promotions entry point on the store home.
+    show_promotions_link = Column(Boolean, default=True)
     updated_at = Column(DateTime(timezone=True),
                         default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))

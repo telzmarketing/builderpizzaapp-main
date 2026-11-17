@@ -166,14 +166,20 @@ class KdsAuditService:
         now = self._now()
         delivery = self.db.query(Delivery).filter(Delivery.tenant_id == self.tenant_id, Delivery.id == audit.delivery_id).with_for_update().one()
         order = self._order(audit.order_id, lock=True)
+        if order.status == OrderStatus.on_the_way:
+            raise DomainError("O pedido ja esta em rota; a auditoria nao pode reabrir a entrega.", code="KdsAuditOrderAlreadyInRoute")
         if delivery.status not in (DeliveryStatus.pending_assignment, DeliveryStatus.assigned, DeliveryStatus.picked_up):
             raise DomainError("Entrega nao pode ser liberada neste estado.", code="KdsAuditDeliveryState")
-        delivery.status, delivery.picked_up_at = DeliveryStatus.picked_up, delivery.picked_up_at or now
-        order.status, order.out_for_delivery_at = OrderStatus.on_the_way, order.out_for_delivery_at or now
+        # Completing the audit is a release gate, not a physical pickup.  Keep
+        # the delivery assigned so the driver must explicitly start the route.
+        # This preserves the historical audit/handoff timestamps without
+        # fabricating a pickup or departure event.
+        if delivery.status == DeliveryStatus.pending_assignment:
+            raise DomainError("A entrega precisa estar atribuida a um motoboy antes da liberacao.", code="KdsAuditAssignmentRequired")
         audit.status, audit.completed_at, audit.handoff_at, audit.handoff_by_admin_id = "completed", now, now, actor_id
         self.db.add(DeliveryEvent(id=str(uuid4()), tenant_id=self.tenant_id, delivery_id=delivery.id,
             event_type="audit_handoff", description="Pedido liberado apos auditoria KDS.",
             actor_type="admin", actor_id=actor_id, created_at=now))
         self.db.commit()
         return {"audit_id": audit.id, "status": audit.status, "delivery_id": delivery.id, "delivery_status": delivery.status.value,
-                "order_id": order.id, "order_status": order.status.value, "idempotent": False}
+                "order_id": order.id, "order_status": order.status.value, "released_for_driver": True, "idempotent": False}

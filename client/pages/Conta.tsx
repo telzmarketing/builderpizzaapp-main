@@ -405,17 +405,17 @@ export default function Conta() {
 
       {/* Header */}
       <div className="bg-brand-dark px-4 py-3 flex justify-between items-center sticky top-0 z-30">
-        <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
+        <button onClick={() => navigate(-1)} className="translate-y-4 text-parchment hover:text-cream transition-colors lg:translate-y-2">
           <ChevronLeft size={24} />
         </button>
-        <button onClick={() => navigate("/")} aria-label="Ir para a home da loja">
+        <button onClick={() => navigate("/")} aria-label="Ir para a home da loja" className="translate-y-4 lg:translate-y-2">
           <MoschettieriLogo className="text-cream text-base scale-[1.31] origin-center" />
         </button>
         {customer ? (
           <button
             onClick={() => (editMode ? handleSave() : setEditMode(true))}
             disabled={savingProfile}
-            className="text-gold-light hover:text-orange-300 transition-colors disabled:opacity-50"
+            className="translate-y-4 text-gold-light hover:text-orange-300 transition-colors disabled:opacity-50 lg:translate-y-2"
           >
             {savingProfile ? <span className="text-xs text-gold">...</span> : editMode ? <Check size={22} /> : <Edit2 size={20} />}
           </button>

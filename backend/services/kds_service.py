@@ -468,7 +468,7 @@ class KdsService:
             joinedload(Order.items), joinedload(Order.payment),
             joinedload(Order.delivery).joinedload(Delivery.delivery_person),
         ).filter(
-            Order.status == OrderStatus.ready_for_pickup,
+            Order.status.in_((OrderStatus.preparing, OrderStatus.ready_for_pickup)),
             or_(
                 Order.fulfillment_type == "pickup",
                 and_(
@@ -479,7 +479,60 @@ class KdsService:
                 ),
             ),
         ).order_by(Order.updated_at).all()
-        return self._serialize_orders(orders, include_dispatch_details=True)
+        payloads = self._serialize_orders(orders, include_dispatch_details=True)
+        return [payload for payload in payloads if payload["status"] == OrderStatus.ready_for_pickup.value or any(
+            unit["state"] in {"baking", "checking", "ready"} and not unit["dispatch_completed_at"]
+            for unit in payload.get("production_units", [])
+        )]
+
+    def check_oven_in_dispatch(
+        self, order_id: str, unit_id: str, *, expected_version: int, actor_id: str,
+    ) -> dict:
+        """Remove and inspect one oven unit at Expedição.
+
+        The pizzaiolo's oven-start transition is terminal for that operator;
+        Expedição owns the physical removal/check and only then releases the
+        unit to packing.  Existing timestamps are retained for audit history.
+        """
+        order = self._load_order(order_id, lock=True)
+        unit = self.db.query(ProductionUnit).filter(
+            ProductionUnit.tenant_id == self.tenant_id,
+            ProductionUnit.order_id == order_id,
+            ProductionUnit.id == unit_id,
+        ).with_for_update().first()
+        if unit is None:
+            raise DomainError("Unidade de producao nao encontrada neste pedido.", code="ProductionUnitNotFound")
+        attempt = self.db.query(ProductionAttempt).filter(
+            ProductionAttempt.tenant_id == self.tenant_id,
+            ProductionAttempt.production_unit_id == unit.id,
+        ).order_by(ProductionAttempt.attempt_number.desc()).with_for_update().first()
+        if attempt is None or attempt.state not in {"baking", "checking"}:
+            raise DomainError("A unidade nao esta aguardando retirada e conferencia do forno.", code="OvenCheckNotEligible")
+        if unit.version != expected_version:
+            raise DomainError("A unidade foi alterada por outro operador.", code="VersionConflict")
+        now = datetime.now(timezone.utc)
+        attempt.oven_finished_at = attempt.oven_finished_at or now
+        attempt.checked_at = attempt.checked_at or now
+        attempt.completed_at = attempt.completed_at or now
+        attempt.state = unit.state = "ready"
+        attempt.version += 1
+        unit.version += 1
+        self._audit_unit(order.id, unit.id, actor_id, "baking", "ready", "expedicao")
+        self.db.flush()
+
+        all_units = self.db.query(ProductionUnit).filter(
+            ProductionUnit.tenant_id == self.tenant_id, ProductionUnit.order_id == order.id,
+        ).all()
+        latest = self._latest_attempts(all_units)
+        all_ready = bool(all_units) and all(
+            u.state in {"ready", "cancelled"} and (u.state == "cancelled" or latest.get(u.id) and latest[u.id].state == "ready")
+            for u in all_units
+        )
+        if all_ready and self._status(order) == OrderStatus.preparing.value:
+            self._audit_order_transition(order, self._status(order), OrderStatus.ready_for_pickup.value, actor_id, module_key="expedicao")
+            OrderService(self.db, self.tenant_context).change_status(order.id, OrderStatus.ready_for_pickup.value, changed_by=f"expedicao:{actor_id}")
+        self.db.commit()
+        return self._serialize_orders([self._load_order(order_id)], include_dispatch_details=True)[0]
 
     def complete_dispatch_unit(
         self, order_id: str, unit_id: str, *, expected_version: int, actor_id: str,

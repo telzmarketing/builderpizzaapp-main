@@ -882,10 +882,10 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
 
       {/* Header */}
       <div className="bg-brand-dark px-4 py-3 flex min-w-0 justify-between items-center sticky top-0 z-30">
-        <button type="button" onClick={() => embedded ? onBack?.() : navigate(-1)} aria-label={embedded ? "Voltar ao catálogo" : "Voltar"} className="text-parchment hover:text-cream transition-colors">
+        <button type="button" onClick={() => embedded ? onBack?.() : navigate(-1)} aria-label={embedded ? "Voltar ao catálogo" : "Voltar"} className="translate-y-4 text-parchment hover:text-cream transition-colors lg:translate-y-2">
           <ChevronLeft size={24} />
         </button>
-        {embedded ? <strong className="text-cream">Configurar produto</strong> : <button onClick={() => navigate("/")} aria-label="Ir para a home da loja">
+        {embedded ? <strong className="text-cream">Configurar produto</strong> : <button onClick={() => navigate("/")} aria-label="Ir para a home da loja" className="translate-y-4 lg:translate-y-2">
           <MoschettieriLogo className="text-cream text-base scale-[1.31] origin-center" />
         </button>}
         <div className="w-6"></div>

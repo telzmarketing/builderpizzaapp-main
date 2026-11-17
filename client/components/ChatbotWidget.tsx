@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { MessageCircle, X, Send, Minimize2, UserCheck } from "lucide-react";
+import { MessageCircle, X, Send, UserCheck } from "lucide-react";
 import {
   chatbotPublicApi,
   type ChatbotSettings,
   type PublicAutomation,
 } from "@/lib/chatbotApi";
 import { useApp } from "@/context/AppContext";
+import { readChatbotViewport, type ChatbotViewportSnapshot } from "@/lib/chatbotViewport";
 
 interface Msg {
   id?:    string;
@@ -38,6 +39,7 @@ export default function ChatbotWidget() {
   const [loading, setLoading]       = useState(false);
   const [awaiting, setAwaiting]     = useState(false);
   const [convStatus, setConvStatus] = useState<string>("aberta");
+  const [viewport, setViewport] = useState<ChatbotViewportSnapshot>(() => readChatbotViewport());
 
   const bottomRef       = useRef<HTMLDivElement>(null);
   const inputRef        = useRef<HTMLInputElement>(null);
@@ -47,6 +49,31 @@ export default function ChatbotWidget() {
   const autoFiredRef    = useRef(false);
   const userDismissed   = useRef(false);  // true after user manually closes — blocks all auto-triggers
   const sessionId       = useSessionId();
+
+  // Mobile browsers resize the visual viewport when the virtual keyboard opens.
+  // Keep the fullscreen dialog tied to that visible area so the composer never
+  // ends up behind the keyboard. Desktop keeps the existing floating window.
+  useEffect(() => {
+    if (!open || typeof window === "undefined") return;
+
+    const updateViewport = () => setViewport(readChatbotViewport());
+    const visualViewport = window.visualViewport;
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    visualViewport?.addEventListener("resize", updateViewport);
+    visualViewport?.addEventListener("scroll", updateViewport);
+
+    const isMobile = window.matchMedia?.("(max-width: 639px)").matches ?? false;
+    const previousOverflow = document.body.style.overflow;
+    if (isMobile) document.body.style.overflow = "hidden";
+
+    return () => {
+      window.removeEventListener("resize", updateViewport);
+      visualViewport?.removeEventListener("resize", updateViewport);
+      visualViewport?.removeEventListener("scroll", updateViewport);
+      if (isMobile) document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
 
   // ── Load config + automations ──────────────────────────────────────────────
   useEffect(() => {
@@ -253,13 +280,20 @@ export default function ChatbotWidget() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className={`fixed bottom-[80px] ${posClass} z-[9999] flex flex-col ${alignClass} gap-3`}
+    <div className={`fixed bottom-[80px] ${posClass} z-[9999] flex flex-col ${alignClass} gap-3 sm:bottom-[80px]`}
       style={{ fontFamily: "inherit" }}>
 
       {/* ── Chat window ── */}
       {open && (
-        <div className="w-[290px] sm:w-[360px] bg-[#1a1a1a] rounded-2xl shadow-2xl border border-white/10 overflow-hidden flex flex-col"
-          style={{ maxHeight: "calc(100vh - 160px)" }}>
+        <div
+          className="fixed left-0 right-0 top-0 flex w-full flex-col overflow-hidden rounded-none border-0 bg-[#1a1a1a] shadow-2xl sm:static sm:w-[360px] sm:rounded-2xl sm:border sm:border-white/10"
+          style={{
+            height: `var(--chatbot-viewport-height, ${viewport.height}px)`,
+            top: `var(--chatbot-viewport-top, ${viewport.offsetTop}px)`,
+            maxHeight: "100dvh",
+            ["--chatbot-viewport-height" as string]: `${viewport.height}px`,
+            ["--chatbot-viewport-top" as string]: `${viewport.offsetTop}px`,
+          }}>
 
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 flex-shrink-0"
@@ -276,14 +310,13 @@ export default function ChatbotWidget() {
                 }
               </div>
             </div>
-            <button onClick={handleClose} className="text-white/70 hover:text-white transition-colors p-1">
-              <Minimize2 size={16} />
+            <button onClick={handleClose} className="rounded-lg p-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white" aria-label="Fechar chat">
+              <X size={18} />
             </button>
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#121212]"
-            style={{ minHeight: 140, maxHeight: 280 }}>
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#121212] p-4">
             {msgs.length === 0 && (
               <p className="text-[#555] text-xs text-center pt-6">Iniciando conversa...</p>
             )}
@@ -337,7 +370,7 @@ export default function ChatbotWidget() {
           </div>
 
           {/* Input */}
-          <div className="flex gap-2 px-3 py-3 bg-[#1a1a1a] border-t border-white/5 flex-shrink-0">
+          <div className="flex shrink-0 gap-2 border-t border-white/5 bg-[#1a1a1a] px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
             <input
               ref={inputRef}
               value={input}
@@ -373,7 +406,7 @@ export default function ChatbotWidget() {
       ) : (
         <button
           onClick={handleClose}
-          className="w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 bg-[#1a1a1a] border border-white/10"
+          className="hidden h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-[#1a1a1a] shadow-xl transition-all duration-200 hover:scale-110 active:scale-95 sm:flex"
           aria-label="Fechar chat"
         >
           <X size={20} className="text-[#888]" />

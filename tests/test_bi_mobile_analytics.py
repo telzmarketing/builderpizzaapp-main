@@ -19,7 +19,7 @@ def service():
     from backend.main import app  # noqa: F401
     engine = create_engine("sqlite://")
     with engine.begin() as connection:
-        connection.execute(text("CREATE TABLE orders (id TEXT PRIMARY KEY, tenant_id TEXT, created_at TIMESTAMP, status TEXT, total FLOAT, subtotal FLOAT, shipping_fee FLOAT, discount FLOAT, sales_channel TEXT, cancelled_at TIMESTAMP, archived_at TIMESTAMP)"))
+        connection.execute(text("CREATE TABLE orders (id TEXT PRIMARY KEY, tenant_id TEXT, created_at TIMESTAMP, status TEXT, total FLOAT, subtotal FLOAT, shipping_fee FLOAT, discount FLOAT, sales_channel TEXT, cancelled_at TIMESTAMP, archived_at TIMESTAMP, app_finance_gross_amount NUMERIC(20,2), app_finance_deductions NUMERIC(20,2), app_finance_net_amount NUMERIC(20,2))"))
         connection.execute(text("CREATE TABLE payments (id TEXT, tenant_id TEXT, order_id TEXT, status TEXT, method TEXT, refunded_at TIMESTAMP)"))
         connection.execute(text("CREATE TABLE products (id TEXT, tenant_id TEXT, product_type TEXT, category TEXT)"))
         connection.execute(text("CREATE TABLE order_items (id TEXT, tenant_id TEXT, order_id TEXT, product_id TEXT, quantity INTEGER)"))
@@ -60,7 +60,7 @@ def test_paid_orders_pizzas_cancelled_duplicate_payments_and_tenant_isolation(se
         ("previous-day", "a", "delivered", 40, "2026-10-27 02:59:00"),
         ("wrong-payment-tenant", "a", "paid", 700, "2026-10-27 04:00:00"),
     ]:
-        db.execute(text("INSERT INTO orders VALUES (:id,:tenant,:at,:status,:total,:total,0,0,'delivery',:cancelled_at,NULL)"),
+        db.execute(text("INSERT INTO orders (id,tenant_id,created_at,status,total,subtotal,shipping_fee,discount,sales_channel,cancelled_at,archived_at,app_finance_gross_amount,app_finance_deductions,app_finance_net_amount) VALUES (:id,:tenant,:at,:status,:total,:total,0,0,'delivery',:cancelled_at,NULL,NULL,NULL,NULL)"),
             dict(id=order_id, tenant=tenant, at=at, status=status, total=total,
                  cancelled_at=at if status == "cancelled" else None))
     for payment_id, order_id, tenant in [("p1", "paid", "a"), ("p2", "paid", "a"),
@@ -75,7 +75,7 @@ def test_paid_orders_pizzas_cancelled_duplicate_payments_and_tenant_isolation(se
     db.execute(text("INSERT INTO order_items VALUES ('i1','a','paid','pizza',2),('i2','a','paid','drink',3),('i3','b','paid','pizza',90),('i4','a','paid','foreign',90)"))
     start, end = local_period_bounds(date(2026, 10, 27), date(2026, 10, 27))
     rows = service._rows(start, end)
-    assert rows == [{"date": "2026-10-27", "created": 5, "orders": 1, "revenue": 100, "pizzas": 2}]
+    assert rows == [{"date": "2026-10-27", "created": 5, "orders": 1, "revenue": 100, "gross_sales": 100, "app_deductions": 0, "pizzas": 2}]
     totals = service._totals(start, end, rows, 1)
     assert totals["orders"] == 5
     assert totals["valid_orders"] == 1
@@ -86,11 +86,28 @@ def test_paid_orders_pizzas_cancelled_duplicate_payments_and_tenant_isolation(se
     assert service._rows(start, end, True)[0]["date"] == "2026-10-27 00"
 
 
+def test_app_finance_snapshot_is_counted_once_as_gross_deduction_and_net(service):
+    db = service.db
+    db.execute(text("INSERT INTO orders (id,tenant_id,created_at,status,total,subtotal,shipping_fee,discount,sales_channel,cancelled_at,archived_at,app_finance_gross_amount,app_finance_deductions,app_finance_net_amount) VALUES ('app','a','2026-10-27 12:00:00','delivered',100,100,0,0,'ifood',NULL,NULL,100,17.50,82.50)"))
+    db.execute(text("INSERT INTO payments VALUES ('app-payment','a','app','paid','pix',NULL)"))
+    start, end = local_period_bounds(date(2026, 10, 27), date(2026, 10, 27))
+
+    rows = service._rows(start, end)
+    totals = service._totals(start, end, rows, 1)
+
+    assert rows[0]["revenue"] == 82.5
+    assert rows[0]["gross_sales"] == 100
+    assert rows[0]["app_deductions"] == 17.5
+    assert totals["revenue"] == totals["net_revenue"] == 82.5
+    assert totals["gross_sales"] == 100
+    assert totals["app_deductions"] == 17.5
+
+
 def test_cancellations_use_event_time_not_order_creation_time(service):
     db = service.db
-    db.execute(text("INSERT INTO orders VALUES ('old-cancel','a','2026-10-01 10:00:00','cancelled',80,80,0,0,'delivery','2026-10-27 10:00:00',NULL)"))
-    db.execute(text("INSERT INTO orders VALUES ('new-cancel','a','2026-10-27 11:00:00','cancelled',90,90,0,0,'delivery','2026-10-28 11:00:00',NULL)"))
-    db.execute(text("INSERT INTO orders VALUES ('old-refund','a','2026-10-01 12:00:00','refunded',70,70,0,0,'delivery',NULL,NULL)"))
+    db.execute(text("INSERT INTO orders (id,tenant_id,created_at,status,total,subtotal,shipping_fee,discount,sales_channel,cancelled_at,archived_at,app_finance_gross_amount,app_finance_deductions,app_finance_net_amount) VALUES ('old-cancel','a','2026-10-01 10:00:00','cancelled',80,80,0,0,'delivery','2026-10-27 10:00:00',NULL,NULL,NULL,NULL)"))
+    db.execute(text("INSERT INTO orders (id,tenant_id,created_at,status,total,subtotal,shipping_fee,discount,sales_channel,cancelled_at,archived_at,app_finance_gross_amount,app_finance_deductions,app_finance_net_amount) VALUES ('new-cancel','a','2026-10-27 11:00:00','cancelled',90,90,0,0,'delivery','2026-10-28 11:00:00',NULL,NULL,NULL,NULL)"))
+    db.execute(text("INSERT INTO orders (id,tenant_id,created_at,status,total,subtotal,shipping_fee,discount,sales_channel,cancelled_at,archived_at,app_finance_gross_amount,app_finance_deductions,app_finance_net_amount) VALUES ('old-refund','a','2026-10-01 12:00:00','refunded',70,70,0,0,'delivery',NULL,NULL,NULL,NULL,NULL)"))
     db.execute(text("INSERT INTO payments VALUES ('refund','a','old-refund','refunded','pix','2026-10-27 12:00:00')"))
 
     start, end = local_period_bounds(date(2026, 10, 27), date(2026, 10, 27))
@@ -139,7 +156,7 @@ def test_ai_only_prioritizes_known_actions_and_never_supplies_displayed_facts(mo
 
 def test_legacy_pizza_category_does_not_count_borders_or_addons(service):
     db = service.db
-    db.execute(text("INSERT INTO orders VALUES ('legacy','a','2026-10-20 15:00:00','paid',100,100,0,0,'delivery',NULL,NULL)"))
+    db.execute(text("INSERT INTO orders (id,tenant_id,created_at,status,total,subtotal,shipping_fee,discount,sales_channel,cancelled_at,archived_at,app_finance_gross_amount,app_finance_deductions,app_finance_net_amount) VALUES ('legacy','a','2026-10-20 15:00:00','paid',100,100,0,0,'delivery',NULL,NULL,NULL,NULL,NULL)"))
     db.execute(text("INSERT INTO payments VALUES ('legacy','a','legacy','paid','pix',NULL)"))
     db.execute(text("INSERT INTO products VALUES ('lp','a',NULL,'Pizzas'),('lb','a',NULL,'Bordas de pizza'),('la','a','other','Adicionais pizza')"))
     db.execute(text("INSERT INTO order_items VALUES ('lp','a','legacy','lp',2),('lb','a','legacy','lb',5),('la','a','legacy','la',6)"))

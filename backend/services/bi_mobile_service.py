@@ -15,6 +15,7 @@ from backend.models.payment import Payment
 from backend.models.product import Product
 from backend.schemas.bi import BIMobileAnalyticsOut, BIMobileAnalysisOut, BIMobileQuery
 from backend.services.business_intelligence_service import BusinessIntelligenceService
+from backend.services.order_finance_metrics import order_deductions_expr, order_gross_expr, order_net_expr
 from backend.services.storefront_presence import active_storefront_visitors
 
 
@@ -91,21 +92,30 @@ class BIMobileService:
 
     def _rows(self, start_dt: datetime, end_dt: datetime, hourly: bool = False) -> list[dict]:
         bucket, paid = self._bucket(hourly), self._paid()
+        gross = order_gross_expr()
+        deductions = order_deductions_expr()
+        net = order_net_expr()
         rows = self.db.query(bucket.label("date"), func.count(Order.id).label("created"),
             func.sum(case((paid, 1), else_=0)).label("orders"),
-            func.coalesce(func.sum(case((paid, Order.total), else_=0)), 0).label("revenue"),
+            func.coalesce(func.sum(case((paid, net), else_=0)), 0).label("revenue"),
+            func.coalesce(func.sum(case((paid, gross), else_=0)), 0).label("gross_sales"),
+            func.coalesce(func.sum(case((paid, deductions), else_=0)), 0).label("app_deductions"),
             func.coalesce(func.sum(case((paid, self._pizza_quantity()), else_=0)), 0).label("pizzas"),
         ).filter(Order.tenant_id == self.tenant_id, Order.created_at >= start_dt, Order.created_at <= end_dt
         ).group_by(bucket).order_by(bucket).all()
         return [{"date": str(row.date), "created": int(row.created), "orders": int(row.orders or 0),
-                 "revenue": round(float(row.revenue), 2), "pizzas": int(row.pizzas or 0)} for row in rows]
+                 "revenue": round(float(row.revenue or 0), 2),
+                 "gross_sales": round(float(row.gross_sales or 0), 2),
+                 "app_deductions": round(float(row.app_deductions or 0), 2),
+                 "pizzas": int(row.pizzas or 0)} for row in rows]
 
     def _totals(self, start_dt: datetime, end_dt: datetime, rows: list[dict], days: int) -> dict:
         paid = self._paid()
         q = self.db.query(Order).filter(Order.tenant_id == self.tenant_id,
             Order.created_at >= start_dt, Order.created_at <= end_dt)
         financial = q.with_entities(
-            func.coalesce(func.sum(case((paid, Order.subtotal + func.coalesce(Order.shipping_fee, 0)), else_=0)), 0),
+            func.coalesce(func.sum(case((paid, order_gross_expr()), else_=0)), 0),
+            func.coalesce(func.sum(case((paid, order_deductions_expr()), else_=0)), 0),
             func.coalesce(func.sum(case((paid, Order.discount), else_=0)), 0),
         ).one()
         cancelled_orders = self.legacy._cancelled_orders_in_period(start_dt, end_dt)
@@ -113,7 +123,7 @@ class BIMobileService:
             func.coalesce(func.sum(Order.total), 0)
         ).scalar() or 0
         forecast_revenue = q.filter(~Order.status.in_(self.legacy.CANCELLED_STATUSES)).with_entities(
-            func.coalesce(func.sum(Order.total), 0)
+            func.coalesce(func.sum(order_net_expr()), 0)
         ).scalar() or 0
         statuses = {getattr(status, "value", status): int(count) for status, count in q.with_entities(
             Order.status, func.count(Order.id)).group_by(Order.status).all()}
@@ -127,7 +137,8 @@ class BIMobileService:
             "cancelled_orders": cancelled_orders.count(), "cancelled_value": round(float(cancelled_value), 2),
             "completed_orders": buckets["entregue"],
             "active_orders": sum(statuses.get(s.value, 0) for s in self.legacy.MOBILE_EFFECTIVE_ORDER_STATUSES if s.value != "delivered"),
-            "gross_sales": round(float(financial[0]), 2), "discounts": round(float(financial[1]), 2),
+            "gross_sales": round(float(financial[0]), 2), "app_deductions": round(float(financial[1]), 2),
+            "discounts": round(float(financial[2]), 2), "net_revenue": revenue,
             "forecast_revenue": round(float(forecast_revenue), 2),
             "daily_revenue": round(revenue / days, 2), "daily_orders": round(orders / days, 2),
             "best_day": best["date"] if best and best["revenue"] > 0 else None, "status_counts": buckets}
@@ -214,13 +225,13 @@ class BIMobileService:
         grouped = {}
         for row in rows:
             month = row["date"][:7]
-            item = grouped.setdefault(month, {"revenue": 0.0, "orders": 0, "pizzas": 0})
-            for key in ("revenue", "orders", "pizzas"):
+            item = grouped.setdefault(month, {"revenue": 0.0, "gross_sales": 0.0, "app_deductions": 0.0, "orders": 0, "pizzas": 0})
+            for key in ("revenue", "gross_sales", "app_deductions", "orders", "pizzas"):
                 item[key] += row[key]
         result, cursor = [], start
         while cursor <= end:
             key = cursor.strftime("%Y-%m")
-            values = grouped.get(key, {"revenue": 0, "orders": 0, "pizzas": 0})
+            values = grouped.get(key, {"revenue": 0, "gross_sales": 0, "app_deductions": 0, "orders": 0, "pizzas": 0})
             previous = grouped.get(previous_month(cursor).strftime("%Y-%m"))
             result.append({"month": key, **values, "revenue": round(values["revenue"], 2),
                 "average_ticket": round(values["revenue"] / values["orders"], 2) if values["orders"] else 0,
@@ -252,11 +263,11 @@ class BIMobileService:
             suffix = f" {index:02d}" if hourly else ""
             key = current_date.isoformat() + suffix
             previous_key = previous_date.isoformat() + suffix if previous_date else None
-            current = current_map.get(key, {"revenue": 0, "orders": 0, "pizzas": 0})
-            previous = previous_map.get(previous_key, {"revenue": 0, "orders": 0, "pizzas": 0}) if previous_key else None
+            current = current_map.get(key, {"revenue": 0, "gross_sales": 0, "app_deductions": 0, "orders": 0, "pizzas": 0})
+            previous = previous_map.get(previous_key, {"revenue": 0, "gross_sales": 0, "app_deductions": 0, "orders": 0, "pizzas": 0}) if previous_key else None
             sales.append({"label": f"{index:02d}:00" if hourly else current_date.strftime("%d/%m"), "date": key,
-                "previous_date": previous_key, **{k: current[k] for k in ("revenue", "orders", "pizzas")},
-                **{f"previous_{k}": previous[k] if previous else None for k in ("revenue", "orders", "pizzas")},
+                "previous_date": previous_key, **{k: current[k] for k in ("revenue", "gross_sales", "app_deductions", "orders", "pizzas")},
+                **{f"previous_{k}": previous[k] if previous else None for k in ("revenue", "gross_sales", "app_deductions", "orders", "pizzas")},
                 "comparison": {k: variation(current[k], previous[k]) for k in ("revenue", "orders", "pizzas")} if previous else {}})
         if query.grouping == "week" and not hourly:
             weekly = []
@@ -264,7 +275,7 @@ class BIMobileService:
                 points = sales[offset:offset + 7]
                 point = {"date": points[0]["date"], "previous_date": points[0]["previous_date"],
                     "label": f"{points[0]['label']}–{points[-1]['label']}"}
-                for key in ("revenue", "orders", "pizzas"):
+                for key in ("revenue", "gross_sales", "app_deductions", "orders", "pizzas"):
                     point[key] = round(sum(item[key] for item in points), 2)
                     previous_values = [item[f"previous_{key}"] for item in points if item[f"previous_{key}"] is not None]
                     point[f"previous_{key}"] = round(sum(previous_values), 2) if previous_values else None
@@ -274,14 +285,22 @@ class BIMobileService:
             sales = weekly
         paid = self._paid()
         base = self.db.query(Order).filter(Order.tenant_id == self.tenant_id, Order.created_at >= b["start_dt"], Order.created_at <= b["end_dt"], paid)
-        channels = [{"channel": channel or "unknown", "orders": int(count), "revenue": round(float(value), 2)}
-            for channel, count, value in base.with_entities(Order.sales_channel, func.count(Order.id), func.sum(Order.total)).group_by(Order.sales_channel).all()]
+        channels = [{"channel": channel or "unknown", "orders": int(count), "revenue": round(float(value or 0), 2),
+                     "gross_sales": round(float(gross or 0), 2), "app_deductions": round(float(deduction or 0), 2)}
+            for channel, count, value, gross, deduction in base.with_entities(
+                Order.sales_channel, func.count(Order.id), func.sum(order_net_expr()),
+                func.sum(order_gross_expr()), func.sum(order_deductions_expr()),
+            ).group_by(Order.sales_channel).all()]
         # A canonical payment is selected once per order, even in a corrupt
         # legacy database with duplicated payment rows.
         payment_id = select(func.min(Payment.id)).where(Payment.order_id == Order.id,
             Payment.tenant_id == self.tenant_id, Payment.status.in_(self.legacy.PAID_PAYMENT_STATUSES)).correlate(Order).scalar_subquery()
-        payments = [{"method": getattr(method, "value", method), "orders": int(count), "revenue": round(float(value), 2)}
-            for method, count, value in base.join(Payment, Payment.id == payment_id).with_entities(Payment.method, func.count(Order.id), func.sum(Order.total)).group_by(Payment.method).all()]
+        payments = [{"method": getattr(method, "value", method), "orders": int(count), "revenue": round(float(value or 0), 2),
+                     "gross_sales": round(float(gross or 0), 2), "app_deductions": round(float(deduction or 0), 2)}
+            for method, count, value, gross, deduction in base.join(Payment, Payment.id == payment_id).with_entities(
+                Payment.method, func.count(Order.id), func.sum(order_net_expr()),
+                func.sum(order_gross_expr()), func.sum(order_deductions_expr()),
+            ).group_by(Payment.method).all()]
         first = self.db.query(func.min(Order.created_at)).filter(Order.tenant_id == self.tenant_id).scalar()
         payload = {"period": {"date_from": b["start"].isoformat(), "date_to": b["end"].isoformat(),
             "previous_date_from": b["previous_start"].isoformat() if b["previous_start"] else None,

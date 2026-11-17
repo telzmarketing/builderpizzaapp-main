@@ -52,7 +52,7 @@ export function canShowPwaInstallButton(pathname: string, only?: readonly PwaApp
   return !!app && (entryApp?.key === app.key || canonicalInstallable || legacyInstallable) && (!only || only.includes(app.key));
 }
 
-export default function PwaInstallButton({ only, pathname, hideOnKds = false, inline = false, mobileOnly = false, delayMs = 0, variant = "compact" }: { only?: readonly PwaAppKey[]; pathname?: string; hideOnKds?: boolean; inline?: boolean; mobileOnly?: boolean; delayMs?: number; variant?: "compact" | "banner" } = {}) {
+export default function PwaInstallButton({ only, pathname, hideOnKds = false, inline = false, mobileOnly = false, delayMs = 0, variant = "compact", menuItem = false }: { only?: readonly PwaAppKey[]; pathname?: string; hideOnKds?: boolean; inline?: boolean; mobileOnly?: boolean; delayMs?: number; variant?: "compact" | "banner"; menuItem?: boolean } = {}) {
   const location = useLocation();
   const currentPathname = pathname ?? location.pathname;
   const app = getPwaApp(currentPathname);
@@ -135,8 +135,8 @@ export default function PwaInstallButton({ only, pathname, hideOnKds = false, in
             setInstalled(true);
           }
         }).catch(() => setPrompt(current));
-      }} className="pwa-install-button" aria-expanded={showInstructions} aria-label={`Instalar ${app.label}`} title={`Instalar ${app.label}`}>
-        <Download size={15} aria-hidden="true" /> <span>Instalar</span>
+      }} className={menuItem ? "w-full flex items-center gap-4 px-4 py-3 rounded-xl text-parchment hover:text-cream hover:bg-surface-02 transition-colors text-left" : "pwa-install-button"} aria-expanded={showInstructions} aria-label={`Instalar ${app.label}`} title={`Instalar ${app.label}`}>
+        <Download size={menuItem ? 20 : 15} aria-hidden="true" /> <span>{menuItem ? "Instalar app" : "Instalar"}</span>
       </button>
       {showInstructions && !prompt && (
         <p className="pwa-install-hint" role="status">

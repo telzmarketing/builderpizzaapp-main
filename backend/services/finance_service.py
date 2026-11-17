@@ -258,23 +258,58 @@ class FinanceService:
         cost_center_lines: dict[tuple[str, str], dict] = {}
         channel_lines: dict[tuple[str, str], dict] = {}
         total_income = 0.0
+        total_gross_income = 0.0
+        total_customer_discounts = 0.0
+        total_app_deductions = 0.0
         total_expense = 0.0
         for row in rows:
-            amount = round(float(row.amount or 0), 2)
+            projection = self._bi_order_projection(row)
+            amount = projection["net_amount"] if row.entry_type == "income" else round(float(row.amount or 0), 2)
             if row.entry_type == "income":
                 total_income += amount
+                total_gross_income += projection["gross_amount"]
+                total_customer_discounts += projection["customer_discount"]
+                total_app_deductions += projection["app_deductions"]
             else:
                 total_expense += amount
             self._add_dimension(origin_lines, row.origin_type or "manual", row.entry_type, amount)
             self._add_dimension(category_lines, row.category.name if row.category else "Sem categoria", row.entry_type, amount)
             self._add_dimension(cost_center_lines, row.cost_center or "Sem centro de custo", row.entry_type, amount)
             self._add_dimension(channel_lines, row.order.sales_channel if row.order and row.order.sales_channel else "Sem canal", row.entry_type, amount)
+        # Sales must remain visible even when automatic receivable creation is
+        # disabled. This is an operational sales view sourced from confirmed
+        # payments, not a second financial transaction stream.
+        sales_by_day: dict[date, dict[str, float | int]] = {}
+        payments = (
+            self._db.query(Payment)
+            .filter(
+                Payment.tenant_id == self._tenant_id,
+                Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
+            )
+            .all()
+        )
+        for payment in payments:
+            settled_at = payment.paid_at or payment.created_at
+            if settled_at is None:
+                continue
+            day = settled_at.date()
+            if day < start or day > end:
+                continue
+            item = sales_by_day.setdefault(day, {"gross_amount": 0.0, "order_count": 0})
+            item["gross_amount"] = round(float(item["gross_amount"]) + float(payment.amount or 0.0), 2)
+            item["order_count"] = int(item["order_count"]) + 1
         return {
             "date_from": start,
             "date_to": end,
             "total_income": round(total_income, 2),
+            "total_gross_income": round(total_gross_income, 2),
+            "total_customer_discounts": round(total_customer_discounts, 2),
+            "total_app_deductions": round(total_app_deductions, 2),
+            "total_net_income": round(total_income, 2),
             "total_expense": round(total_expense, 2),
             "result": round(total_income - total_expense, 2),
+            "gross_result": round(total_gross_income - total_expense, 2),
+            "net_result": round(total_income - total_expense, 2),
             "transaction_count": len(rows),
             "by_origin": [
                 {"origin_type": item["label"], "entry_type": item["entry_type"], "amount": item["amount"], "count": item["count"]}
@@ -283,6 +318,41 @@ class FinanceService:
             "by_category": self._dimension_rows(category_lines),
             "by_cost_center": self._dimension_rows(cost_center_lines),
             "by_channel": self._dimension_rows(channel_lines),
+            "sales_by_day": [
+                {"date": day, "gross_amount": values["gross_amount"], "order_count": values["order_count"]}
+                for day, values in sorted(sales_by_day.items())
+            ],
+        }
+
+    def _bi_order_projection(self, row: FinanceTransaction) -> dict[str, float]:
+        """Return one non-duplicating income projection for finance BI.
+
+        App snapshots are authoritative when linked to an order.  Legacy and
+        own-store transactions keep the existing transaction values and do
+        not acquire synthetic app deductions.
+        """
+        amount = round(float(row.amount or 0), 2)
+        customer_discount = round(float(row.discount_amount or 0), 2)
+        order = row.order
+        has_snapshot = bool(order and getattr(order, "app_finance_net_amount", None) is not None)
+        if not has_snapshot:
+            return {
+                "gross_amount": amount,
+                "customer_discount": customer_discount,
+                # Legacy/own transactions retain their historical BI amount;
+                # app deductions are only introduced by the persisted app
+                # snapshot and therefore cannot be double-counted here.
+                "app_deductions": 0.0,
+                "net_amount": amount,
+            }
+        gross = round(float(order.app_finance_gross_amount or 0), 2)
+        deductions = round(float(order.app_finance_deductions or 0), 2)
+        net = round(float(order.app_finance_net_amount or 0), 2)
+        return {
+            "gross_amount": gross,
+            "customer_discount": customer_discount,
+            "app_deductions": deductions,
+            "net_amount": net,
         }
 
     def cash_flow(self, date_from: date | None = None, date_to: date | None = None) -> dict:
@@ -1119,7 +1189,17 @@ class FinanceService:
         if existing and any(item.idempotency_key == f"payment-confirmed:{payment_id}" for item in existing.settlements):
             return {"created": False, "reason": "already_synced", "transaction_id": existing.id}
         paid_at = payment.paid_at if payment and payment.paid_at else datetime.now(timezone.utc)
-        receivable_amount = float(fact.amount)
+        receivable_amount = self._money(fact.amount, "valor recebido")
+        composition = self._payment_financial_composition(order, receivable_amount)
+        gross_amount = composition["gross_amount"]
+        discount_amount = composition["customer_discount"]
+        app_deductions = composition["app_deductions"]
+        settled_net_amount = composition["settled_net_amount"]
+        commercial_amount = composition["commercial_amount"]
+        if receivable_amount > commercial_amount:
+            # Fail closed if an old/inconsistent order cannot explain its
+            # payment. Do not create a distorted financial projection.
+            return {"created": False, "reason": "order_financial_composition_invalid"}
 
         account_id = settings.get("default_receivable_account_id") or None
         if account_id:
@@ -1138,8 +1218,10 @@ class FinanceService:
                 entry_type="income",
                 status="paid",
                 description=f"Recebimento do pedido {order_label}",
-                amount=receivable_amount,
+                amount=float(gross_amount),
                 paid_amount=0.0,
+                discount_amount=float(discount_amount),
+                fee_amount=float(app_deductions),
                 competence_date=paid_at.date(),
                 due_date=paid_at.date(),
                 paid_at=paid_at,
@@ -1149,10 +1231,18 @@ class FinanceService:
                 payment_id=payment_id,
                 origin_type="payment_receivable",
                 origin_id=payment_id,
-                notes=self._payment_composition_notes(order),
+                notes=self._payment_composition_notes(order, composition),
             )
             self._db.add(row)
             self._db.flush()
+
+        # A pre-existing receivable may have been created before the app
+        # finance snapshot existed. Refresh its auditable composition before
+        # adding the confirmation settlement, without creating another title.
+        row.amount = float(gross_amount)
+        row.discount_amount = float(discount_amount)
+        row.fee_amount = float(app_deductions)
+        row.notes = self._payment_composition_notes(order, composition)
 
         settlement = FinanceSettlement(
             id=f"fin-set-{uuid.uuid4().hex[:12]}",
@@ -1160,20 +1250,26 @@ class FinanceService:
             transaction_id=row.id,
             account_id=account_id or row.account_id,
             settled_at=paid_at,
-            principal_amount=receivable_amount,
-            net_amount=receivable_amount,
+            principal_amount=float(receivable_amount),
+            discount_amount=float(discount_amount),
+            fee_amount=float(app_deductions),
+            net_amount=float(settled_net_amount),
             payment_method=row.payment_method,
             payment_reference=transaction_id or row.payment_reference,
             origin_type="payment_confirmed",
             origin_id=payment_id,
             idempotency_key=f"payment-confirmed:{payment_id}",
-            notes="Liquidacao automatica por pagamento confirmado.",
+            notes=(
+                "Liquidacao automatica por pagamento confirmado. "
+                f"Bruto={gross_amount:.2f}; DescontoCliente={discount_amount:.2f}; "
+                f"DeducoesApp={app_deductions:.2f}; Liquido={settled_net_amount:.2f}."
+            ),
         )
         self._db.add(settlement)
         row.account_id = account_id or row.account_id
         row.status = "paid"
-        row.paid_amount = round(float(row.paid_amount or 0.0) + receivable_amount, 2)
-        row.net_amount = round(float(row.net_amount or 0.0) + receivable_amount, 2)
+        row.paid_amount = float(self._money(Decimal(str(row.paid_amount or 0.0)) + receivable_amount, "valor pago"))
+        row.net_amount = float(self._money(Decimal(str(row.net_amount or 0.0)) + settled_net_amount, "valor liquido"))
         row.paid_at = row.paid_at or paid_at
         row.payment_reference = transaction_id or row.payment_reference
         try:
@@ -2071,17 +2167,93 @@ class FinanceService:
         self._db.flush()
         return row.id
 
-    def _payment_composition_notes(self, order: Order | None) -> str:
+    def _payment_financial_composition(self, order: Order, receivable_amount: Decimal) -> dict[str, Decimal | str | bool]:
+        """Build one auditable order-payment composition in Decimal cents.
+
+        ``FinanceTransaction.amount`` is the commercial gross before customer
+        discounts. The confirmed payment is the amount received from the
+        customer after those discounts. App deductions are recorded once as a
+        financial fee and reduce the cash/result net; they are never folded
+        into ``discount_amount`` or deducted again from the principal.
+        """
+        gross_amount = self._money(
+            Decimal(str(order.subtotal or 0.0))
+            + Decimal(str(order.delivery_fee_original or order.shipping_fee or 0.0)),
+            "valor bruto do pedido",
+        )
+        customer_discount = self._money(
+            Decimal(str(order.discount or 0.0))
+            + Decimal(str(order.delivery_fee_discount or 0.0)),
+            "desconto do cliente",
+        )
+        commercial_amount = self._money(gross_amount - customer_discount, "valor comercial")
+        if commercial_amount < 0:
+            raise FinanceInvalidReference("A composicao financeira do pedido possui desconto superior ao bruto.")
+
+        snapshot_gross = self._money(getattr(order, "app_finance_gross_amount", None), "bruto do aplicativo")
+        snapshot_deductions = self._money(getattr(order, "app_finance_deductions", None), "deducoes do aplicativo")
+        snapshot_net = self._money(getattr(order, "app_finance_net_amount", None), "liquido do aplicativo")
+        has_app_snapshot = any(
+            getattr(order, field, None) is not None
+            for field in ("app_finance_gross_amount", "app_finance_deductions", "app_finance_net_amount")
+        )
+        if not has_app_snapshot:
+            snapshot_gross = commercial_amount
+            snapshot_deductions = Decimal("0.00")
+            snapshot_net = commercial_amount
+        elif snapshot_gross != commercial_amount:
+            # The snapshot is the persisted app base. Keep the order gross and
+            # customer discount independent, but reject an impossible snapshot
+            # rather than silently presenting contradictory financial figures.
+            if snapshot_gross < 0 or snapshot_gross > gross_amount:
+                raise FinanceInvalidReference("O bruto persistido do aplicativo e invalido.")
+
+        if snapshot_deductions > snapshot_gross:
+            raise FinanceInvalidReference("As deducoes do aplicativo superam a base financeira do pedido.")
+        expected_snapshot_net = self._money(snapshot_gross - snapshot_deductions, "liquido previsto do aplicativo")
+        if has_app_snapshot and snapshot_net != expected_snapshot_net:
+            raise FinanceInvalidReference("O snapshot financeiro do aplicativo esta inconsistente.")
+
+        settled_net_amount = self._money(receivable_amount - snapshot_deductions, "liquido recebido")
+        if settled_net_amount < 0:
+            raise FinanceInvalidReference("As deducoes do aplicativo superam o valor recebido.")
+        return {
+            "gross_amount": gross_amount,
+            "customer_discount": customer_discount,
+            "commercial_amount": commercial_amount,
+            "app_base_amount": snapshot_gross,
+            "app_deductions": snapshot_deductions,
+            "app_snapshot_net_amount": snapshot_net,
+            "settled_net_amount": settled_net_amount,
+            "has_app_snapshot": has_app_snapshot,
+        }
+
+    def _payment_composition_notes(self, order: Order | None, composition: dict | None = None) -> str:
         if not order:
             return "Criado automaticamente por pagamento confirmado."
-        product_revenue = round(float(order.subtotal or 0.0), 2)
-        shipping_revenue = round(float(order.delivery_fee_final or order.shipping_fee or 0.0), 2)
-        discount = round(float(order.discount or 0.0) + float(order.delivery_fee_discount or 0.0), 2)
-        return (
+        product_revenue = self._money(order.subtotal or 0.0, "receita de produtos")
+        shipping_revenue = self._money(
+            order.delivery_fee_final or order.shipping_fee or 0.0,
+            "receita de frete",
+        )
+        discount = self._money(
+            Decimal(str(order.discount or 0.0)) + Decimal(str(order.delivery_fee_discount or 0.0)),
+            "desconto",
+        )
+        note = (
             "Criado automaticamente por pagamento confirmado. "
             f"Composicao: produtos={product_revenue:.2f}; frete={shipping_revenue:.2f}; "
-            f"descontos={discount:.2f}; canal={order.sales_channel or 'delivery'}."
+            f"descontos_cliente={discount:.2f}; canal={order.sales_channel or 'delivery'}."
         )
+        if composition:
+            note += (
+                f" Bruto={composition['gross_amount']:.2f}; "
+                f"BaseApp={composition['app_base_amount']:.2f}; "
+                f"DeducoesApp={composition['app_deductions']:.2f}; "
+                f"LiquidoPrevistoApp={composition['app_snapshot_net_amount']:.2f}; "
+                f"LiquidoRecebido={composition['settled_net_amount']:.2f}."
+            )
+        return note
 
     def _add_dimension(self, bucket: dict, label: str, entry_type: str, amount: float) -> None:
         key = (label, entry_type)

@@ -317,7 +317,13 @@ export default function AdminConfiguracoes() {
 
             {activeTab === "dominio-https" && <TenantDomainsPanel />}
             {activeTab === "etiquetas-expedicao" && <><div className="rounded-2xl border border-surface-03 bg-surface-02 p-6"><h3 className="text-lg font-bold text-cream">Etiquetas de expedição</h3><p className="mt-1 text-sm text-stone">Modelos para as caixas de pizza. O formato operacional esperado é 100 × 50 mm.</p></div><LabelSettingsPanel /></>}
-            {activeTab === "etiquetas-insumos" && <SuppliesLabelSettingsPanel />}
+            {activeTab === "etiquetas-insumos" && <>
+              <div className="rounded-2xl border border-surface-03 bg-surface-02 p-6">
+                <h3 className="text-lg font-bold text-cream">Etiquetas de insumos</h3>
+                <p className="mt-1 text-sm text-stone">As etiquetas de insumos usam a mesma estrutura de impressoras, modelos, logo, dimensões, calibração, cópias e reimpressão das etiquetas de expedição.</p>
+              </div>
+              <LabelSettingsPanel />
+            </>}
             {activeTab === "painel-tv" && <OrderBoardSettingsPanel />}
             {activeTab === "identificacao-parceiros" && <PartnerIdentificationPanel />}
             {activeTab === "ia-central" && <CentralAISettingsPanel />}

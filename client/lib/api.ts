@@ -479,6 +479,7 @@ export interface ApiHomeCatalogConfig {
   selected_categories: string;  // JSON string
   selected_product_ids: string; // JSON string
   show_promotions: boolean;
+  show_promotions_link: boolean;
   updated_at: string;
 }
 
@@ -1112,6 +1113,7 @@ export interface ApiKitItem {
 export interface ApiPromotionalKit {
   id: string;
   name: string;
+  slug: string | null;
   description: string | null;
   icon: string;
   kit_type: KitType;
@@ -1121,6 +1123,8 @@ export interface ApiPromotionalKit {
   discount_value: number | null;
   valid_until: string | null;
   active: boolean;
+  image_url: string | null;
+  video_url: string | null;
   created_at: string;
   updated_at: string;
   items: ApiKitItem[];
@@ -1263,6 +1267,8 @@ export interface ApiOrder {
     status: string;
     delivery_person_id?: string | null;
     delivery_person_name?: string | null;
+    confirmation_code?: string | null;
+    confirmed_by_code_at?: string | null;
     assigned_at?: string | null;
     picked_up_at?: string | null;
     delivered_at?: string | null;
@@ -1781,6 +1787,8 @@ export const kdsApi = {
   listDispatchDrivers: () => get<KdsDriver[]>("/kds/dispatch/drivers"),
   completeDispatchUnit: (orderId: string, unitId: string, expectedVersion: number) =>
     post<KdsDispatchOrder>(`/kds/dispatch/orders/${encodeURIComponent(orderId)}/units/${encodeURIComponent(unitId)}/complete`, { expected_version: expectedVersion }),
+  checkDispatchOven: (orderId: string, unitId: string, expectedVersion: number) =>
+    post<KdsDispatchOrder>(`/kds/dispatch/orders/${encodeURIComponent(orderId)}/units/${encodeURIComponent(unitId)}/check-oven`, { expected_version: expectedVersion }),
   returnDispatchUnitsToKitchen: (orderId: string, productionUnitIds: string[], reason: string) =>
     post<KdsKitchenOrder>(`/kds/dispatch/orders/${encodeURIComponent(orderId)}/return-to-kitchen`, { production_unit_ids: productionUnitIds, reason }),
   assignDispatchOrder: (orderId: string, deliveryPersonId: string, estimatedMinutes = 40) =>
@@ -2063,6 +2071,8 @@ export interface CheckoutIn {
     scheduled_for?: string | null;
   };
   coupon_code?: string;
+  discount_type?: "percentage" | "fixed" | null;
+  discount_value?: number | null;
   customer_id?: string;
   payment_method: "pix" | "credit_card" | "debit_card" | "cash" | "pay_on_delivery";
   delivery_payment_method?: "cash" | "card" | null;
@@ -2094,6 +2104,7 @@ export interface ManualOrderQuote {
   shipping_fee?: number;
   delivery_fee_final: number;
   discount?: number;
+  manual_discount?: number;
   cash_change_amount?: number | null;
   items: Array<{ product_id: string; unit_price: number; line_total: number }>;
 }
@@ -2794,13 +2805,20 @@ export interface FinanceBi {
   date_from: string;
   date_to: string;
   total_income: number;
+  total_gross_income: number;
+  total_customer_discounts: number;
+  total_app_deductions: number;
+  total_net_income: number;
   total_expense: number;
   result: number;
+  gross_result: number;
+  net_result: number;
   transaction_count: number;
   by_origin: Array<{ origin_type: string; entry_type: FinanceEntryType; amount: number; count: number }>;
   by_category: FinanceBiDimension[];
   by_cost_center: FinanceBiDimension[];
   by_channel: FinanceBiDimension[];
+  sales_by_day: Array<{ date: string; gross_amount: number; order_count: number }>;
 }
 
 export interface FinanceBankStatementLineInput {
@@ -6130,6 +6148,7 @@ export const homeCatalogApi = {
     selected_categories?: string[];
     selected_product_ids?: string[];
     show_promotions?: boolean;
+    show_promotions_link?: boolean;
   }) => put<ApiHomeCatalogConfig>("/home-config", data),
 };
 
@@ -6613,6 +6632,40 @@ export const inventoryReceiptApi = {
 
 export const cmvApi = {
   overview: () => get<CmvOverview>("/gestao/cmv/overview"),
+};
+
+export type DeliveryAppOrigin = "partner_99" | "ifood" | "keeta";
+export type AppFinanceRuleType = "commission" | "fee" | "freight" | "store_discount" | "deduction";
+export type AppFinanceCalculationType = "percentage" | "fixed";
+
+export interface ApiAppFinanceRule {
+  id: string;
+  name: string;
+  rule_type: AppFinanceRuleType;
+  calculation_type: AppFinanceCalculationType;
+  value: number | string;
+  sort_order: number;
+  active: boolean;
+}
+
+export interface ApiAppFinanceConfig {
+  id: string;
+  app_key: DeliveryAppOrigin;
+  app_name: string;
+  active: boolean;
+  rules: ApiAppFinanceRule[];
+}
+
+export type AppFinanceConfigInput = Omit<ApiAppFinanceConfig, "id" | "rules">;
+export type AppFinanceRuleInput = Omit<ApiAppFinanceRule, "id">;
+
+export const appFinanceApi = {
+  list: () => get<ApiAppFinanceConfig[]>("/operations/apps-finance"),
+  create: (data: AppFinanceConfigInput) => post<ApiAppFinanceConfig>("/operations/apps-finance", data),
+  update: (id: string, data: AppFinanceConfigInput) => put<ApiAppFinanceConfig>(`/operations/apps-finance/${encodeURIComponent(id)}`, data),
+  remove: (id: string) => del<ApiAppFinanceConfig>(`/operations/apps-finance/${encodeURIComponent(id)}`),
+  addRule: (configId: string, data: AppFinanceRuleInput) => post<ApiAppFinanceRule>(`/operations/apps-finance/${encodeURIComponent(configId)}/rules`, data),
+  removeRule: (ruleId: string) => del<ApiAppFinanceRule>(`/operations/apps-finance/rules/${encodeURIComponent(ruleId)}`),
 };
 
 export const financeApi = {
@@ -8268,7 +8321,9 @@ export const campaignsApi = {
   listKits: (activeOnly = false) =>
     get<ApiPromotionalKit[]>(`/campaigns/kits/all${activeOnly ? "?active_only=true" : ""}`),
 
-  createKit: (data: Omit<ApiPromotionalKit, "id" | "created_at" | "updated_at" | "items">) =>
+  getKitBySlug: (slug: string) => get<ApiPromotionalKit>(`/campaigns/kits/slug/${encodeURIComponent(slug)}`),
+
+  createKit: (data: Omit<ApiPromotionalKit, "id" | "created_at" | "updated_at" | "items"> & { items?: ApiKitItem[] }) =>
     post<ApiPromotionalKit>("/campaigns/kits", data),
 
   updateKit: (id: string, data: Partial<ApiPromotionalKit>) =>
@@ -8493,6 +8548,8 @@ export interface ApiBITimePoint {
   label: string;
   date?: string | null;
   revenue: number;
+  gross_revenue?: number;
+  app_deductions?: number;
   orders: number;
   average_ticket: number;
 }
@@ -8637,6 +8694,7 @@ export interface ApiBIMobileTotals {
   orders: number; valid_orders: number; pizzas: number; revenue: number;
   average_ticket: number; cancelled_orders: number; cancelled_value: number;
   completed_orders: number; active_orders: number; gross_sales: number;
+  app_deductions: number; net_revenue: number;
   discounts: number; forecast_revenue: number; daily_revenue: number;
   daily_orders: number; best_day: string | null;
   status_counts: Record<string, number>;
@@ -8646,11 +8704,11 @@ export interface ApiBIMobileAnalytics {
   totals: ApiBIMobileTotals;
   previous_totals: ApiBIMobileTotals | null;
   comparison: Record<string, { difference: number; percent: number | null }>;
-  sales: Array<{ label: string; date: string; previous_date?: string; revenue: number; orders: number; pizzas: number; previous_revenue?: number; previous_orders?: number; previous_pizzas?: number; [key: string]: unknown }>;
-  monthly: Array<{ month: string; revenue: number; orders: number; pizzas: number; average_ticket: number; growth_percent: number | null; partial?: boolean }>;
+  sales: Array<{ label: string; date: string; previous_date?: string; revenue: number; gross_sales?: number; app_deductions?: number; orders: number; pizzas: number; previous_revenue?: number; previous_gross_sales?: number; previous_app_deductions?: number; previous_orders?: number; previous_pizzas?: number; [key: string]: unknown }>;
+  monthly: Array<{ month: string; revenue: number; gross_sales?: number; app_deductions?: number; orders: number; pizzas: number; average_ticket: number; growth_percent: number | null; partial?: boolean }>;
   attendance: { unique_visitors: number; accesses: number; visitors_online: number; customers_online: number; whatsapp: (Omit<ApiAgenteWhatsAppOperationalMetrics, "chatbots_online" | "human_attendants_online"> & { chatbots_online: number | null; human_attendants_online: number | null }) | null; chatbot: number | null; human_operators: number | null; availability_note: string; total_attendances?: number | null; avg_attendance_seconds?: number | null; ai_status?: string | null; chatbot_conversations?: Record<string, number> };
-  payments: Array<{ method: string; orders: number; revenue: number }>;
-  channels: Array<{ channel: string; orders: number; revenue: number }>;
+  payments: Array<{ method: string; orders: number; revenue: number; gross_sales?: number; app_deductions?: number }>;
+  channels: Array<{ channel: string; orders: number; revenue: number; gross_sales?: number; app_deductions?: number }>;
   history: { first_order_at: string | null; status: string };
   generated_at: string;
   definitions: string[];

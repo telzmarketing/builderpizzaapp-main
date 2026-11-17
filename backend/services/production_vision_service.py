@@ -12,11 +12,11 @@ from backend.config import get_settings
 from backend.core.exceptions import DomainError
 from backend.models.kds_production import ProductionAttempt, ProductionUnit
 from backend.models.production_vision import (
-    ProductionVisionCamera, ProductionVisionCaptureConfig, ProductionVisionCaptureEvent, ProductionVisionEvidenceHold, ProductionVisionIncident,
+    ProductionVisionCamera, ProductionVisionCaptureConfig, ProductionVisionCaptureEvent, ProductionVisionDevice, ProductionVisionEvidenceHold, ProductionVisionIncident,
     ProductionVisionPhoto, ProductionVisionSession, ProductionVisionSettings,
     ProductionVisionStation, ProductionVisionZone, ProductionVisionZoneOccupancy,
 )
-from backend.schemas.production_vision import CameraIn, CaptureConfigIn, CaptureEventIn, EvidenceHoldIn, FinishIn, IncidentIn, OccupyZoneIn, PhotoIn, SessionIn, SettingsIn, StationIn, ZoneIn
+from backend.schemas.production_vision import CameraIn, CaptureConfigIn, CaptureEventIn, DeviceIn, EvidenceHoldIn, FinishIn, IncidentIn, OccupyZoneIn, PhotoIn, SessionIn, SettingsIn, StationIn, ZoneIn
 from backend.core.kds_stations import KDS_STATION_LABELS
 
 
@@ -161,10 +161,12 @@ class ProductionVisionService:
         managed_by_id = {item.identifier: item for item in managed}
         camera_counts = dict(self.db.query(ProductionVisionCamera.station_id, func.count(ProductionVisionCamera.id)).filter_by(tenant_id=self.tenant_id).group_by(ProductionVisionCamera.station_id).all())
         active_session_counts = dict(self.db.query(ProductionVisionSession.station_id, func.count(ProductionVisionSession.id)).filter_by(tenant_id=self.tenant_id, status="active").group_by(ProductionVisionSession.station_id).all())
+        device_counts = dict(self.db.query(ProductionVisionDevice.station_id, func.count(ProductionVisionDevice.id)).filter_by(tenant_id=self.tenant_id, status="active").group_by(ProductionVisionDevice.station_id).all())
         result = []
         for station_id in sorted((referenced | set(managed_by_id)) - suppressed):
             item = managed_by_id.get(station_id)
-            result.append({"id": station_id, "name": item.name if item else KDS_STATION_LABELS.get(station_id, station_id), "identifier": station_id, "station_type": item.station_type if item else ("legacy" if station_id in KDS_STATION_LABELS else "custom"), "status": "active", "protected": False, "fixed": False, "camera_count": camera_counts.get(station_id, 0), "active_sessions": active_session_counts.get(station_id, 0)})
+            legacy = item is None and station_id in KDS_STATION_LABELS
+            result.append({"id": station_id, "name": item.name if item else KDS_STATION_LABELS.get(station_id, station_id), "identifier": station_id, "station_type": item.station_type if item else ("legacy" if legacy else "custom"), "status": "active", "protected": False, "fixed": False, "legacy": legacy, "camera_count": camera_counts.get(station_id, 0), "active_sessions": active_session_counts.get(station_id, 0), "device_count": device_counts.get(station_id, 0)})
         return result
 
     def _station(self, station_id: str | None, *, active: bool = True) -> dict:
@@ -182,10 +184,7 @@ class ProductionVisionService:
     def save_station(self, body: StationIn, station_id: str | None = None) -> dict:
         item = self.db.query(ProductionVisionStation).filter_by(tenant_id=self.tenant_id, identifier=station_id).one_or_none() if station_id else None
         if station_id and item is None:
-            if station_id not in KDS_STATION_LABELS:
-                raise DomainError("Estação não encontrada.", code="ProductionVisionStationNotFound")
-            item = ProductionVisionStation(id=str(uuid.uuid4()), tenant_id=self.tenant_id, identifier=station_id, name=KDS_STATION_LABELS[station_id], station_type="custom")
-            self.db.add(item)
+            raise DomainError("Estação não encontrada.", code="ProductionVisionStationNotFound")
         if item is None:
             item = ProductionVisionStation(id=str(uuid.uuid4()), tenant_id=self.tenant_id)
             self.db.add(item)
@@ -195,9 +194,12 @@ class ProductionVisionService:
                 or self.db.query(ProductionVisionZone.id).filter_by(tenant_id=self.tenant_id, station_id=item.identifier).first()
                 or self.db.query(ProductionVisionSession.id).filter_by(tenant_id=self.tenant_id, station_id=item.identifier).first()
                 or self.db.query(ProductionUnit.id).filter_by(tenant_id=self.tenant_id, station_id=item.identifier).first()
+                or self.db.query(ProductionVisionDevice.id).filter_by(tenant_id=self.tenant_id, station_id=item.identifier).first()
             )
             if related:
                 raise DomainError("Estação em uso não pode ter o identificador alterado.", code="ProductionVisionStationInUse")
+        if body.status == "inactive" and self.db.query(ProductionVisionDevice.id).filter_by(tenant_id=self.tenant_id, station_id=item.identifier, status="active").first():
+            raise DomainError("Desative ou remova o dispositivo antes de inativar esta estação.", code="ProductionVisionStationHasActiveDevice")
         item.name, item.identifier, item.status = body.name, body.identifier, body.status
         try:
             self.db.flush()
@@ -209,14 +211,12 @@ class ProductionVisionService:
     def delete_station(self, station_id: str) -> dict:
         item = self.db.query(ProductionVisionStation).filter_by(tenant_id=self.tenant_id, identifier=station_id).one_or_none()
         if item is None:
-            if station_id not in KDS_STATION_LABELS:
-                raise DomainError("Estação não encontrada.", code="ProductionVisionStationNotFound")
-            item = ProductionVisionStation(id=str(uuid.uuid4()), tenant_id=self.tenant_id, identifier=station_id, name=KDS_STATION_LABELS[station_id], station_type="custom")
-            self.db.add(item)
+            raise DomainError("Estação não encontrada.", code="ProductionVisionStationNotFound")
         related = self.db.query(ProductionVisionCamera.id).filter_by(tenant_id=self.tenant_id, station_id=item.identifier).first()
         related = related or self.db.query(ProductionVisionZone.id).filter_by(tenant_id=self.tenant_id, station_id=station_id).first()
         related = related or self.db.query(ProductionVisionSession.id).filter_by(tenant_id=self.tenant_id, station_id=item.identifier).first()
         related = related or self.db.query(ProductionUnit.id).filter_by(tenant_id=self.tenant_id, station_id=item.identifier).first()
+        related = related or self.db.query(ProductionVisionDevice.id).filter_by(tenant_id=self.tenant_id, station_id=item.identifier).first()
         if related:
             item.status = "inactive"
         else:
@@ -224,13 +224,50 @@ class ProductionVisionService:
         self.db.flush()
         return {"deleted": True, "id": item.identifier}
 
+    def devices(self) -> list[dict]:
+        rows = self.db.query(ProductionVisionDevice).filter_by(tenant_id=self.tenant_id).order_by(ProductionVisionDevice.name).all()
+        stations = {row[0]: row[1] for row in self.db.query(ProductionVisionStation.identifier, ProductionVisionStation.name).filter_by(tenant_id=self.tenant_id).all()}
+        return [self._serialize_device(row, stations.get(row.station_id)) for row in rows]
+
+    @staticmethod
+    def _serialize_device(item: ProductionVisionDevice, station_name: str | None = None) -> dict:
+        return {"id": item.id, "identifier": item.identifier, "name": item.name, "station_id": item.station_id, "station_name": station_name, "status": item.status}
+
+    def save_device(self, body: DeviceIn, device_id: str | None = None) -> dict:
+        station = self._station(body.station_id)
+        if station.get("station_type") == "legacy":
+            raise DomainError("Dispositivos devem ser vinculados a estações cadastradas em Configurações.", code="ProductionVisionLegacyStationNotAssignable")
+        item = self.db.query(ProductionVisionDevice).filter_by(tenant_id=self.tenant_id, id=device_id).one_or_none() if device_id else None
+        if device_id and item is None:
+            raise DomainError("Dispositivo não encontrado.", code="ProductionVisionDeviceNotFound")
+        if item is None:
+            item = ProductionVisionDevice(id=str(uuid.uuid4()), tenant_id=self.tenant_id)
+            self.db.add(item)
+        item.identifier, item.name, item.station_id, item.status = body.identifier, body.name, body.station_id, body.status
+        try:
+            self.db.flush()
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise DomainError("Identificador de dispositivo ou estação já vinculada neste tenant.", code="ProductionVisionDeviceConflict") from exc
+        return self._serialize_device(item, station.get("name"))
+
+    def delete_device(self, device_id: str) -> dict:
+        item = self.db.query(ProductionVisionDevice).filter_by(tenant_id=self.tenant_id, id=device_id).one_or_none()
+        if item is None:
+            raise DomainError("Dispositivo não encontrado.", code="ProductionVisionDeviceNotFound")
+        self.db.delete(item)
+        self.db.flush()
+        return {"deleted": True, "id": device_id}
+
     def zones(self) -> list[dict]:
         rows = self.db.query(ProductionVisionZone).filter_by(tenant_id=self.tenant_id).order_by(ProductionVisionZone.name).all()
         occupied = {x.zone_id for x in self.db.query(ProductionVisionZoneOccupancy).filter_by(tenant_id=self.tenant_id, released_at=None).all()}
         return [{"id": x.id, "name": x.name, "identifier": x.identifier, "station_id": x.station_id, "camera_id": x.camera_id, "status": x.status, "occupied": x.id in occupied} for x in rows]
 
     def save_camera(self, body: CameraIn, camera_id: str | None = None) -> dict:
-        self._station(body.station_id)
+        station = self._station(body.station_id)
+        if station.get("station_type") == "legacy":
+            raise DomainError("Selecione uma estação ativa criada em Configurações.", code="ProductionVisionLegacyStationNotAssignable")
         item = self.db.query(ProductionVisionCamera).filter_by(tenant_id=self.tenant_id, id=camera_id).one_or_none() if camera_id else None
         if camera_id and item is None: raise DomainError("Câmera não encontrada.", code="ProductionVisionCameraNotFound")
         if item is None: item = ProductionVisionCamera(id=str(uuid.uuid4()), tenant_id=self.tenant_id); self.db.add(item)
@@ -241,7 +278,9 @@ class ProductionVisionService:
         return self._serialize_camera(item)
 
     def save_zone(self, body: ZoneIn, zone_id: str | None = None) -> dict:
-        self._station(body.station_id)
+        station = self._station(body.station_id)
+        if station.get("station_type") == "legacy":
+            raise DomainError("Selecione uma estação ativa criada em Configurações.", code="ProductionVisionLegacyStationNotAssignable")
         camera = self._camera(body.camera_id)
         if camera and camera.station_id != body.station_id:
             raise DomainError("Camera station mismatch.", code="ProductionVisionCameraStationMismatch")

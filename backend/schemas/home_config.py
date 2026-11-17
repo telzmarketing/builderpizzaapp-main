@@ -10,6 +10,7 @@ class HomeCatalogConfigOut(BaseModel):
     selected_categories: str   # JSON string — parse on client
     selected_product_ids: str  # JSON string — parse on client
     show_promotions: bool
+    show_promotions_link: bool
     updated_at: datetime
 
 
@@ -18,6 +19,7 @@ class HomeCatalogConfigUpdate(BaseModel):
     selected_categories: Optional[List[str]] = None
     selected_product_ids: Optional[List[str]] = None
     show_promotions: Optional[bool] = None
+    show_promotions_link: Optional[bool] = None
 
     @field_validator("mode")
     @classmethod

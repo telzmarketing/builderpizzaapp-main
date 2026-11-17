@@ -20,6 +20,7 @@ from backend.models.payment import Payment, PaymentStatus
 from backend.models.product import Product
 from backend.models.kds_production import ProductionAttempt, ProductionUnit
 from backend.services.agente_whatsapp_service import AgenteWhatsAppService
+from backend.services.order_finance_metrics import order_deductions_expr, order_gross_expr, order_net_expr
 
 
 INTERNAL_TRACKING_PREFIXES = ("/painel", "/motoboy")
@@ -129,11 +130,11 @@ class BusinessIntelligenceService:
         forecast_revenue = self._round(
             orders_q
             .filter(~Order.status.in_(self.CANCELLED_STATUSES))
-            .with_entities(func.coalesce(func.sum(Order.total), 0))
+            .with_entities(func.coalesce(func.sum(order_net_expr()), 0))
             .scalar()
         )
         confirmed_revenue = self._round(
-            paid_orders_q.with_entities(func.coalesce(func.sum(Order.total), 0)).scalar()
+            paid_orders_q.with_entities(func.coalesce(func.sum(order_net_expr()), 0)).scalar()
         )
         visitors_today = self._visitor_access_count(start_dt, end_dt)
         online_counts = self._online_presence_counts()
@@ -177,10 +178,12 @@ class BusinessIntelligenceService:
         paid_orders = paid_orders_q.count()
         estimated_revenue = self._round(
             effective_orders
-            .with_entities(func.coalesce(func.sum(Order.total), 0))
+            .with_entities(func.coalesce(func.sum(order_net_expr()), 0))
             .scalar()
         )
-        effective_revenue = self._round(paid_orders_q.with_entities(func.coalesce(func.sum(Order.total), 0)).scalar())
+        effective_revenue = self._round(paid_orders_q.with_entities(func.coalesce(func.sum(order_net_expr()), 0)).scalar())
+        gross_revenue = self._round(paid_orders_q.with_entities(func.coalesce(func.sum(order_gross_expr()), 0)).scalar())
+        app_deductions = self._round(paid_orders_q.with_entities(func.coalesce(func.sum(order_deductions_expr()), 0)).scalar())
         avg_ticket = self._round(effective_revenue / paid_orders if paid_orders else 0)
         cancelled = self._cancelled_orders_in_period(start_dt, end_dt).count()
         new_customers = (
@@ -217,6 +220,8 @@ class BusinessIntelligenceService:
             "kpis": [
                 self._kpi("estimated_revenue", "Receita estimada", estimated_revenue, "currency", "Pedidos nao cancelados criados no periodo"),
                 self._kpi("effective_revenue", "Receita efetivada", effective_revenue, "currency", "Pedidos com pagamento confirmado"),
+                self._kpi("gross_revenue", "Faturamento bruto", gross_revenue, "currency", "Base bruta dos pedidos; legado usa o total comercial"),
+                self._kpi("app_deductions", "Deduções dos aplicativos", app_deductions, "currency", "Comissões, taxas, fretes e outras deduções configuradas"),
                 self._kpi("orders", "Pedidos totais", total_orders, "number", f"{paid_orders} pedidos com pagamento confirmado"),
                 self._kpi("average_ticket", "Ticket medio", avg_ticket, "currency", "Receita efetivada / pedidos pagos"),
                 self._kpi("new_customers", "Clientes novos", new_customers, "number", "Cadastros no periodo"),
@@ -231,6 +236,9 @@ class BusinessIntelligenceService:
                 "revenue": effective_revenue,
                 "estimated_revenue": estimated_revenue,
                 "effective_revenue": effective_revenue,
+                "gross_revenue": gross_revenue,
+                "app_deductions": app_deductions,
+                "net_revenue": effective_revenue,
                 "paid_orders": paid_orders,
                 "total_orders": total_orders,
                 "avg_ticket": avg_ticket,
@@ -256,9 +264,11 @@ class BusinessIntelligenceService:
             .with_entities(
                 Order.id.label("order_id"),
                 Order.created_at.label("created_at"),
-                Order.total.label("total"),
+                order_net_expr().label("total"),
+                order_gross_expr().label("gross_total"),
+                order_deductions_expr().label("app_deductions"),
             )
-            .group_by(Order.id, Order.created_at, Order.total)
+            .group_by(Order.id, Order.created_at, Order.total, Order.app_finance_net_amount, Order.app_finance_gross_amount, Order.app_finance_deductions)
             .order_by(Order.created_at)
             .all()
         )
@@ -270,14 +280,20 @@ class BusinessIntelligenceService:
             day_key = local_created_at.date().isoformat()
             hour_key = local_created_at.hour
             total = float(row.total or 0)
+            gross_total = float(row.gross_total or 0)
+            deductions = float(row.app_deductions or 0)
 
-            day_bucket = day_totals.setdefault(day_key, {"orders": 0, "revenue": 0.0})
+            day_bucket = day_totals.setdefault(day_key, {"orders": 0, "revenue": 0.0, "gross_revenue": 0.0, "app_deductions": 0.0})
             day_bucket["orders"] = int(day_bucket["orders"]) + 1
             day_bucket["revenue"] = float(day_bucket["revenue"]) + total
+            day_bucket["gross_revenue"] = float(day_bucket["gross_revenue"]) + gross_total
+            day_bucket["app_deductions"] = float(day_bucket["app_deductions"]) + deductions
 
-            hour_bucket = hour_totals.setdefault(hour_key, {"orders": 0, "revenue": 0.0})
+            hour_bucket = hour_totals.setdefault(hour_key, {"orders": 0, "revenue": 0.0, "gross_revenue": 0.0, "app_deductions": 0.0})
             hour_bucket["orders"] = int(hour_bucket["orders"]) + 1
             hour_bucket["revenue"] = float(hour_bucket["revenue"]) + total
+            hour_bucket["gross_revenue"] = float(hour_bucket["gross_revenue"]) + gross_total
+            hour_bucket["app_deductions"] = float(hour_bucket["app_deductions"]) + deductions
 
         by_day = [
             {
@@ -285,12 +301,15 @@ class BusinessIntelligenceService:
                 "date": day,
                 "orders": int(bucket["orders"] or 0),
                 "revenue": self._round(bucket["revenue"]),
+                "gross_revenue": self._round(bucket["gross_revenue"]),
+                "app_deductions": self._round(bucket["app_deductions"]),
                 "average_ticket": self._round(bucket["revenue"] / bucket["orders"]) if bucket["orders"] else 0,
             }
             for day, bucket in sorted(day_totals.items())
         ]
         by_hour = [
-            {"hour": hour, "orders": int(bucket["orders"] or 0), "revenue": self._round(bucket["revenue"])}
+            {"hour": hour, "orders": int(bucket["orders"] or 0), "revenue": self._round(bucket["revenue"]),
+             "gross_revenue": self._round(bucket["gross_revenue"]), "app_deductions": self._round(bucket["app_deductions"])}
             for hour, bucket in sorted(hour_totals.items())
         ]
         return {
@@ -457,7 +476,7 @@ class BusinessIntelligenceService:
         paid_orders = self._paid_orders_in_period(start_dt, end_dt).count()
         revenue = self._round(
             self._paid_orders_in_period(start_dt, end_dt)
-            .with_entities(func.coalesce(func.sum(Order.total), 0))
+            .with_entities(func.coalesce(func.sum(order_net_expr()), 0))
             .scalar()
         )
         spend = self._round(
@@ -589,7 +608,7 @@ class BusinessIntelligenceService:
             self._db.query(
                 Address.neighborhood,
                 func.count(Order.id).label("orders"),
-                func.coalesce(func.sum(Order.total), 0).label("revenue"),
+                func.coalesce(func.sum(order_net_expr()), 0).label("revenue"),
             )
             .join(Order, Order.address_id == Address.id)
             .join(Payment, Payment.order_id == Order.id)

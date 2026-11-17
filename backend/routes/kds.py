@@ -212,6 +212,22 @@ def dispatch_unit_complete(
     except DomainError as exc:
         return err(exc)
 
+@router.post("/dispatch/orders/{order_id}/units/{unit_id}/check-oven")
+def dispatch_check_oven(
+    order_id: str,
+    unit_id: str,
+    body: DispatchUnitCompleteIn,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("expedicao", "edit")),
+):
+    try:
+        result = KdsService(db, actor.tenant_context).check_oven_in_dispatch(
+            order_id, unit_id, expected_version=body.expected_version, actor_id=actor.user_id,
+        )
+        return ok(result, "Forno retirado e unidade conferida na expedicao.")
+    except DomainError as exc:
+        return err(exc)
+
 
 @router.post("/dispatch/orders/{order_id}/return-to-kitchen")
 def dispatch_return_to_kitchen(

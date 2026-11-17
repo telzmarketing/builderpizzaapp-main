@@ -119,10 +119,10 @@ export default function Cardapio() {
       {/* Header */}
       <div className="bg-brand-dark px-4 py-3 sticky top-0 z-30 border-b border-surface-02">
         <div className="flex items-center justify-between mb-3">
-          <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
+          <button onClick={() => navigate(-1)} className="translate-y-4 text-parchment hover:text-cream transition-colors lg:translate-y-2">
             <ChevronLeft size={24} />
           </button>
-          <button onClick={() => navigate("/")} aria-label="Ir para a home da loja">
+          <button onClick={() => navigate("/")} aria-label="Ir para a home da loja" className="translate-y-4 lg:translate-y-2">
             <MoschettieriLogo className="text-cream text-base scale-[1.31] origin-center" />
           </button>
           <div className="w-6" />

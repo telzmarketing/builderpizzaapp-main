@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, String, Float, Integer, Enum, DateTime, ForeignKey, ForeignKeyConstraint, Index, JSON, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Column, String, Float, Integer, Enum, DateTime, ForeignKey, ForeignKeyConstraint, Index, JSON, Numeric, Text, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime, timezone
@@ -89,7 +89,20 @@ class Order(Base):
     driver_delivery_fee = Column(Float, nullable=True)
     free_shipping_applied = Column(Boolean, default=False)
     discount = Column(Float, default=0.0)
+    # Operator-applied discount snapshot. ``discount`` remains the aggregate
+    # product discount used by BI/financial reports; these fields preserve how
+    # a manual PDV discount was entered without rewriting the order history.
+    manual_discount_type = Column(String(20), nullable=True)
+    manual_discount_value = Column(Float, nullable=True)
     total = Column(Float, nullable=False)
+
+    # Additive snapshot of the expected settlement for delivery-app orders.
+    # The commercial order total remains unchanged; these values are only the
+    # tenant-scoped financial projection calculated from the app rules.
+    app_finance_gross_amount = Column(Numeric(20, 2), nullable=True)
+    app_finance_deductions = Column(Numeric(20, 2), nullable=True)
+    app_finance_net_amount = Column(Numeric(20, 2), nullable=True)
+    app_finance_rules = Column(JSON, nullable=True)
 
     estimated_time = Column(Integer, default=40)           # minutes
     loyalty_points_earned = Column(Integer, default=0)

@@ -390,7 +390,14 @@ export default function BiDashboard() {
                   <div key={item.label} className="space-y-1">
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-stone">{item.label}</span>
-                      <span className="font-semibold text-cream">{money(item.revenue)}</span>
+                      <span className="text-right font-semibold text-cream">
+                        {money(item.revenue)}
+                        {(item.gross_revenue || item.app_deductions) ? (
+                          <span className="ml-2 text-[11px] font-normal text-stone">
+                            bruto {money(item.gross_revenue ?? item.revenue)} · apps {money(item.app_deductions ?? 0)}
+                          </span>
+                        ) : null}
+                      </span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-surface-01">
                       <div

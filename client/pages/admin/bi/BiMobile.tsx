@@ -9,7 +9,6 @@ import {
   Sparkles,
 } from "lucide-react";
 import KdsBrandLogo from "@/components/kds/KdsBrandLogo";
-import BiMobilePwaInstall from "@/components/bi/BiMobilePwaInstall";
 import {
   Dialog,
   DialogContent,
@@ -223,7 +222,8 @@ function Orders({ data }: { data: ApiBIMobileAnalytics }) {
             label: "Valor bruto vendido",
             value: biMoney(data.totals.gross_sales),
           },
-          { label: "Descontos", value: biMoney(data.totals.discounts) },
+          { label: "Deduções de apps", value: biMoney(data.totals.app_deductions) },
+          { label: "Descontos ao cliente", value: biMoney(data.totals.discounts) },
         ]}
       />
       <BiPanel title="Status dos pedidos">
@@ -265,7 +265,7 @@ function Breakdown({
   rows,
 }: {
   title: string;
-  rows: Array<{ label: string; orders: number; revenue: number }>;
+  rows: Array<{ label: string; orders: number; revenue: number; gross_sales?: number; app_deductions?: number }>;
 }) {
   return (
     <BiPanel title={title}>
@@ -284,6 +284,11 @@ function Breakdown({
                 <p className="text-stone">
                   {biNumber(item.orders)} pedidos pagos
                 </p>
+                {(item.gross_sales || item.app_deductions) ? (
+                  <p className="text-[11px] text-stone">
+                    Bruto {biMoney(item.gross_sales ?? item.revenue)} · Apps {biMoney(item.app_deductions ?? 0)}
+                  </p>
+                ) : null}
               </div>
             </div>
           ))}
@@ -487,7 +492,6 @@ export default function BiMobile() {
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-surface-03 pt-3">
             <p className="text-[11px] text-stone">Resumo operacional responsivo</p>
-            <BiMobilePwaInstall />
           </div>
         </header>
         <section className="rounded-xl border border-surface-03 bg-surface-02 p-3">
@@ -823,7 +827,9 @@ export default function BiMobile() {
                               <tr className="text-stone">
                                 {[
                                   "Mês",
-                                  "Receita",
+                                  "Líquida",
+                                  "Bruta",
+                                  "Apps",
                                   "Pedidos",
                                   "Pizzas",
                                   "Ticket",
@@ -853,6 +859,12 @@ export default function BiMobile() {
                                   </th>
                                   <td className="whitespace-nowrap p-2">
                                     {biMoney(item.revenue)}
+                                  </td>
+                                  <td className="whitespace-nowrap p-2 text-stone">
+                                    {biMoney(item.gross_sales ?? item.revenue)}
+                                  </td>
+                                  <td className="whitespace-nowrap p-2 text-stone">
+                                    {biMoney(item.app_deductions ?? 0)}
                                   </td>
                                   <td className="p-2">
                                     {biNumber(item.orders)}

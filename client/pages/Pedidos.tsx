@@ -133,10 +133,10 @@ export default function Pedidos() {
 
       {/* Header */}
       <div className="bg-brand-dark px-4 py-3 flex justify-between items-center sticky top-0 z-30">
-        <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
+        <button onClick={() => navigate(-1)} className="translate-y-4 text-parchment hover:text-cream transition-colors lg:translate-y-2">
           <ChevronLeft size={24} />
         </button>
-        <button onClick={() => navigate("/")} aria-label="Ir para a home da loja">
+        <button onClick={() => navigate("/")} aria-label="Ir para a home da loja" className="translate-y-4 lg:translate-y-2">
           <MoschettieriLogo className="text-cream text-base scale-[1.31] origin-center" />
         </button>
         <div className="w-6" />
@@ -189,6 +189,14 @@ export default function Pedidos() {
                     {statusLabels[order.status] ?? order.status}
                   </span>
                 </div>
+
+                {order.delivery?.confirmation_code && !order.delivery.confirmed_by_code_at && order.status !== "cancelled" && order.status !== "delivered" && (
+                  <div className="mx-4 mt-3 rounded-xl border border-gold/35 bg-gold/10 px-4 py-3 text-center">
+                    <p className="text-xs font-bold uppercase tracking-wide text-stone">Código para confirmar a entrega</p>
+                    <p className="mt-1 font-mono text-2xl font-black tracking-[0.35em] text-gold">{order.delivery.confirmation_code}</p>
+                    <p className="mt-1 text-xs text-parchment">Informe este código ao motoboy na chegada.</p>
+                  </div>
+                )}
 
                 {/* Items */}
                 <div className="px-4 py-3 space-y-2">

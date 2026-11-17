@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Plus, Trash2, Edit2, Sparkles, Package, Tag, BarChart2,
   X, ExternalLink,
@@ -10,8 +10,8 @@ import MediaUpload from "@/components/admin/MediaUpload";
 import PromotionLandingsTab from "@/components/admin/PromotionLandingsTab";
 import {
   campaignsApi, productsApi, couponsApi, marketingAutomationsApi, categoriesApi,
-  isAssetUrl, resolveAssetUrl,
-  type ApiCampaign, type ApiCampaignProduct, type ApiPromotionalKit,
+  isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl,
+  type ApiCampaign, type ApiCampaignProduct, type ApiPromotionalKit, type ApiKitItem,
   type ApiPromotionLandingPage,
   type ApiProduct, type ApiCoupon, type ApiCouponUsage, type ApiMarketingAutomation,
   type CampaignStatus, type CampaignType, type CpDiscountType, type KitType, type ApiProductCategory, type CampaignHighlightType,
@@ -116,6 +116,7 @@ interface CampaignForm {
 
 interface KitForm {
   name: string; description: string; icon: string; kit_type: KitType;
+  slug: string; image_url: string; video_url: string;
   price_original: number; price_promotional: number;
   discount_type: CpDiscountType | ""; discount_value: number;
   valid_until: string; active: boolean;
@@ -148,6 +149,7 @@ const emptyCampaignForm: CampaignForm = {
 };
 
 const emptyKitForm: KitForm = {
+  slug: "", image_url: "", video_url: "",
   name: "", description: "", icon: "🎁", kit_type: "kit",
   price_original: 0, price_promotional: 0,
   discount_type: "", discount_value: 0, valid_until: "", active: true,
@@ -160,7 +162,7 @@ const campaignFormChanged = (a: CampaignForm, b: CampaignForm) =>
   JSON.stringify(a) !== JSON.stringify(b);
 
 export default function AdminCampanhas() {
-  const [activeTab, setActiveTab] = useState<Tab>("campanhas");
+  const [activeTab, setActiveTab] = useState<Tab>(() => window.location.pathname === "/painel/promocoes" ? "promocoes_delivery" : "campanhas");
 
   // ── Data ───────────────────────────────────────────────────────────────────
   const [campaigns, setCampaigns] = useState<ApiCampaign[]>([]);
@@ -200,16 +202,38 @@ export default function AdminCampanhas() {
   const [editingKitId, setEditingKitId] = useState<string | null>(null);
   const [kitForm, setKitForm] = useState<KitForm>(emptyKitForm);
   const [kitSaving, setKitSaving] = useState(false);
-  const [selectedKit, setSelectedKit] = useState<ApiPromotionalKit | null>(null);
+  // Kept only for backward-compatible state shape; the legacy items modal is
+  // unreachable and item maintenance now happens in the kit form above.
   const [showKitItemsModal, setShowKitItemsModal] = useState(false);
+  const [selectedKit] = useState<ApiPromotionalKit | null>(null);
   const [newKitItemProductId, setNewKitItemProductId] = useState("");
   const [newKitItemQty, setNewKitItemQty] = useState(1);
   const [kitItemDrafts, setKitItemDrafts] = useState<PromotionalKitItemDraft[]>([]);
   const [kitDraftProductId, setKitDraftProductId] = useState("");
   const [kitDraftQuantity, setKitDraftQuantity] = useState(1);
+  const [kitSavedItems, setKitSavedItems] = useState<ApiKitItem[]>([]);
+  const [kitOriginalItems, setKitOriginalItems] = useState<ApiKitItem[]>([]);
 
   const [toast, setToast] = useState("");
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
+
+  const kitPriceOriginal = useMemo(() => {
+    const allItems = [...kitSavedItems, ...kitItemDrafts];
+    return +allItems.reduce((total, item) => {
+      const product = products.find((candidate) => candidate.id === item.product_id);
+      return total + (product?.price ?? 0) * item.quantity;
+    }, 0).toFixed(2);
+  }, [kitSavedItems, kitItemDrafts, products]);
+
+  const kitPricePromotional = useMemo(() => {
+    const discount = kitForm.discount_value || 0;
+    const discounted = kitForm.discount_type === "percentage"
+      ? kitPriceOriginal * (1 - discount / 100)
+      : kitForm.discount_type === "fixed"
+        ? kitPriceOriginal - discount
+        : kitPriceOriginal;
+    return +Math.max(0, discounted).toFixed(2);
+  }, [kitForm.discount_type, kitForm.discount_value, kitPriceOriginal]);
 
   const loadAll = useCallback(async () => {
     setLoadingData(true);
@@ -492,6 +516,8 @@ export default function AdminCampanhas() {
     setEditingKitId(null);
     setKitForm(emptyKitForm);
     setKitItemDrafts([]);
+    setKitSavedItems([]);
+    setKitOriginalItems([]);
     setKitDraftProductId("");
     setKitDraftQuantity(1);
     setShowKitModal(true);
@@ -501,11 +527,14 @@ export default function AdminCampanhas() {
     setEditingKitId(k.id);
     setKitForm({
       name: k.name, description: k.description ?? "", icon: k.icon,
+      slug: k.slug ?? "", image_url: k.image_url ?? "", video_url: k.video_url ?? "",
       kit_type: k.kit_type, price_original: k.price_original, price_promotional: k.price_promotional,
       discount_type: k.discount_type ?? "", discount_value: k.discount_value ?? 0,
       valid_until: k.valid_until ? k.valid_until.slice(0, 16) : "", active: k.active,
     });
     setKitItemDrafts([]);
+    setKitSavedItems(k.items ?? []);
+    setKitOriginalItems(k.items ?? []);
     setKitDraftProductId("");
     setKitDraftQuantity(1);
     setShowKitModal(true);
@@ -514,14 +543,18 @@ export default function AdminCampanhas() {
   const handleSaveKit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!kitForm.name.trim()) { showToast("Nome é obrigatório."); return; }
+    if (kitSavedItems.length === 0 && kitItemDrafts.length === 0) { showToast("Insira pelo menos um produto no kit."); return; }
     setKitSaving(true);
     try {
       const payload = {
         ...kitForm,
+        price_original: kitPriceOriginal,
+        price_promotional: kitPricePromotional,
         discount_type: (kitForm.discount_type as CpDiscountType) || null,
         discount_value: kitForm.discount_value || null,
         valid_until: kitForm.valid_until ? new Date(kitForm.valid_until).toISOString() : null,
         description: kitForm.description || null,
+        items: kitItemDrafts.filter((draft) => !draft.id).map((item) => ({ product_id: item.product_id, quantity: item.quantity })),
       };
       let savedKit: ApiPromotionalKit;
       if (editingKitId) {
@@ -531,8 +564,28 @@ export default function AdminCampanhas() {
         savedKit = await campaignsApi.createKit(payload as any);
         showToast("Kit criado!");
       }
-      for (const item of kitItemDrafts) {
-        await campaignsApi.addKitItem(savedKit.id, item.product_id, item.quantity);
+      // Keep item maintenance inside this form. The API intentionally exposes
+      // add/remove primitives, so quantity edits are applied as remove+add.
+      if (editingKitId) {
+        const currentById = new Map(kitSavedItems.map((item) => [item.id, item]));
+        for (const original of kitOriginalItems) {
+          const current = currentById.get(original.id);
+          if (!current) {
+            await campaignsApi.removeKitItem(original.id);
+          } else if (current.quantity !== original.quantity) {
+            await campaignsApi.removeKitItem(original.id);
+            await campaignsApi.addKitItem(savedKit.id, current.product_id, current.quantity);
+          }
+        }
+        for (const item of kitItemDrafts.filter((draft) => !draft.id)) {
+          await campaignsApi.addKitItem(savedKit.id, item.product_id, item.quantity);
+        }
+        // Recalculate the persisted price after the item mutations. The first
+        // update necessarily runs before the add/remove primitives complete.
+        await campaignsApi.updateKit(savedKit.id, {
+          price_original: kitPriceOriginal,
+          price_promotional: kitPricePromotional,
+        });
       }
       setKitItemDrafts([]);
       setShowKitModal(false);
@@ -550,43 +603,24 @@ export default function AdminCampanhas() {
     } catch { showToast("Erro ao excluir."); }
   };
 
-  const openKitItems = (k: ApiPromotionalKit) => {
-    setSelectedKit(k);
-    setKitItemDrafts([]);
-    setShowKitItemsModal(true);
-  };
-
   const addKitDraftItem = () => {
     if (!kitDraftProductId) return;
-    setKitItemDrafts((current) => addKitItemDraft(current, kitDraftProductId, kitDraftQuantity));
+    const existingSaved = kitSavedItems.find((item) => item.product_id === kitDraftProductId);
+    if (existingSaved) {
+      setKitSavedItems((current) => current.map((item) => item.id === existingSaved.id
+        ? { ...item, quantity: item.quantity + Math.max(1, kitDraftQuantity) }
+        : item));
+    } else {
+      setKitItemDrafts((current) => addKitItemDraft(current, kitDraftProductId, kitDraftQuantity));
+    }
     setKitDraftProductId("");
     setKitDraftQuantity(1);
   };
 
-  const handleAddKitItems = async () => {
-    if (!selectedKit || kitItemDrafts.length === 0) return;
-    try {
-      await Promise.all(kitItemDrafts.map((item) => campaignsApi.addKitItem(selectedKit.id, item.product_id, item.quantity)));
-      const refreshed = await campaignsApi.listKits();
-      setKits(refreshed);
-      const updated = refreshed.find((k) => k.id === selectedKit.id);
-      if (updated) setSelectedKit(updated);
-      setKitItemDrafts([]);
-      showToast(`${kitItemDrafts.length} produto(s) adicionado(s)!`);
-    } catch { showToast("Erro ao adicionar item."); }
-  };
-
-  const handleRemoveKitItem = async (itemId: string) => {
-    if (!selectedKit) return;
-    try {
-      await campaignsApi.removeKitItem(itemId);
-      const refreshed = await campaignsApi.listKits();
-      setKits(refreshed);
-      const updated = refreshed.find((k) => k.id === selectedKit.id);
-      if (updated) setSelectedKit(updated);
-      showToast("Item removido.");
-    } catch { showToast("Erro ao remover item."); }
-  };
+  // Legacy modal handlers remain inert because that modal is no longer
+  // reachable; all item mutations go through handleSaveKit.
+  const handleAddKitItems = async () => undefined;
+  const handleRemoveKitItem = async (_itemId: string) => undefined;
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -621,8 +655,8 @@ export default function AdminCampanhas() {
 
   const tabs: { key: Tab; icon: React.ReactNode; label: string }[] = [
     { key: "campanhas", icon: <Sparkles size={14} />, label: "Banners" },
-    { key: "promocoes_delivery", icon: <Tag size={14} />, label: "Promocoes Loja Delivery" },
-    { key: "kits", icon: <Package size={14} />, label: "Kits Promocionais" },
+    { key: "promocoes_delivery", icon: <Tag size={14} />, label: "Promoções" },
+    { key: "kits", icon: <Package size={14} />, label: "Combos" },
   ];
 
   return (
@@ -897,12 +931,6 @@ export default function AdminCampanhas() {
                               </div>
                             </div>
                             <div className="flex gap-2 flex-shrink-0">
-                              <button
-                                onClick={() => openKitItems(k)}
-                                className="px-3 py-1.5 text-xs bg-surface-03 text-parchment hover:bg-brand-mid rounded-lg transition-colors"
-                              >
-                                Itens ({k.items.length})
-                              </button>
                               <button
                                 onClick={() => openEditKit(k)}
                                 className="p-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition-colors"
@@ -1400,6 +1428,11 @@ export default function AdminCampanhas() {
       {showKitModal && (
         <Modal title={editingKitId ? "Editar Kit" : "Novo Kit Promocional"} onClose={() => setShowKitModal(false)}>
           <form onSubmit={handleSaveKit} className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <Inp label="Slug da página" value={kitForm.slug} onChange={(e) => setKitForm({ ...kitForm, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]+/g, "-") })} placeholder="combo-familia" />
+              <Inp label="Imagem do combo" value={kitForm.image_url} onChange={(e) => setKitForm({ ...kitForm, image_url: e.target.value })} placeholder="URL da imagem" />
+              <Inp label="Vídeo do combo" value={kitForm.video_url} onChange={(e) => setKitForm({ ...kitForm, video_url: e.target.value })} placeholder="URL do vídeo" />
+            </div>
             <div className="grid grid-cols-4 gap-4">
               <div className="col-span-3">
                 <Inp label="Nome do Kit *" value={kitForm.name} onChange={(e) => setKitForm({ ...kitForm, name: e.target.value })} placeholder="Ex: Kit Família Feliz" />
@@ -1419,8 +1452,8 @@ export default function AdminCampanhas() {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <Inp label="Preço Original (R$)" type="number" step="0.01" value={kitForm.price_original} onChange={(e) => setKitForm({ ...kitForm, price_original: parseFloat(e.target.value) || 0 })} />
-              <Inp label="Preço Promocional (R$)" type="number" step="0.01" value={kitForm.price_promotional} onChange={(e) => setKitForm({ ...kitForm, price_promotional: parseFloat(e.target.value) || 0 })} />
+              <Inp label="Preço Original calculado (R$)" type="number" step="0.01" value={kitPriceOriginal} readOnly aria-readonly="true" className="cursor-not-allowed opacity-80" />
+              <Inp label="Preço Promocional calculado (R$)" type="number" step="0.01" value={kitPricePromotional} readOnly aria-readonly="true" className="cursor-not-allowed opacity-80" />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -1429,19 +1462,27 @@ export default function AdminCampanhas() {
                 <option value="percentage">Percentual (%)</option>
                 <option value="fixed">Valor Fixo (R$)</option>
               </Sel>
-              <Inp label="Valor do Desconto" type="number" step="0.01" value={kitForm.discount_value} onChange={(e) => setKitForm({ ...kitForm, discount_value: parseFloat(e.target.value) || 0 })} disabled={!kitForm.discount_type} />
+              <Inp label="Valor do Desconto" type="number" min="0" max={kitForm.discount_type === "percentage" ? 100 : undefined} step="0.01" value={kitForm.discount_value} onChange={(e) => setKitForm({ ...kitForm, discount_value: Math.max(0, parseFloat(e.target.value) || 0) })} disabled={!kitForm.discount_type} />
             </div>
 
-            {false && <div className="rounded-xl border border-surface-03 bg-surface-03/40 p-4 space-y-3">
+            <div className="rounded-xl border border-surface-03 bg-surface-03/40 p-4 space-y-3">
               <div>
                 <p className="text-parchment text-sm font-bold">Produtos do kit</p>
                 <p className="text-stone text-xs mt-1">Adicione vários produtos e informe a quantidade de cada um.</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto mt-3">
+                  {products.map((product) => (
+                    <button type="button" key={product.id} onClick={() => setKitDraftProductId(product.id)} className={`flex items-center gap-2 rounded-lg border p-2 text-left ${kitDraftProductId === product.id ? "border-gold bg-gold/10" : "border-surface-03 bg-surface-02"}`}>
+                      <div className="h-9 w-9 shrink-0 overflow-hidden rounded-md bg-surface-03 flex items-center justify-center">{isAssetUrl(product.icon) ? <img src={resolveOptimizedAssetUrl(product.icon, 96)} alt="" className="h-full w-full object-contain" /> : <span>{product.icon || "🍕"}</span>}</div>
+                      <span className="truncate text-xs text-cream">{product.name}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="grid grid-cols-[1fr_96px_auto] gap-2 items-end">
                 <Sel label="Produto" value={kitDraftProductId} onChange={(e) => setKitDraftProductId(e.target.value)}>
                   <option value="">Selecione um produto...</option>
                   {products.map((p) => (
-                    <option key={p.id} value={p.id}>{p.icon} {p.name}</option>
+                    <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </Sel>
                 <Inp label="Quantidade" type="number" min={1} value={kitDraftQuantity} onChange={(e) => setKitDraftQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))} />
@@ -1449,9 +1490,33 @@ export default function AdminCampanhas() {
                   <Plus size={14} /> Adicionar
                 </button>
               </div>
+              {(() => {
+                const product = products.find((candidate) => candidate.id === kitDraftProductId);
+                if (!product) return null;
+                return <div className="flex items-center gap-3 rounded-lg border border-gold/30 bg-surface-02 p-2">
+                  <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-surface-03 flex items-center justify-center">
+                    {isAssetUrl(product.icon) ? <img src={resolveOptimizedAssetUrl(product.icon, 128)} alt="" className="h-full w-full object-cover" /> : <span className="text-2xl">{product.icon || "ðŸ•"}</span>}
+                  </div>
+                  <div className="min-w-0"><p className="truncate text-sm font-medium text-cream">{product.name}</p><p className="text-xs text-stone">R$ {(product.price ?? 0).toFixed(2)}</p></div>
+                </div>;
+              })()}
               <div className="space-y-2">
+                {kitSavedItems.map((item) => {
+                  const product = products.find((candidate) => candidate.id === item.product_id);
+                  return <div key={item.id} className="flex items-center gap-3 rounded-lg bg-surface-02 px-3 py-2">
+                    <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-surface-03 flex items-center justify-center">
+                      {product && (isAssetUrl(product.icon) ? <img src={resolveOptimizedAssetUrl(product.icon, 96)} alt="" className="h-full w-full object-cover" /> : <span className="text-xl">{product.icon || "ðŸ•"}</span>)}
+                    </div>
+                    <span className="flex-1 truncate text-sm text-cream">{product?.name ?? item.product_id}</span>
+                    <input aria-label={`Quantidade de ${product?.name ?? item.product_id}`} type="number" min={1} value={item.quantity} onChange={(e) => setKitSavedItems((current) => current.map((saved) => saved.id === item.id ? { ...saved, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) } : saved))} className="w-20 rounded-lg border border-surface-03 bg-surface-03 px-2 py-1 text-xs text-cream" />
+                    <button type="button" onClick={() => setKitSavedItems((current) => current.filter((saved) => saved.id !== item.id))} className="text-red-400 hover:text-red-300" aria-label={`Remover ${product?.name ?? item.product_id}`}><Trash2 size={14} /></button>
+                  </div>;
+                })}
                 {kitItemDrafts.map((item, index) => (
                   <div key={`${item.product_id}-${index}`} className="flex items-center gap-3 rounded-lg bg-surface-02 px-3 py-2">
+                    <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-surface-03 flex items-center justify-center">
+                      {(() => { const product = products.find((candidate) => candidate.id === item.product_id); return product && (isAssetUrl(product.icon) ? <img src={resolveOptimizedAssetUrl(product.icon, 96)} alt="" className="h-full w-full object-cover" /> : <span className="text-xl">{product.icon || "ðŸ•"}</span>); })()}
+                    </div>
                     <span className="flex-1 text-cream text-sm">{getProductName(item.product_id)}</span>
                     <span className="text-stone text-xs">Quantidade: {item.quantity}</span>
                     <button type="button" onClick={() => setKitItemDrafts((current) => removeKitItemDraft(current, index))} className="text-red-400 hover:text-red-300" aria-label={`Remover ${getProductName(item.product_id)}`}>
@@ -1459,9 +1524,9 @@ export default function AdminCampanhas() {
                     </button>
                   </div>
                 ))}
-                {kitItemDrafts.length === 0 && <p className="text-stone text-xs">Nenhum produto adicionado ainda.</p>}
+                {kitSavedItems.length === 0 && kitItemDrafts.length === 0 && <p className="text-stone text-xs">Nenhum produto adicionado ainda.</p>}
               </div>
-            </div>}
+            </div>
 
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={kitForm.active} onChange={(e) => setKitForm({ ...kitForm, active: e.target.checked })} className="w-4 h-4 accent-gold" />
@@ -1479,8 +1544,8 @@ export default function AdminCampanhas() {
       )}
 
       {/* ── Modal: Kit Items ────────────────────────────────────────────────────── */}
-      {showKitItemsModal && selectedKit && (
-        <Modal title={`Itens — ${selectedKit.name}`} onClose={() => setShowKitItemsModal(false)}>
+      {false && showKitItemsModal && selectedKit && (
+        <Modal title={`Itens — ${selectedKit.name}`} onClose={() => undefined}>
           <div className="space-y-4">
             <div className="bg-surface-03/50 rounded-xl p-4 space-y-3">
               <p className="text-parchment text-sm font-medium">Adicionar produtos ao kit</p>

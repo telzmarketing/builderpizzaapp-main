@@ -20,7 +20,6 @@ import {
   X,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
-import MotoboyInstallButton from "@/components/MotoboyInstallButton";
 import { deliveryOrderCode, driverPaymentLines } from "@/lib/deliveryPresentation";
 import {
   deliveryApi,
@@ -206,10 +205,11 @@ function DeliveryCard({
   busy: boolean;
   onStart:    (d: DeliveryRecord) => void;
   onConfirmPayment: (d: DeliveryRecord) => void;
-  onComplete: (d: DeliveryRecord) => void;
+  onComplete: (d: DeliveryRecord, code: string) => void;
   onProblem:  (d: DeliveryRecord) => void;
   onView:     (d: DeliveryRecord) => void;
 }) {
+  const [confirmationCode, setConfirmationCode] = useState("");
   const order      = delivery.order;
   const address    = deliveryAddress(delivery);
   const mapsUrl    = address ? googleMapsRouteUrl(address, currentLocation) : null;
@@ -309,14 +309,28 @@ function DeliveryCard({
         )}
 
         {canComplete && (
-            <button
-              disabled={busy}
-              onClick={() => onComplete(delivery)}
-              className="col-span-2 flex h-12 items-center justify-center gap-2 rounded-lg bg-green-600 font-black text-white disabled:opacity-50 hover:bg-green-700 transition-colors"
-            >
-              {busy ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
-              Marcar como entregue
-            </button>
+          <div className="col-span-2 space-y-2 rounded-lg border border-green-500/25 bg-green-500/5 p-3">
+            <p className="text-xs font-bold text-green-200">Peça o código de 4 dígitos ao cliente</p>
+            <div className="flex gap-2">
+              <input
+                inputMode="numeric"
+                maxLength={4}
+                value={confirmationCode}
+                onChange={(event) => setConfirmationCode(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                placeholder="Código"
+                aria-label="Código de confirmação da entrega"
+                className="h-12 min-w-0 flex-1 rounded-lg border border-surface-03 bg-surface-01 px-3 text-center text-lg font-black tracking-[0.35em] text-cream"
+              />
+              <button
+                disabled={busy || confirmationCode.length !== 4}
+                onClick={() => onComplete(delivery, confirmationCode)}
+                className="flex h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-green-600 font-black text-white disabled:opacity-50 hover:bg-green-700 transition-colors"
+              >
+                {busy ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
+                Confirmar entrega
+              </button>
+            </div>
+          </div>
         )}
 
         <button
@@ -542,7 +556,6 @@ export default function Motoboy() {
   if (!token) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-surface-00 to-surface-01 px-6 py-10">
-        <MotoboyInstallButton />
         <div className="w-full max-w-sm">
           {/* Logo */}
           <div className="mb-10 flex flex-col items-center gap-4">
@@ -606,7 +619,6 @@ export default function Motoboy() {
   /* ── App principal ── */
   return (
     <div className="min-h-screen bg-surface-00 text-cream">
-      <MotoboyInstallButton />
       <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col">
 
         {/* Header */}
@@ -787,7 +799,7 @@ export default function Motoboy() {
                 busy={actionLoading === activeDeliveries[0].id}
                 onStart={(d) => runAction(d.id, () => deliveryApi.driverStartDelivery(d.id))}
                 onConfirmPayment={(d) => runAction(d.id, () => deliveryApi.driverConfirmPayment(d.id))}
-                onComplete={(d) => runAction(d.id, () => deliveryApi.driverCompleteDelivery(d.id))}
+                onComplete={(d, code) => runAction(d.id, async () => { await deliveryApi.confirmCode(d.id, code); return deliveryApi.driverCompleteDelivery(d.id); })}
                 onProblem={setProblem}
                 onView={setDetail}
               />
@@ -832,7 +844,7 @@ export default function Motoboy() {
                     busy={actionLoading === delivery.id}
                     onStart={(d) => runAction(d.id, () => deliveryApi.driverStartDelivery(d.id))}
                     onConfirmPayment={(d) => runAction(d.id, () => deliveryApi.driverConfirmPayment(d.id))}
-                    onComplete={(d) => runAction(d.id, () => deliveryApi.driverCompleteDelivery(d.id))}
+                    onComplete={(d, code) => runAction(d.id, async () => { await deliveryApi.confirmCode(d.id, code); return deliveryApi.driverCompleteDelivery(d.id); })}
                     onProblem={setProblem}
                     onView={setDetail}
                   />

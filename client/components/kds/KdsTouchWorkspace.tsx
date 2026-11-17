@@ -252,6 +252,21 @@ export default function KdsTouchWorkspace(props: Props) {
         return next;
       });
     }
+    // Starting the oven ends the pizzaiolo's work on this unit. Keep the
+    // baking unit available to Expedição, but focus the next queued unit now.
+    if (succeeded && currentAction === "start-oven") {
+      const nextTask = visibleTasks.find(
+        (candidate) =>
+          candidate.id !== currentTask.id &&
+          (candidate.state === "queued" || candidate.state === "unassigned"),
+      );
+      if (nextTask) {
+        setOrderId(nextTask.order_id);
+        setTaskId(nextTask.id);
+      } else {
+        setTaskId(null);
+      }
+    }
   };
 
   return (

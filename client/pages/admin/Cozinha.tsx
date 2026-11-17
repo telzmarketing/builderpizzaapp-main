@@ -14,23 +14,14 @@ import KdsSessionActions from "@/components/kds/KdsSessionActions";
 import KdsTouchWorkspace from "@/components/kds/KdsTouchWorkspace";
 import KdsMultiOperatorBoard from "@/components/kds/KdsMultiOperatorBoard";
 import KdsBrandLogo from "@/components/kds/KdsBrandLogo";
-import PwaInstallButton from "@/components/PwaInstallButton";
 import { useToast } from "@/hooks/use-toast";
 import { kdsApi, type KdsKitchenOrder } from "@/lib/api";
 import { loadSoundType, playOrderAlert } from "@/lib/orderSound";
 import { activeKitchenOrders } from "@/lib/kds";
 import { orderDisplayCode } from "@/lib/orderIdentity";
 import { onOrderArchived } from "@/lib/orderArchive";
-import {
-  PIZZA_STATIONS,
-  persistPizzaStation,
-  pizzaStationLabel,
-  readPizzaStation,
-  type PizzaWorkstationId,
-} from "@/lib/kdsStations";
 
 const POLL_INTERVAL_MS = 15_000;
-const KDS_ESFIHA_DEVICE_STORAGE_KEY = "kds:esfiha-device";
 
 function errorMessage(error: unknown) {
   return error instanceof Error
@@ -52,15 +43,7 @@ export default function AdminCozinha({
   startToastLabel = "pizzaiolo",
 }: KdsStationPageProps = {}) {
   const { toast } = useToast();
-  const isPizzaWorkspace = !station && pwaKey === "kds-pizzaiolo";
-  const [pizzaStation, setPizzaStation] = useState<PizzaWorkstationId>(() =>
-    readPizzaStation(typeof window === "undefined" ? null : window.localStorage),
-  );
-  const [esfihaDevice, setEsfihaDevice] = useState("esfiha");
-  // Pizza 1/Pizza 2 are device lanes; the published KDS contract remains station=pizza.
   const apiStation = station ?? "pizza";
-  const deviceSelectorVisible = isPizzaWorkspace || station === "esfiha";
-  const deviceValue = isPizzaWorkspace ? pizzaStation : esfihaDevice;
   const [orders, setOrders] = useState<KdsKitchenOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -73,11 +56,6 @@ export default function AdminCozinha({
   const knownWaitingIds = useRef<Set<string>>(new Set());
   const initialLoad = useRef(true);
   const actionLock = useRef(false);
-
-  useEffect(() => {
-    if (station !== "esfiha" || typeof window === "undefined") return;
-    setEsfihaDevice(window.localStorage.getItem(KDS_ESFIHA_DEVICE_STORAGE_KEY) || "esfiha");
-  }, [station]);
 
   const loadOrders = useCallback(
     async (manual = false) => {
@@ -304,41 +282,9 @@ export default function AdminCozinha({
           >
             {fullscreen ? <Minimize2 /> : <Maximize2 />}
           </button>
-          <PwaInstallButton only={[pwaKey]} inline />
           <KdsSessionActions />
         </div>
       </header>
-      {deviceSelectorVisible && (
-        <div className="flex flex-wrap items-center gap-3 border-b border-[#20374a] bg-[#07111c] px-3 py-3 sm:px-4">
-          <label className="flex items-center gap-2 text-sm font-bold text-slate-200">
-            Dispositivo da estação
-            <select
-              aria-label="Dispositivo da estação"
-              value={deviceValue}
-              onChange={(event) => {
-                if (isPizzaWorkspace) {
-                  const next = event.target.value as PizzaWorkstationId;
-                  setPizzaStation(next);
-                  persistPizzaStation(next, window.localStorage);
-                } else {
-                  setEsfihaDevice(event.target.value);
-                  window.localStorage.setItem(KDS_ESFIHA_DEVICE_STORAGE_KEY, event.target.value);
-                }
-              }}
-              className="min-h-11 rounded-xl border border-[#30485d] bg-[#0b1926] px-3 text-slate-100 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400"
-            >
-              {(isPizzaWorkspace ? PIZZA_STATIONS : [{ id: "esfiha", label: "Esfiha" }]).map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <span className="text-xs text-slate-400">
-            Confirmado neste dispositivo: {isPizzaWorkspace ? pizzaStationLabel(pizzaStation) : "Esfiha"}
-          </span>
-        </div>
-      )}
       {error && (
         <div
           role="alert"

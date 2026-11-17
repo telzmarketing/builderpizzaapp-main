@@ -62,6 +62,11 @@ class CheckoutIn(BaseModel):
     items: list[CartItemIn]
     delivery: DeliveryAddressIn
     coupon_code: Optional[str] = None
+    # Accepted by the shared payload so the protected manual-order route can
+    # carry the operator discount through the canonical OrderService. Public
+    # checkout rejects these values in the service unless explicitly allowed.
+    discount_type: Optional[Literal["percentage", "fixed"]] = None
+    discount_value: Optional[float] = Field(default=None, ge=0)
     customer_id: Optional[str] = None
     payment_method: str = "pix"
     delivery_payment_method: Optional[str] = None
@@ -177,7 +182,13 @@ class OrderOut(BaseModel):
     delivery_fee_final: float = 0.0
     free_shipping_applied: bool = False
     discount: float
+    manual_discount_type: Optional[Literal["percentage", "fixed"]] = None
+    manual_discount_value: Optional[float] = None
     total: float
+    app_finance_gross_amount: Optional[float] = None
+    app_finance_deductions: Optional[float] = None
+    app_finance_net_amount: Optional[float] = None
+    app_finance_rules: Optional[list[dict]] = None
     estimated_time: int
     loyalty_points_earned: int
     is_scheduled: bool = False

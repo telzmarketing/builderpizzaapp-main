@@ -5,7 +5,7 @@ from backend.core.exceptions import DomainError
 from backend.core.rbac_authorization import AuthorizedTenantActor, require_rbac_permission
 from backend.core.response import err, ok
 from backend.database import get_db
-from backend.schemas.production_vision import CameraIn, CaptureConfigIn, CaptureEventIn, EvidenceHoldIn, FinishIn, IncidentIn, OccupyZoneIn, PhotoIn, SessionIn, SettingsIn, StationIn, ZoneIn
+from backend.schemas.production_vision import CameraIn, CaptureConfigIn, CaptureEventIn, DeviceIn, EvidenceHoldIn, FinishIn, IncidentIn, OccupyZoneIn, PhotoIn, SessionIn, SettingsIn, StationIn, ZoneIn
 from backend.services.production_vision_service import ProductionVisionService
 
 router = APIRouter(prefix="/production-vision", tags=["production-vision"])
@@ -33,6 +33,9 @@ def cameras(db: Session = Depends(get_db), actor: AuthorizedTenantActor = read):
 @router.get("/stations")
 def stations(db: Session = Depends(get_db), actor: AuthorizedTenantActor = read): return ok(svc(db, actor).stations())
 
+@router.get("/devices")
+def devices(db: Session = Depends(get_db), actor: AuthorizedTenantActor = read): return ok(svc(db, actor).devices())
+
 @router.post("/stations", status_code=201)
 def create_station(body: StationIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).save_station(body))
 
@@ -41,6 +44,15 @@ def update_station(station_id: str, body: StationIn, db: Session = Depends(get_d
 
 @router.delete("/stations/{station_id}")
 def delete_station(station_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).delete_station(station_id))
+
+@router.post("/devices", status_code=201)
+def create_device(body: DeviceIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).save_device(body))
+
+@router.put("/devices/{device_id}")
+def update_device(device_id: str, body: DeviceIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).save_device(body, device_id))
+
+@router.delete("/devices/{device_id}")
+def delete_device(device_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).delete_device(device_id))
 
 @router.get("/capture-config")
 def capture_config(station_id: str = Query(..., min_length=1, max_length=80), db: Session = Depends(get_db), actor: AuthorizedTenantActor = read): return call(lambda: svc(db, actor).capture_config(station_id))

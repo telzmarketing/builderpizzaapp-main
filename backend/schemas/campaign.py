@@ -127,6 +127,7 @@ class KitItemOut(BaseModel):
 
 class PromotionalKitCreate(BaseModel):
     name: str
+    slug: Optional[str] = None
     description: Optional[str] = None
     icon: str = "🎁"
     kit_type: KitType = KitType.kit
@@ -136,10 +137,14 @@ class PromotionalKitCreate(BaseModel):
     discount_value: Optional[float] = None
     valid_until: Optional[datetime] = None
     active: bool = True
+    image_url: Optional[str] = None
+    video_url: Optional[str] = None
+    items: list[KitItemCreate] = Field(default_factory=list)
 
 
 class PromotionalKitUpdate(BaseModel):
     name: Optional[str] = None
+    slug: Optional[str] = None
     description: Optional[str] = None
     icon: Optional[str] = None
     kit_type: Optional[KitType] = None
@@ -149,11 +154,14 @@ class PromotionalKitUpdate(BaseModel):
     discount_value: Optional[float] = None
     valid_until: Optional[datetime] = None
     active: Optional[bool] = None
+    image_url: Optional[str] = None
+    video_url: Optional[str] = None
 
 
 class PromotionalKitOut(BaseModel):
     id: str
     name: str
+    slug: Optional[str]
     description: Optional[str]
     icon: str
     kit_type: KitType
@@ -163,6 +171,8 @@ class PromotionalKitOut(BaseModel):
     discount_value: Optional[float]
     valid_until: Optional[datetime]
     active: bool
+    image_url: Optional[str]
+    video_url: Optional[str]
     created_at: datetime
     updated_at: datetime
     items: list[KitItemOut] = []

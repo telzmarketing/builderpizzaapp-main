@@ -91,6 +91,22 @@ class StationOut(BaseModel):
     protected: bool
 
 
+class DeviceIn(BaseModel):
+    identifier: str = Field(min_length=2, max_length=120, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._:-]*$")
+    name: str = Field(min_length=1, max_length=120)
+    station_id: str = Field(min_length=1, max_length=80)
+    status: str = Field(default="active", pattern="^(active|inactive)$")
+
+
+class DeviceOut(BaseModel):
+    id: str
+    identifier: str
+    name: str
+    station_id: str
+    station_name: str | None = None
+    status: str
+
+
 class CaptureConfigIn(BaseModel):
     station_id: str = Field(min_length=1, max_length=80)
     milestone_1_name: str = Field(min_length=1, max_length=80)

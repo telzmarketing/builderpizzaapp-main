@@ -118,7 +118,7 @@ class DeliveryRateIn(BaseModel):
 
 
 class DeliveryConfirmIn(BaseModel):
-    code: str = Field(..., min_length=4, max_length=4)
+    code: str = Field(..., min_length=4, max_length=4, pattern=r"^\d{4}$")
 
 
 class DriverItemScanIn(BaseModel):

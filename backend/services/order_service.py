@@ -11,6 +11,7 @@ import random
 import string
 import unicodedata
 import uuid
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session, joinedload
 
@@ -80,6 +81,19 @@ def _clip_text(value: str | None, max_len: int) -> str | None:
     if not text:
         return None
     return text[:max_len]
+
+
+_CENT = Decimal("0.01")
+
+
+def _money_decimal(value: object, field: str) -> Decimal:
+    try:
+        amount = Decimal(str(value)).quantize(_CENT, rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError):
+        raise DomainError(f"{field} invalido.", code="InvalidDiscount") from None
+    if not amount.is_finite():
+        raise DomainError(f"{field} invalido.", code="InvalidDiscount")
+    return amount
 
 
 def _normalize_size_label(value: str | None) -> str | None:
@@ -458,7 +472,46 @@ class OrderService:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def quote_checkout(self, payload: CheckoutIn) -> dict:
+    def _resolve_manual_discount(
+        self,
+        payload: CheckoutIn,
+        subtotal: Decimal,
+        existing_discount: Decimal,
+        *,
+        allowed: bool,
+    ) -> tuple[Decimal, str | None, float | None]:
+        discount_type = payload.discount_type
+        raw_value = payload.discount_value
+        if discount_type is None and raw_value is None:
+            return Decimal("0.00"), None, None
+        if not allowed:
+            raise DomainError(
+                "Desconto manual somente pode ser aplicado pelo PDV autorizado.",
+                code="ManualDiscountNotAllowed",
+            )
+        if discount_type not in {"percentage", "fixed"} or raw_value is None:
+            raise DomainError(
+                "Informe o tipo e o valor do desconto manual.",
+                code="InvalidDiscount",
+            )
+        requested = _money_decimal(raw_value, "Valor do desconto")
+        if requested < 0:
+            raise DomainError("O desconto nao pode ser negativo.", code="InvalidDiscount")
+        if discount_type == "percentage":
+            if requested > Decimal("100.00"):
+                raise DomainError("O desconto percentual deve estar entre 0 e 100.", code="InvalidDiscount")
+            calculated = (subtotal * requested / Decimal("100")).quantize(_CENT, rounding=ROUND_HALF_UP)
+        else:
+            calculated = requested
+        available = (subtotal - existing_discount).quantize(_CENT, rounding=ROUND_HALF_UP)
+        if calculated > available:
+            raise DomainError(
+                "O desconto nao pode superar o valor liquido dos produtos.",
+                code="InvalidDiscount",
+            )
+        return calculated, discount_type, float(requested)
+
+    def quote_checkout(self, payload: CheckoutIn, *, allow_manual_discount: bool = False) -> dict:
         """Validate cart and calculate totals without creating an order."""
         if not payload.items:
             raise CartEmpty()
@@ -567,7 +620,15 @@ class OrderService:
         if promotion_free_shipping:
             delivery_fee_final = 0.0
 
-        total = round(subtotal + delivery_fee_final - discount, 2)
+        coupon_discount = _money_decimal(discount, "Desconto do cupom")
+        manual_discount, manual_discount_type, manual_discount_value = self._resolve_manual_discount(
+            payload,
+            _money_decimal(subtotal, "Subtotal"),
+            coupon_discount,
+            allowed=allow_manual_discount,
+        )
+        discount = float((coupon_discount + manual_discount).quantize(_CENT, rounding=ROUND_HALF_UP))
+        total = float((_money_decimal(subtotal, "Subtotal") + _money_decimal(delivery_fee_final, "Frete") - _money_decimal(discount, "Desconto")).quantize(_CENT, rounding=ROUND_HALF_UP))
         cash_change_amount = None
         if (
             payload.payment_method == "pay_on_delivery"
@@ -587,6 +648,9 @@ class OrderService:
             "shipping": shipping_result.model_dump(),
             "coupon": coupon_payload,
             "discount": discount,
+            "manual_discount": float(manual_discount),
+            "manual_discount_type": manual_discount_type,
+            "manual_discount_value": manual_discount_value,
             "delivery_fee_final": delivery_fee_final,
             "promotion_free_shipping_applied": promotion_free_shipping,
             "total": total,
@@ -605,6 +669,7 @@ class OrderService:
         payment_source: str | None = None,
         external_reference_override: str | None = None,
         created_by_admin_id: str | None = None,
+        allow_manual_discount: bool = False,
     ) -> Order:
         """
         Validate cart, recompute prices server-side, apply shipping + coupon,
@@ -729,8 +794,21 @@ class OrderService:
             delivery_fee_final = 0.0
             free_shipping_applied = True
 
-        total = round(subtotal + delivery_fee_final - discount, 2)
+        coupon_discount = _money_decimal(discount, "Desconto do cupom")
+        manual_discount, manual_discount_type, manual_discount_value = self._resolve_manual_discount(
+            payload,
+            _money_decimal(subtotal, "Subtotal"),
+            coupon_discount,
+            allowed=allow_manual_discount,
+        )
+        discount = float((coupon_discount + manual_discount).quantize(_CENT, rounding=ROUND_HALF_UP))
+        total = float((_money_decimal(subtotal, "Subtotal") + _money_decimal(delivery_fee_final, "Frete") - _money_decimal(discount, "Desconto")).quantize(_CENT, rounding=ROUND_HALF_UP))
         self._validate_expected_total(payload.expected_total, total)
+        app_finance = self._calculate_app_finance_snapshot(
+            order_origin,
+            gross_amount=total,
+            delivery_fee=delivery_fee_final,
+        )
         is_pay_on_delivery = payload.payment_method == "pay_on_delivery"
         delivery_payment_method = (payload.delivery_payment_method or "").strip().lower() if is_pay_on_delivery else None
         if is_pay_on_delivery:
@@ -797,7 +875,13 @@ class OrderService:
             ),
             free_shipping_applied=free_shipping_applied,
             discount=discount,
+            manual_discount_type=manual_discount_type,
+            manual_discount_value=manual_discount_value,
             total=total,
+            app_finance_gross_amount=app_finance["gross_amount"] if app_finance else None,
+            app_finance_deductions=app_finance["deductions"] if app_finance else None,
+            app_finance_net_amount=app_finance["net_amount"] if app_finance else None,
+            app_finance_rules=app_finance["rules"] if app_finance else None,
             estimated_time=shipping_result.estimated_time,
             is_scheduled=payload.delivery.is_scheduled,
             scheduled_for=payload.delivery.scheduled_for,
@@ -996,6 +1080,44 @@ class OrderService:
         ))
 
         return order
+
+    def _calculate_app_finance_snapshot(
+        self,
+        order_origin: str,
+        *,
+        gross_amount: float | Decimal,
+        delivery_fee: float | Decimal,
+    ) -> dict | None:
+        """Calculate and JSON-normalize the app settlement snapshot.
+
+        Own-store orders deliberately return ``None``. Delivery-app orders
+        always receive a snapshot, including when no rules are configured, so
+        consumers can distinguish an unconfigured app from an own-store order.
+        """
+        if order_origin not in {"partner_99", "ifood", "keeta"}:
+            return None
+        from backend.services.app_finance_service import DeliveryAppFinanceService
+
+        tenant_id = self._tenant_context.tenant_id if self._tenant_context else "tenant-legacy-default"
+        result = DeliveryAppFinanceService(self._db, tenant_id).calculate(
+            order_origin,
+            Decimal(str(gross_amount)),
+            Decimal(str(delivery_fee)),
+        )
+        return {
+            "app_key": result["app_key"],
+            "gross_amount": result["gross_amount"],
+            "deductions": result["deductions"],
+            "net_amount": result["net_amount"],
+            "rules": [
+                {
+                    "rule_id": item["rule_id"],
+                    "name": item["name"],
+                    "amount": format(item["amount"], "f"),
+                }
+                for item in result["rules"]
+            ],
+        }
 
     def _notify_new_order_whatsapp(self, order: Order) -> None:
         try:

@@ -40,7 +40,7 @@ MODULE_DEFAULTS: dict[str, dict] = {
         "description": "Base para contas, lancamentos, recebiveis, caixa, competencia e DRE.",
         "notes": "Nao substitui PaymentService nesta fase.",
         "settings": {
-            "auto_create_receivables": False,
+            "auto_create_receivables": True,
             "auto_create_payables_from_purchases": False,
             "default_receivable_account_id": None,
             "default_payable_account_id": None,

@@ -750,8 +750,23 @@ function FinancePanel() {
                 <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]"><input aria-label="Início do BI" className={inputClass} type="date" value={biPeriod.date_from} onChange={(event) => setBiPeriod({ ...biPeriod, date_from: event.target.value })} /><input aria-label="Fim do BI" className={inputClass} type="date" value={biPeriod.date_to} onChange={(event) => setBiPeriod({ ...biPeriod, date_to: event.target.value })} /><button type="button" className={buttonClass} onClick={() => setBiPeriod({ ...biPeriod })} disabled={biLoading}>{biLoading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />} Atualizar</button></div>
               </div>
               {biLoading ? <div className="flex min-h-40 items-center justify-center rounded-2xl border border-surface-03 bg-surface-02 text-stone"><Loader2 size={22} className="mr-2 animate-spin text-gold" />Carregando BI...</div> : bi && <>
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <Metric title="Receita líquida de apps" value={currency(bi.total_net_income ?? bi.total_income)} subtitle="Após comissões, taxas e fretes" icon={ArrowUpCircle} tone="success" />
+                  <Metric title="Faturamento bruto de apps" value={currency(bi.total_gross_income ?? bi.total_income)} subtitle="Antes das deduções de aplicativos" icon={ArrowUpCircle} tone="success" />
+                  <Metric title="Deduções de aplicativos" value={currency(bi.total_app_deductions ?? 0)} subtitle="Comissões, taxas e fretes" icon={ArrowDownCircle} tone="warn" />
+                  <Metric title="Descontos ao cliente" value={currency(bi.total_customer_discounts ?? 0)} subtitle="Descontos registrados nos pedidos" icon={ArrowDownCircle} tone="warn" />
+                </div>
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric title="Receitas" value={currency(bi.total_income)} subtitle={`${bi.transaction_count} lançamentos no período`} icon={ArrowUpCircle} tone="success" /><Metric title="Despesas" value={currency(bi.total_expense)} subtitle="Valores por competência" icon={ArrowDownCircle} tone="warn" /><Metric title="Resultado" value={currency(bi.result)} subtitle="Receitas menos despesas" icon={BarChart3} tone={bi.result >= 0 ? "success" : "warn"} /><Metric title="Período" value={`${bi.date_from} a ${bi.date_to}`} subtitle="Filtro aplicado" icon={CalendarCheck2} /></div>
                 <div className="grid gap-5 xl:grid-cols-2"><DimensionList title="Por origem" icon={ReceiptText} rows={bi.by_origin.map((row) => ({ label: row.origin_type, entry_type: row.entry_type, amount: row.amount, count: row.count }))} /><DimensionList title="Por canal" icon={Landmark} rows={bi.by_channel} /><DimensionList title="Por categoria" icon={Tags} rows={bi.by_category} /><DimensionList title="Por centro de custo" icon={SlidersHorizontal} rows={bi.by_cost_center} /></div>
+                <div className={panelClass}>
+                  <CardHeading icon={CalendarCheck2} title="Vendas por dia" description="Vendas com pagamento confirmado no período, mesmo quando o lançamento automático de contas a receber está desativado." />
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead><tr className="border-b border-surface-03 text-stone"><th className="px-3 py-2 font-medium">Data</th><th className="px-3 py-2 font-medium">Pedidos</th><th className="px-3 py-2 font-medium">Vendas brutas</th></tr></thead>
+                      <tbody>{bi.sales_by_day.length ? bi.sales_by_day.map((row) => <tr key={row.date} className="border-b border-surface-03/60"><td className="px-3 py-2">{row.date}</td><td className="px-3 py-2">{row.order_count}</td><td className="px-3 py-2 text-emerald-300">{currency(row.gross_amount)}</td></tr>) : <tr><td colSpan={3} className="px-3 py-6 text-center text-stone">Nenhuma venda confirmada no período.</td></tr>}</tbody>
+                    </table>
+                  </div>
+                </div>
               </>}
             </div>
           )}

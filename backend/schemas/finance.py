@@ -266,13 +266,20 @@ class FinanceBiOut(BaseModel):
     date_from: date
     date_to: date
     total_income: float
+    total_gross_income: float = 0
+    total_customer_discounts: float = 0
+    total_app_deductions: float = 0
+    total_net_income: float = 0
     total_expense: float
     result: float
+    gross_result: float = 0
+    net_result: float = 0
     transaction_count: int
     by_origin: list[FinanceOriginSummaryOut]
     by_category: list[FinanceDimensionSummaryOut]
     by_cost_center: list[FinanceDimensionSummaryOut]
     by_channel: list[FinanceDimensionSummaryOut]
+    sales_by_day: list[dict]
 
 
 class FinanceOverviewOut(BaseModel):

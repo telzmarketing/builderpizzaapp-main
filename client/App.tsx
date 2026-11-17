@@ -12,7 +12,6 @@ import { installVisibleTextEncodingRepair } from "./lib/visibleTextEncoding";
 import { PlatformSurfaceProvider, usePlatformSurface } from "./context/PlatformSurfaceContext";
 import MotoboyPwaBoundary from "./components/MotoboyPwaBoundary";
 import PwaInstallButton from "./components/PwaInstallButton";
-import { KDS_PWA_KEYS } from "./lib/motoboyPwa";
 import {
   isPlatformSupportPanelPathAllowed,
   readPlatformSupportSession,
@@ -470,6 +469,7 @@ const AdminExitPopup = lazy(() => import("./pages/admin/AdminExitPopup"));
 const AdminUsuarios = lazy(() => import("./pages/admin/AdminUsuarios"));
 const AdminBI = lazy(() => import("./pages/admin/bi/BiDashboard"));
 const AdminBIMobile = lazy(() => import("./pages/admin/bi/BiMobile"));
+const AdminApps = lazy(() => import("./pages/admin/AdminApps"));
 const ExitPopup = lazy(() => import("./components/ExitPopup"));
 const MarketingDashboard = lazy(() => import("./pages/admin/marketing/MarketingDashboard"));
 const MarketingIntelligence = lazy(() => import("./pages/admin/marketing/MarketingIntelligence"));
@@ -496,6 +496,7 @@ const GestaoInventory = lazy(() => import("./pages/admin/gestao/GestaoInventory"
 const GestaoCmv = lazy(() => import("./pages/admin/gestao/GestaoCmv"));
 const GestaoFinance = lazy(() => import("./pages/admin/gestao/GestaoFinance"));
 const GestaoFiscal = lazy(() => import("./pages/admin/gestao/GestaoFiscal"));
+const OperationsAppsFinance = lazy(() => import("./pages/admin/OperationsAppsFinance"));
 const AdminLogistica = lazy(() => import("./pages/admin/logistica/AdminLogistica"));
 const AdminSalao = lazy(() => import("./pages/admin/salao/AdminSalao"));
 const AdminSalaoPage = lazy(() => import("./pages/admin/salao/AdminSalaoPage"));
@@ -506,6 +507,8 @@ const Preparation = lazy(() => import("./pages/admin/Preparation"));
 const OrderBoardTv = lazy(() => import("./pages/OrderBoardTv"));
 const Campanha = lazy(() => import("./pages/Campanha"));
 const PromocaoLanding = lazy(() => import("./pages/PromocaoLanding"));
+const Promocoes = lazy(() => import("./pages/Promocoes"));
+const Combo = lazy(() => import("./pages/Combo"));
 const Fidelidade = lazy(() => import("./pages/Fidelidade"));
 const Cupons = lazy(() => import("./pages/Cupons"));
 const Pedidos = lazy(() => import("./pages/Pedidos"));
@@ -546,8 +549,6 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
           <Toaster />
           <BrowserRouter>
             <MotoboyPwaBoundary />
-            <PwaInstallButton only={["storefront"]} delayMs={60000} inline />
-            <PwaInstallButton only={KDS_PWA_KEYS} hideOnKds />
             <PwaInstallButton only={["print-pedido"]} mobileOnly variant="banner" />
             {!platformSurface && !orderBoardSurface && <MotoboyNativeEntry />}
             {!platformSurface && !orderBoardSurface && <RouteDataLoader />}
@@ -568,6 +569,8 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/cardapio" element={<ExperienceRoute salao={<SalaoHome />} delivery={<Cardapio />} />} />
                 <Route path="/campanha/:slug" element={<Campanha />} />
                 <Route path="/promocao/:slug" element={<PromocaoLanding />} />
+                <Route path="/combo/:slug" element={<Combo />} />
+                <Route path="/promocoes" element={<Promocoes />} />
               </Route>
               <Route path="/cart" element={<Cart />} />
               <Route path="/checkout" element={<Checkout />} />
@@ -671,6 +674,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route element={<AdminLayout />}>
                 <Route path="/painel/kds/analitico" element={<KdsAnalytics />} />
                 <Route path="/painel/kds/visao-producao" element={<ProductionVision />} />
+                <Route path="/painel/kds/configuracoes" element={<ProductionVision />} />
                 <Route path="/painel" element={<AdminDashboard />} />
                 <Route path="/painel/gestor" element={<AdminGestor />} />
                 <Route path="/painel/whatsapp-gateway" element={<WhatsAppGateway />} />
@@ -686,6 +690,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/frete" element={<AdminFrete />} />
                 <Route path="/painel/funcionamento" element={<StoreOperation />} />
                 <Route path="/painel/campanhas" element={<AdminCampanhas />} />
+                <Route path="/painel/promocoes" element={<AdminCampanhas />} />
                 <Route path="/painel/trafego-pago" element={<AdminPaidTraffic />} />
                 <Route path="/painel/chatbot"    element={<AdminChatbot />} />
                 <Route path="/painel/aparencia" element={<AdminAparencia />} />
@@ -700,6 +705,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/som" element={<AdminConfiguracoes />} />
                 <Route path="/painel/identificacao-parceiros" element={<AdminConfiguracoes />} />
                 <Route path="/painel/configuracoes/ia-central" element={<AdminConfiguracoes />} />
+                <Route path="/painel/apps" element={<AdminApps />} />
                 <Route path="/painel/configuracoes" element={<AdminConfiguracoes />} />
                 <Route path="/painel/cupons" element={<MarketingCupons />} />
                 <Route path="/painel/clientes" element={<AdminClientes />} />
@@ -735,6 +741,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/gestao/fiscal" element={<GestaoFiscal />} />
                 {/* ── Logistics routes ── */}
                 <Route path="/painel/logistica" element={<AdminLogistica />} />
+                <Route path="/painel/operacoes/apps-finance" element={<OperationsAppsFinance />} />
                 {/* Legacy aliases kept so saved links open the canonical logistics screen. */}
                 <Route path="/painel/gestao/logistica" element={<Navigate to="/painel/logistica" replace />} />
                 <Route path="/painel//painel/gestao/logistica" element={<Navigate to="/painel/logistica" replace />} />

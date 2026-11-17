@@ -48,6 +48,8 @@ def update_home_config(
         config.selected_product_ids = json.dumps(body.selected_product_ids)
     if body.show_promotions is not None:
         config.show_promotions = body.show_promotions
+    if body.show_promotions_link is not None:
+        config.show_promotions_link = body.show_promotions_link
     db.commit()
     db.refresh(config)
     return config

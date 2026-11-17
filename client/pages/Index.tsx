@@ -12,6 +12,7 @@ import CategorySeal from "@/components/CategorySeal";
 import BestSellerSeal from "@/components/BestSellerSeal";
 import { getProductCardAction } from "@/lib/productCardAction";
 import { trackEvent } from "@/lib/tracking";
+import PwaInstallButton from "@/components/PwaInstallButton";
 
 const PIZZA_FALLBACKS = ["🍕", "🫓", "🧀", "🍅", "🌶️", "🍖", "🍄", "🫒", "🔥", "🥩", "🌿", "🫑"];
 
@@ -37,7 +38,8 @@ export default function Home() {
     selectedCategories: string[];
     selectedProductIds: string[];
     showPromotions: boolean;
-  }>({ mode: "all", selectedCategories: [], selectedProductIds: [], showPromotions: true });
+    showPromotionsLink: boolean;
+  }>({ mode: "all", selectedCategories: [], selectedProductIds: [], showPromotions: true, showPromotionsLink: true });
 
   useEffect(() => {
     homeCatalogApi.get().then((config) => {
@@ -47,6 +49,7 @@ export default function Home() {
           selectedCategories: JSON.parse(config.selected_categories || "[]"),
           selectedProductIds: JSON.parse(config.selected_product_ids || "[]"),
           showPromotions: config.show_promotions !== false,
+          showPromotionsLink: config.show_promotions_link !== false,
         });
       } catch { /* use defaults on parse error */ }
     }).catch(() => { /* use defaults if backend unavailable */ });
@@ -312,13 +315,15 @@ export default function Home() {
             <nav className="flex-1 px-4 py-6 space-y-1">
               {[
                 { icon: <UtensilsCrossed size={20} />, label: "Cardápio", path: "/cardapio" },
+                { icon: <Tag size={20} />, label: "Promoções", path: "/promocoes" },
+                ...(homeConfig.showPromotionsLink ? [{ icon: <Tag size={20} />, label: "Promoções", path: "/promocoes" }] : []),
                 { icon: <ShoppingCart size={20} />, label: "Carrinho", path: "/cart" },
                 { icon: <Bell size={20} />, label: "Meus Pedidos", path: "/pedidos" },
                 { icon: <Tag size={20} />, label: "Cupons", path: "/cupons" },
                 { icon: <Star size={20} />, label: "Avaliações de clientes", path: "/avaliacoes" },
                 ...(loyaltySettings.enabled ? [{ icon: <Heart size={20} />, label: "Fidelidade", path: "/fidelidade" }] : []),
                 { icon: <User size={20} />, label: "Minha Conta", path: "/conta" },
-              ].map(({ icon, label, path }) => (
+              ].filter((item, index, items) => items.findIndex((candidate) => candidate.path === item.path) === index).map(({ icon, label, path }) => (
                 <button
                   key={path}
                   onClick={() => { setMenuOpen(false); navigate(path); }}
@@ -328,6 +333,9 @@ export default function Home() {
                   <span className="font-medium">{label}</span>
                 </button>
               ))}
+              <div className="text-gold">
+                <PwaInstallButton only={["storefront"]} inline menuItem />
+              </div>
             </nav>
           </div>
         </div>
@@ -469,6 +477,28 @@ export default function Home() {
             </button>
           ))}
         </div>
+
+        {homeConfig.showPromotions && (
+          <button
+            type="button"
+            onClick={() => navigate("/promocoes")}
+            className="mb-5 inline-flex items-center gap-2 rounded-full border border-gold/50 bg-gold/10 px-4 py-2 text-sm font-semibold text-gold transition-colors hover:bg-gold/20"
+          >
+            <Tag size={16} />
+            Promoções
+          </button>
+        )}
+
+        {homeConfig.showPromotionsLink && (
+          <button
+            onClick={() => navigate("/promocoes")}
+            className="w-full mb-5 rounded-xl border border-gold/50 bg-gold/10 px-4 py-3 text-left text-gold font-semibold hover:bg-gold/20 transition-colors flex items-center gap-2"
+          >
+            <Tag size={18} />
+            <span>Promoções</span>
+            <ChevronRight size={18} className="ml-auto" />
+          </button>
+        )}
 
         {isCatalogLoading && <CatalogSkeleton />}
 

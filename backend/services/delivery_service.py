@@ -1021,6 +1021,19 @@ class DeliveryService:
         from backend.services.kds_production_service import ensure_kds_units_ready
         order = self._get_order(delivery.order_id)
         ensure_kds_units_ready(self._db, order.tenant_id, order.id)
+        # A delivery may only leave the assigned queue after the canonical KDS
+        # audit has completed.  Legacy in-route deliveries remain replayable.
+        if delivery.status == DeliveryStatus.assigned:
+            from backend.models.kds_audit import DeliveryAudit
+            audit = self._db.query(DeliveryAudit).filter(
+                DeliveryAudit.tenant_id == delivery.tenant_id,
+                DeliveryAudit.delivery_id == delivery.id,
+            ).one_or_none()
+            if audit is None or audit.status != "completed":
+                raise DomainError(
+                    "A auditoria da expedicao ainda nao foi concluida.",
+                    code="DeliveryAuditRequired",
+                )
         old_status = delivery.status.value
         now = datetime.now(timezone.utc)
         if old_status == "assigned":
@@ -1179,6 +1192,11 @@ class DeliveryService:
             return owned
         if owned.status not in {DeliveryStatus.on_the_way, DeliveryStatus.delivered}:
             raise DomainError("Inicie a entrega antes de marcala como entregue.", code="DeliveryNotInRoute")
+        if not owned.confirmed_by_code_at:
+            raise DomainError(
+                "Informe e valide o codigo do cliente antes de finalizar a entrega.",
+                code="DeliveryConfirmationCodeRequired",
+            )
         order = self._get_order(owned.order_id)
         payment = order.payment
         pending_pay_on_delivery = bool(
@@ -1370,7 +1388,9 @@ class DeliveryService:
 
     def confirm_delivery_code(self, delivery_id: str, code: str) -> Delivery:
         """Driver submits 4-digit code to confirm delivery completion."""
-        delivery = self._get_delivery(delivery_id)
+        # Serialize retries on the canonical delivery row so a timeout or
+        # double tap cannot create two confirmation events.
+        delivery = self._get_delivery_for_completion(delivery_id)
         if delivery.confirmation_code != code:
             raise DomainError("Codigo de confirmacao invalido.", code="InvalidCode")
         if delivery.confirmed_by_code_at:

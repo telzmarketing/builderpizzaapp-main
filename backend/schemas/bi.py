@@ -31,6 +31,8 @@ class BITimeSeriesPointOut(BaseModel):
     label: str
     date: Optional[str] = None
     revenue: float = 0
+    gross_revenue: float = 0
+    app_deductions: float = 0
     orders: int = 0
     average_ticket: float = 0
 
@@ -213,6 +215,8 @@ class BIMobileTotals(BaseModel):
     completed_orders: int = 0
     active_orders: int = 0
     gross_sales: float = 0
+    app_deductions: float = 0
+    net_revenue: float = 0
     discounts: float = 0
     forecast_revenue: float = 0
     daily_revenue: float = 0
@@ -226,6 +230,8 @@ class BIMobileSalesPoint(BaseModel):
     date: str
     previous_date: str | None = None
     revenue: float = 0
+    gross_sales: float = 0
+    app_deductions: float = 0
     orders: int = 0
     pizzas: int = 0
     previous_revenue: float | None = None
