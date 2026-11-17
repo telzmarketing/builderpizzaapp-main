@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 env:
-  TELZ_ALEMBIC_TARGET: 20261115_delivery_daily_allowances
+  TELZ_ALEMBIC_TARGET: 20261117_combo_landing
   TELZ_PUBLIC_HEALTH_URL: https://app.telz.com.br/health
 
 jobs:

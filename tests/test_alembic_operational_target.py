@@ -15,7 +15,7 @@ EXPECTED_TARGET_FILES = {
     "docs/UPDATE_TELZ_VPS.md",
 }
 REVISION_PATTERN = re.compile(r"202\d{5}_[a-z0-9_]+")
-EXPECTED_OPERATIONAL_HEAD = "20261115_delivery_daily_allowances"
+EXPECTED_OPERATIONAL_HEAD = "20261117_combo_landing"
 
 
 def _migration_heads() -> set[str]:

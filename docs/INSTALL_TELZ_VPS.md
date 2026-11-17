@@ -49,7 +49,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Defina explicitamente:
 
 ```env
-ALEMBIC_TARGET=20261115_delivery_daily_allowances
+ALEMBIC_TARGET=20261117_combo_landing
 INSTALL_SSL=false
 ```
 
