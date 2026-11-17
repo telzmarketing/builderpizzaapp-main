@@ -380,9 +380,11 @@ class KdsProductionService:
         # Keep the operator's accepted work in this projection.  The stock
         # gate changes an accepted task from ``queued`` to ``checking_stock``;
         # dropping it here makes the Pizzaiolo lose the task and its progress.
+        # Oven work is different: ``start-oven`` hands the unit to Expedição,
+        # which owns removal/checking through the dispatch projection.
         active_states = {
             "checking_stock", "aguardando_analise", "atendimento",
-            "assembling", "assembled", "baking", "checking",
+            "assembling", "assembled",
         }
         rows = [
             row for row in self._current_queue_attempts()
@@ -402,7 +404,15 @@ class KdsProductionService:
         # states available to the operational projection without re-queuing
         # the accepted unit.
         queued_states = {"queued", "aguardando_analise", "atendimento", "assembling", "assembled", "baking", "checking"}
-        rows = [row for row in self._current_queue_attempts() if row.state in queued_states and row.unit.station_id in station_scope(station_id)]
+        rows = [
+            row for row in self._current_queue_attempts()
+            if row.state in queued_states
+            and row.unit.station_id in station_scope(station_id)
+            and not (
+                (station_id in PIZZA_STATION_IDS or station_id == "pizza")
+                and row.state in {"baking", "checking"}
+            )
+        ]
         rows.sort(key=lambda row: row.created_at)
         drink_item_ids = self._drink_item_ids([r.unit.order_item_id for r in rows])
         return [self._payload(r) for r in rows if r.unit.order_item_id not in drink_item_ids]
