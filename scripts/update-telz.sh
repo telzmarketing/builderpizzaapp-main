@@ -137,7 +137,7 @@ validate_operational_config
 BRANCH="${BRANCH:-main}"
 RUN_TESTS="${RUN_TESTS:-false}"
 EXPECTED_COMMIT="${TELZ_EXPECTED_COMMIT:-}"
-ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261114_upsell_subcategory_triggers}"
+ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261115_delivery_daily_allowances}"
 FORWARD_ONLY_CUTOVER="${TELZ_FORWARD_ONLY_CUTOVER:-false}"
 FORWARD_ONLY_CUTOVER_CONFIRM="${TELZ_FORWARD_ONLY_CUTOVER_CONFIRM:-}"
 EXPLICIT_RECOVERY="${TELZ_EXPLICIT_RECOVERY:-false}"
@@ -656,7 +656,9 @@ schema_is_rollback_compatible() {
     "20261113_customer_reviews:20261114_product_landing_pages" | \
     "20261114_product_landing_pages:20261113_customer_reviews" | \
     "20261114_product_landing_pages:20261114_upsell_subcategory_triggers" | \
-    "20261114_upsell_subcategory_triggers:20261114_product_landing_pages")
+    "20261114_upsell_subcategory_triggers:20261114_product_landing_pages" | \
+    "20261114_product_landing_pages:20261115_delivery_daily_allowances" | \
+    "20261115_delivery_daily_allowances:20261114_product_landing_pages")
       return 0
       ;;
     *)

@@ -25,7 +25,7 @@ from backend.models.fiscal import FiscalDocument
 from backend.models.cmv import OrderCmvSnapshot
 from backend.models.order import Order, OrderStatus
 from backend.models.payment import Payment, PaymentStatus
-from backend.models.delivery import DeliveryEarning, DeliveryPerson
+from backend.models.delivery import DeliveryDailyAllowance, DeliveryEarning, DeliveryPerson
 from backend.schemas.finance import (
     FinanceAccountIn, FinanceBudgetIn, FinanceCategoryIn, FinanceCounterpartyIn,
     FinanceBankMatchIn, FinanceBankReconciliationReasonIn, FinanceBankStatementImportIn, FinanceObligationFromFiscalIn,
@@ -148,29 +148,17 @@ class FinanceService:
         }
 
     def delivery_finance_overview(self) -> dict:
-        rows = (
-            self._db.query(
-                DeliveryEarning.delivery_person_id,
-                DeliveryPerson.name,
-                DeliveryEarning.status,
-                func.count(DeliveryEarning.id),
-                func.coalesce(func.sum(DeliveryEarning.amount), 0),
-            )
-            .join(DeliveryPerson, DeliveryPerson.id == DeliveryEarning.delivery_person_id)
-            .filter(DeliveryEarning.tenant_id == self._tenant_id)
-            .group_by(DeliveryEarning.delivery_person_id, DeliveryPerson.name, DeliveryEarning.status)
-            .order_by(DeliveryPerson.name, DeliveryEarning.status)
-            .all()
-        )
+        rows = self.delivery_earnings()
+        grouped = {}
+        for row in rows:
+            key = (row["delivery_person_id"], row["delivery_person_name"], row["status"])
+            item = grouped.setdefault(key, {"count": 0, "amount": 0.0})
+            item["count"] += 1
+            item["amount"] += float(row["amount"] or 0)
         summaries = [
-            {
-                "delivery_person_id": person_id,
-                "delivery_person_name": name,
-                "status": status,
-                "count": int(count or 0),
-                "amount": round(float(amount or 0), 2),
-            }
-            for person_id, name, status, count, amount in rows
+            {"delivery_person_id": person_id, "delivery_person_name": name, "status": status,
+             "count": item["count"], "amount": round(item["amount"], 2)}
+            for (person_id, name, status), item in sorted(grouped.items(), key=lambda entry: (entry[0][1], entry[0][2]))
         ]
         by_status = {status: round(sum(item["amount"] for item in summaries if item["status"] == status), 2) for status in ("pending", "paid", "cancelled")}
         return {
@@ -204,14 +192,14 @@ class FinanceService:
         if status:
             query = query.filter(DeliveryEarning.status == status)
         rows = query.order_by(DeliveryEarning.period_date.desc(), DeliveryEarning.created_at.desc()).limit(500).all()
-        return [
+        result = [
             {
                 "id": row.id,
                 "delivery_id": row.delivery_id,
                 "delivery_person_id": row.delivery_person_id,
                 "delivery_person_name": row.delivery_person.name,
                 "amount": round(float(row.amount or 0), 2),
-                "earning_type": row.earning_type,
+                "earning_type": "delivery",
                 "status": row.status,
                 "period_date": row.period_date,
                 "paid_at": row.paid_at,
@@ -220,6 +208,33 @@ class FinanceService:
             }
             for row in rows
         ]
+        allowance_query = (
+            self._db.query(DeliveryDailyAllowance)
+            .join(DeliveryPerson, DeliveryPerson.id == DeliveryDailyAllowance.delivery_person_id)
+            .options(joinedload(DeliveryDailyAllowance.delivery_person))
+            .filter(DeliveryDailyAllowance.tenant_id == self._tenant_id)
+        )
+        if date_from:
+            allowance_query = allowance_query.filter(DeliveryDailyAllowance.period_date >= date_from)
+        if date_to:
+            allowance_query = allowance_query.filter(DeliveryDailyAllowance.period_date <= date_to)
+        if status:
+            allowance_query = allowance_query.filter(DeliveryDailyAllowance.status == status)
+        allowances = allowance_query.order_by(DeliveryDailyAllowance.period_date.desc(), DeliveryDailyAllowance.created_at.desc()).limit(500).all()
+        result.extend({
+            "id": row.id,
+            "delivery_id": None,
+            "delivery_person_id": row.delivery_person_id,
+            "delivery_person_name": row.delivery_person.name,
+            "amount": round(float(row.amount or 0), 2),
+            "earning_type": "daily_allowance",
+            "status": row.status,
+            "period_date": row.period_date,
+            "paid_at": row.paid_at,
+            "paid_by": row.paid_by,
+            "notes": row.notes,
+        } for row in allowances)
+        return result
 
     def bi_overview(self, date_from: date | None = None, date_to: date | None = None) -> dict:
         today = date.today()

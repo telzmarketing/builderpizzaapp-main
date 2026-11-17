@@ -19,25 +19,29 @@ def upgrade() -> None:
         "daily_allowance_amount FLOAT"
     )
     op.execute(
-        "ALTER TABLE delivery_earnings ADD COLUMN IF NOT EXISTS "
-        "earning_type VARCHAR(30) NOT NULL DEFAULT 'delivery'"
-    )
-    op.execute("ALTER TABLE delivery_earnings ALTER COLUMN delivery_id DROP NOT NULL")
-    op.execute(
         "UPDATE logistics_settings SET daily_allowance_amount = 50.0 "
         "WHERE daily_allowance_amount IS NULL"
     )
     op.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_delivery_earnings_daily_allowance "
-        "ON delivery_earnings (tenant_id, delivery_person_id, period_date, earning_type) "
-        "WHERE earning_type = 'daily_allowance'"
+        "CREATE TABLE IF NOT EXISTS delivery_daily_allowances ("
+        "id VARCHAR PRIMARY KEY, "
+        "tenant_id VARCHAR NOT NULL REFERENCES tenants(id), "
+        "delivery_person_id VARCHAR NOT NULL REFERENCES delivery_persons(id) ON DELETE CASCADE, "
+        "amount FLOAT NOT NULL DEFAULT 0.0, "
+        "status VARCHAR(20) NOT NULL DEFAULT 'pending', "
+        "period_date DATE NOT NULL, "
+        "paid_at TIMESTAMPTZ, paid_by VARCHAR(200), notes TEXT, "
+        "created_at TIMESTAMPTZ DEFAULT NOW()"
+        ")"
+    )
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_delivery_daily_allowances_tenant_person_date "
+        "ON delivery_daily_allowances (tenant_id, delivery_person_id, period_date)"
     )
 
 
 def downgrade() -> None:
-    op.execute("DROP INDEX IF EXISTS uq_delivery_earnings_daily_allowance")
-    op.execute("DELETE FROM delivery_earnings WHERE earning_type = 'daily_allowance'")
-    op.execute("ALTER TABLE delivery_earnings ALTER COLUMN delivery_id SET NOT NULL")
-    op.execute("ALTER TABLE delivery_earnings DROP COLUMN IF EXISTS earning_type")
+    op.execute("DROP INDEX IF EXISTS uq_delivery_daily_allowances_tenant_person_date")
+    op.execute("DROP TABLE IF EXISTS delivery_daily_allowances")
     op.execute("ALTER TABLE delivery_persons DROP COLUMN IF EXISTS daily_allowance_amount")
     op.execute("ALTER TABLE logistics_settings DROP COLUMN IF EXISTS daily_allowance_amount")

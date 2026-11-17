@@ -8,6 +8,7 @@ from backend.main import app  # noqa: F401 - register all ORM foreign-key target
 from backend.database import Base
 from backend.models.delivery import (
     Delivery,
+    DeliveryDailyAllowance,
     DeliveryEarning,
     DeliveryPerson,
     DeliveryPersonStatus,
@@ -25,6 +26,7 @@ def _session(monkeypatch):
     Base.metadata.create_all(engine, tables=[
         Tenant.__table__, Order.__table__, DeliveryPerson.__table__, Delivery.__table__,
         LogisticsSettings.__table__, DeliveryEarning.__table__,
+        DeliveryDailyAllowance.__table__,
     ])
     return engine, sessionmaker(bind=engine)()
 
@@ -41,10 +43,9 @@ def test_daily_allowance_is_idempotent_per_tenant_driver_and_day(monkeypatch):
 
     assert service.ensure_daily_allowances(period_date=date(2026, 11, 15)) == 1
     assert service.ensure_daily_allowances(period_date=date(2026, 11, 15)) == 0
-    rows = db.query(DeliveryEarning).all()
+    rows = db.query(DeliveryDailyAllowance).all()
     assert len(rows) == 1
-    assert rows[0].earning_type == "daily_allowance"
-    assert rows[0].delivery_id is None
+    assert rows[0].amount == 50
     engine.dispose()
 
 
@@ -57,7 +58,7 @@ def test_driver_override_wins_over_logistics_default(monkeypatch):
     ])
     db.commit()
     DeliveryService(db, tenant_id="tenant-a").ensure_daily_allowances(period_date=date(2026, 11, 15))
-    assert db.query(DeliveryEarning).one().amount == 75.5
+    assert db.query(DeliveryDailyAllowance).one().amount == 75.5
     engine.dispose()
 
 

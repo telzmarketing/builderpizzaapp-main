@@ -33,7 +33,7 @@ from backend.core.tenant_ownership import operations_enforcement_enabled
 from backend.core.tenant_context import TenantContext, TenantContextMismatch, TenantContextMissing
 from backend.core.wave7_tenant_orm import wave7_orm_enabled
 from backend.models.delivery import (
-    Delivery, DeliveryEvent, DeliveryEarning, DeliveryPerson, DeliveryStatus,
+    Delivery, DeliveryEvent, DeliveryEarning, DeliveryDailyAllowance, DeliveryPerson, DeliveryStatus,
     DeliveryPersonStatus, LogisticsSettings, GeocodeCache, DeliveryItemConfirmation,
 )
 from backend.models.label import LabelVolume, LabelVersion
@@ -81,7 +81,7 @@ def _collapse_earnings_by_delivery(earnings):
     priority = {"cancelled": 0, "pending": 1, "paid": 2}
     collapsed = {}
     for earning in earnings:
-        key = earning.delivery_id if earning.earning_type == "delivery" else earning.id
+        key = earning.delivery_id
         current = collapsed.get(key)
         if current is None or priority.get(earning.status, -1) > priority.get(current.status, -1):
             collapsed[key] = earning
@@ -285,7 +285,6 @@ class DeliveryService:
                 amount=rate,
                 status="pending",
                 period_date=self._business_date(),
-                earning_type="delivery",
             ))
 
     def ensure_daily_allowances(self, *, person_id: str | None = None, period_date: date | None = None) -> int:
@@ -302,22 +301,19 @@ class DeliveryService:
         default_amount = float(getattr(settings, "daily_allowance_amount", 50.0) if settings else 50.0)
         created = 0
         for person in query.all():
-            existing = self._scope(self._db.query(DeliveryEarning), DeliveryEarning).filter(
-                DeliveryEarning.delivery_person_id == person.id,
-                DeliveryEarning.period_date == target_date,
-                DeliveryEarning.earning_type == "daily_allowance",
+            existing = self._scope(self._db.query(DeliveryDailyAllowance), DeliveryDailyAllowance).filter(
+                DeliveryDailyAllowance.delivery_person_id == person.id,
+                DeliveryDailyAllowance.period_date == target_date,
             ).first()
             if existing:
                 continue
-            self._db.add(DeliveryEarning(
+            self._db.add(DeliveryDailyAllowance(
                 id=str(uuid.uuid4()),
                 tenant_id=self._tenant_id if self._tenant_enabled else person.tenant_id,
-                delivery_id=None,
                 delivery_person_id=person.id,
                 amount=round(default_amount if person.daily_allowance_amount is None else float(person.daily_allowance_amount), 2),
                 status="pending",
                 period_date=target_date,
-                earning_type="daily_allowance",
                 notes="Diaria de motoboy",
             ))
             created += 1
@@ -1581,9 +1577,20 @@ class DeliveryService:
             q = q.filter(DeliveryEarning.period_date <= period_to)
 
         earnings = _collapse_earnings_by_delivery(q.order_by(DeliveryEarning.created_at.desc()).all())
+        allowance_query = (
+            self._scope(self._db.query(DeliveryDailyAllowance), DeliveryDailyAllowance)
+            .options(joinedload(DeliveryDailyAllowance.delivery_person))
+        )
+        if person_id:
+            allowance_query = allowance_query.filter(DeliveryDailyAllowance.delivery_person_id == person_id)
+        if period_from:
+            allowance_query = allowance_query.filter(DeliveryDailyAllowance.period_date >= period_from)
+        if period_to:
+            allowance_query = allowance_query.filter(DeliveryDailyAllowance.period_date <= period_to)
+        allowances = allowance_query.order_by(DeliveryDailyAllowance.created_at.desc()).all()
         if status:
             earnings = [e for e in earnings if e.status == status]
-        return [
+        result = [
             {
                 "id": e.id,
                 "delivery_id": e.delivery_id,
@@ -1591,7 +1598,7 @@ class DeliveryService:
                 "person_name": e.delivery_person.name if e.delivery_person else None,
                 "person_phone": e.delivery_person.phone if e.delivery_person else None,
                 "amount": e.amount,
-                "earning_type": e.earning_type,
+                "earning_type": "delivery",
                 "status": e.status,
                 "period_date": str(e.period_date) if e.period_date else None,
                 "paid_at": e.paid_at.isoformat() if e.paid_at else None,
@@ -1601,6 +1608,22 @@ class DeliveryService:
             }
             for e in earnings
         ]
+        result.extend({
+            "id": a.id,
+            "delivery_id": None,
+            "delivery_person_id": a.delivery_person_id,
+            "person_name": a.delivery_person.name if a.delivery_person else None,
+            "person_phone": a.delivery_person.phone if a.delivery_person else None,
+            "amount": a.amount,
+            "earning_type": "daily_allowance",
+            "status": a.status,
+            "period_date": str(a.period_date) if a.period_date else None,
+            "paid_at": a.paid_at.isoformat() if a.paid_at else None,
+            "paid_by": a.paid_by,
+            "notes": a.notes,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        } for a in allowances)
+        return result
 
     def bulk_pay_earnings(self, earning_ids: list[str], paid_by: str = "admin") -> int:
         """Mark a list of earnings as paid. Returns count of earnings actually updated."""
@@ -1612,6 +1635,12 @@ class DeliveryService:
                 .filter(DeliveryEarning.id == eid, DeliveryEarning.status == "pending")
                 .first()
             )
+            if earning is None:
+                earning = (
+                    self._scope(self._db.query(DeliveryDailyAllowance), DeliveryDailyAllowance)
+                    .filter(DeliveryDailyAllowance.id == eid, DeliveryDailyAllowance.status == "pending")
+                    .first()
+                )
             if earning:
                 earning.status = "paid"
                 earning.paid_at = now

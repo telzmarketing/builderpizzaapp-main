@@ -193,10 +193,9 @@ class DeliveryEarning(Base):
 
     id                 = Column(String, primary_key=True)
     tenant_id          = Column(String, ForeignKey("tenants.id", name="fk_delivery_earnings_tenant_id_tenants"), nullable=False)
-    delivery_id        = Column(String, ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=True)
+    delivery_id        = Column(String, ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False)
     delivery_person_id = Column(String, ForeignKey("delivery_persons.id", ondelete="CASCADE"), nullable=False)
     amount             = Column(Float, default=0.0, nullable=False)
-    earning_type       = Column(String(30), default="delivery", nullable=False)  # delivery | daily_allowance
     status             = Column(String(20), default="pending", nullable=False)  # pending | paid | cancelled
     period_date        = Column(Date, nullable=False)
     paid_at            = Column(DateTime(timezone=True), nullable=True)
@@ -208,13 +207,32 @@ class DeliveryEarning(Base):
     delivery_person = relationship("DeliveryPerson")
     __table_args__ = (
         Index("uq_delivery_earnings_tenant_id_id", "tenant_id", "id", unique=True),
-        Index(
-            "uq_delivery_earnings_daily_allowance",
-            "tenant_id", "delivery_person_id", "period_date", "earning_type",
-            unique=True,
-            postgresql_where=text("earning_type = 'daily_allowance'"),
-            sqlite_where=text("earning_type = 'daily_allowance'"),
-        ),
+    )
+
+
+class DeliveryDailyAllowance(Base):
+    """Tenant-scoped daily allowance kept separate from delivery earnings.
+
+    Keeping this ledger separate preserves compatibility with older releases,
+    which require every DeliveryEarning to reference a delivery.
+    """
+    __tablename__ = "delivery_daily_allowances"
+
+    id                 = Column(String, primary_key=True)
+    tenant_id          = Column(String, ForeignKey("tenants.id", name="fk_delivery_daily_allowances_tenant_id_tenants"), nullable=False)
+    delivery_person_id = Column(String, ForeignKey("delivery_persons.id", ondelete="CASCADE"), nullable=False)
+    amount             = Column(Float, default=0.0, nullable=False)
+    status             = Column(String(20), default="pending", nullable=False)
+    period_date        = Column(Date, nullable=False)
+    paid_at            = Column(DateTime(timezone=True), nullable=True)
+    paid_by            = Column(String(200), nullable=True)
+    notes              = Column(Text, nullable=True)
+    created_at         = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    delivery_person = relationship("DeliveryPerson")
+    __table_args__ = (
+        Index("uq_delivery_daily_allowances_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_delivery_daily_allowances_tenant_person_date", "tenant_id", "delivery_person_id", "period_date", unique=True),
     )
 
 

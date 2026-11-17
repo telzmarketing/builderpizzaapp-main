@@ -88,7 +88,9 @@ schema_pair_is_compatible() {
     "20261113_customer_reviews:20261114_product_landing_pages" | \
     "20261114_product_landing_pages:20261113_customer_reviews" | \
     "20261114_product_landing_pages:20261114_upsell_subcategory_triggers" | \
-    "20261114_upsell_subcategory_triggers:20261114_product_landing_pages")
+    "20261114_upsell_subcategory_triggers:20261114_product_landing_pages" | \
+    "20261114_product_landing_pages:20261115_delivery_daily_allowances" | \
+    "20261115_delivery_daily_allowances:20261114_product_landing_pages")
       return 0
       ;;
     *)
