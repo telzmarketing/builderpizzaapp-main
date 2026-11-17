@@ -108,7 +108,7 @@ export default function OrderBoardSettingsPanel() {
 
         {settings && <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
           <label className="block text-sm text-parchment"><span className="mb-1.5 block font-medium">Nome da empresa no painel</span><input value={settings.company_name} maxLength={200} onChange={(event) => setSettings({ ...settings, company_name: event.target.value })} className={inputClass} /></label>
-          <label className="block text-sm text-parchment"><span className="mb-1.5 block font-medium">Logo da empresa</span><input value={settings.logo_url ?? ""} maxLength={500} onChange={(event) => setSettings({ ...settings, logo_url: event.target.value || null })} placeholder="/uploads/logo.png ou https://..." className={inputClass} /></label>
+          <label className="block text-sm text-parchment"><span className="mb-1.5 block font-medium">Logo da empresa</span><input value={settings.logo_url ?? ""} readOnly aria-readonly="true" placeholder="Herdado da Página Delivery" className={`${inputClass} cursor-not-allowed opacity-75`} /><span className="mt-1 block text-xs text-stone">O Painel TV usa automaticamente o logo da marca configurado em Página Delivery.</span></label>
           <NumberField label="Atualização" suffix="seg" min={3} max={60} value={settings.polling_interval_seconds} onChange={(value) => setSettings({ ...settings, polling_interval_seconds: value })} />
           <NumberField label="Máximo de pedidos" suffix="" min={10} max={200} value={settings.max_orders} onChange={(value) => setSettings({ ...settings, max_orders: value })} />
         </div>}

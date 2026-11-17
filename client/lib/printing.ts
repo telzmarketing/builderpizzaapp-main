@@ -80,7 +80,12 @@ function escapeText(value: unknown) {
 export function withReceiptBranding(settings: PrinterSettings, content: Record<string, unknown>): PrinterSettings {
   const brand = (content.brand || {}) as Record<string, unknown>;
   const identity = storeBranding(content);
-  return { ...settings, storeName: typeof brand.name === "string" && brand.name.trim() ? identity.name : settings.storeName, storeLogoUrl: identity.logo || undefined };
+  return {
+    ...settings,
+    storeName: typeof brand.name === "string" && brand.name.trim() ? identity.name : settings.storeName,
+    // An explicit receipt logo is intentionally independent from the store logo.
+    storeLogoUrl: settings.logoUrl?.trim() || identity.logo || undefined,
+  };
 }
 
 function storeHeader(settings: PrinterSettings) {
@@ -248,7 +253,7 @@ function baseCss() {
     .receipt-item{font-size:var(--receipt-item)}
     .receipt-total{font-size:var(--receipt-medium)}
     p[style*="font-size:13px"]{font-size:var(--receipt-medium)!important}
-    .receipt-logo{display:block;max-width:75%;max-height:24mm;width:auto;height:auto;object-fit:contain;margin:0 auto 3mm;filter:grayscale(1) contrast(1.6)}
+    .receipt-logo{display:block;max-width:75%;max-height:24mm;width:auto;height:auto;object-fit:contain;margin:0 auto 3mm;filter:none}
     .partner-origin{display:flex;align-items:center;justify-content:center;gap:2mm;font-weight:bold;text-align:center;margin:2mm 0}.partner-origin img{max-width:18mm;max-height:10mm;object-fit:contain;filter:grayscale(1) contrast(1.5)}
     .drinks{background:#eee;border:2px solid #000;padding:2mm;margin:3mm 0;break-inside:avoid}
     .dispatch-check{border-top:1px dashed #000;margin-top:3mm;padding-top:2mm;break-inside:avoid}

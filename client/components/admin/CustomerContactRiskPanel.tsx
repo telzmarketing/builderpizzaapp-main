@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, Ban, CheckCircle2, Clock, Loader2, MessageCircle, ShieldAlert } from "lucide-react";
-import { customersApi, type ApiCustomerContactRisk, type ApiCustomerContactRiskEvent, type ApiCustomerContactRiskOverridePayload } from "@/lib/api";
+import { ApiRequestError, customersApi, type ApiCustomerContactRisk, type ApiCustomerContactRiskEvent, type ApiCustomerContactRiskOverridePayload } from "@/lib/api";
 
 const labels = { low: "Baixo", attention: "Atenção", high: "Alto", blocked: "Bloqueado" } as const;
 const styles = {
@@ -18,6 +18,13 @@ function eventLabel(value: string) {
     contact_unblocked: "Desbloqueio administrativo", marketing_opt_out: "Descadastro de marketing",
   };
   return known[value] ?? value.replaceAll("_", " ");
+}
+
+function contactRiskError(error: unknown) {
+  if (error instanceof ApiRequestError && error.code === "CustomerNotFound") {
+    return "O cadastro do cliente existe, mas não há vínculo WhatsApp válido neste estabelecimento. Isso não significa que ele nunca interagiu com a loja.";
+  }
+  return error instanceof Error ? error.message : "Não foi possível carregar o rating de contato.";
 }
 
 export default function CustomerContactRiskPanel({ customerId }: { customerId: string }) {
@@ -39,7 +46,7 @@ export default function CustomerContactRiskPanel({ customerId }: { customerId: s
       ]);
       setRisk(nextRisk); setEvents(nextEvents); setScore(nextRisk.score);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível carregar o rating de contato.");
+      setError(contactRiskError(err));
     } finally { setLoading(false); }
   }, [customerId]);
 

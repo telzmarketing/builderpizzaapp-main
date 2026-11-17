@@ -31,7 +31,7 @@ describe("home catalog navigation", () => {
       { active: true, category: "Bebidas" },
     ];
     const categories = getHomeCatalogCategories(products, []);
-    expect(categories).toEqual([ALL_PRODUCTS_CATEGORY, PROMO_LABEL, "Bebidas", "Pizzas"]);
+    expect(categories).toEqual([ALL_PRODUCTS_CATEGORY, PROMO_LABEL, "Pizzas", "Bebidas"]);
     expect(products.filter((product) => productMatchesHomeCategory(product, ALL_PRODUCTS_CATEGORY)))
       .toHaveLength(3);
     expect(products.filter((product) => productMatchesHomeCategory(product, "pizzas")))
@@ -69,7 +69,7 @@ describe("home catalog navigation", () => {
       { active: true, category: null, subcategory: "Doces" },
       { active: true, category: "Pizzas", subcategory: " " },
     ];
-    expect(getHomeCatalogCategories(products, [])).toEqual(["Doces", "Pizzas"]);
+    expect(getHomeCatalogCategories(products, [])).toEqual(["Pizzas", "Doces"]);
     expect(productMatchesHomeCategory(products[0], "Doces")).toBe(true);
     expect(productMatchesHomeCategory(products[1], "Pizzas")).toBe(true);
   });

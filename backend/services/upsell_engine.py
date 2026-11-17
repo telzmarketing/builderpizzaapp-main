@@ -13,9 +13,11 @@ from datetime import datetime, timezone
 from typing import Sequence
 import uuid
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.models.upsell import Upsell, UpsellEvent, UpsellMetric, OrderUpsell
+from backend.models.product import Product
 from backend.schemas.upsell import UpsellCartItemIn, UpsellEventIn, UpsellOut, UpsellProductOut, UpsellProductSizeOut
 
 
@@ -93,10 +95,13 @@ def _serialize_upsell(row: Upsell) -> UpsellOut:
     )
 
 
-def _ensure_metrics(db: Session, upsell_id: str) -> UpsellMetric:
-    metric = db.query(UpsellMetric).filter(UpsellMetric.upsell_id == upsell_id).first()
+def _ensure_metrics(db: Session, upsell_id: str, tenant_id: str | None = None) -> UpsellMetric:
+    query = db.query(UpsellMetric).filter(UpsellMetric.upsell_id == upsell_id)
+    if tenant_id:
+        query = query.filter(UpsellMetric.tenant_id == tenant_id)
+    metric = query.first()
     if metric is None:
-        metric = UpsellMetric(id=str(uuid.uuid4()), upsell_id=upsell_id)
+        metric = UpsellMetric(id=str(uuid.uuid4()), tenant_id=tenant_id, upsell_id=upsell_id)
         db.add(metric)
         db.flush()
     return metric
@@ -115,8 +120,26 @@ def _weekday_allowed(weekday: int, allowed: str | None) -> bool:
 
 
 class UpsellEngine:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_id: str | None = None):
         self._db = db
+        self._tenant_id = tenant_id
+
+    class ValidationError(ValueError):
+        """Input references cannot be resolved inside the active tenant."""
+
+    def _product(self, product_id: str | None) -> Product | None:
+        if not product_id:
+            return None
+        query = self._db.query(Product).filter(Product.id == product_id)
+        if self._tenant_id:
+            query = query.filter(Product.tenant_id == self._tenant_id)
+        return query.first()
+
+    def _upsells(self):
+        query = self._db.query(Upsell)
+        if self._tenant_id:
+            query = query.filter(Upsell.tenant_id == self._tenant_id)
+        return query
 
     def get_eligible(
         self,
@@ -136,7 +159,7 @@ class UpsellEngine:
         cart_quantity = sum(item.quantity for item in cart_items)
 
         rows: Sequence[Upsell] = (
-            self._db.query(Upsell)
+            self._upsells()
             .filter(Upsell.active.is_(True))
             .order_by(Upsell.priority.desc(), Upsell.created_at.asc())
             .all()
@@ -204,33 +227,52 @@ class UpsellEngine:
 
     def list_upsells(self) -> list[UpsellOut]:
         rows = (
-            self._db.query(Upsell)
+            self._upsells()
             .order_by(Upsell.priority.desc(), Upsell.created_at.desc())
             .all()
         )
         return [_serialize_upsell(r) for r in rows]
 
     def get_upsell(self, upsell_id: str) -> UpsellOut | None:
-        row = self._db.query(Upsell).filter(Upsell.id == upsell_id).first()
+        row = self._upsells().filter(Upsell.id == upsell_id).first()
         if row is None:
             return None
         return _serialize_upsell(row)
 
     def create_upsell(self, data) -> UpsellOut:
+        product = self._product(data.product_id)
+        if product is None:
+            raise self.ValidationError("Produto ofertado nao encontrado neste estabelecimento.")
+        if not product.active:
+            raise self.ValidationError("O produto ofertado precisa estar ativo.")
+
+        trigger_product = self._product(data.trigger_product_id)
+        if data.trigger_product_id and trigger_product is None:
+            raise self.ValidationError("Produto gatilho nao encontrado neste estabelecimento.")
+
+        values = data.model_dump(exclude_none=False)
+        if self._tenant_id:
+            values["tenant_id"] = self._tenant_id
         row = Upsell(
             id=str(uuid.uuid4()),
-            **data.model_dump(exclude_none=False),
+            **values,
         )
         self._db.add(row)
-        # create metrics row eagerly
-        self._db.flush()
-        _ensure_metrics(self._db, row.id)
-        self._db.commit()
+        try:
+            # create metrics row eagerly
+            self._db.flush()
+            metric = _ensure_metrics(self._db, row.id, self._tenant_id)
+            if self._tenant_id:
+                metric.tenant_id = self._tenant_id
+            self._db.commit()
+        except IntegrityError as exc:
+            self._db.rollback()
+            raise self.ValidationError("Nao foi possivel criar o upsell com os dados informados.") from exc
         self._db.refresh(row)
         return _serialize_upsell(row)
 
     def update_upsell(self, upsell_id: str, data) -> UpsellOut | None:
-        row = self._db.query(Upsell).filter(Upsell.id == upsell_id).first()
+        row = self._upsells().filter(Upsell.id == upsell_id).first()
         if row is None:
             return None
         for field, value in data.model_dump(exclude_unset=True).items():
@@ -241,7 +283,7 @@ class UpsellEngine:
         return _serialize_upsell(row)
 
     def toggle_upsell(self, upsell_id: str) -> UpsellOut | None:
-        row = self._db.query(Upsell).filter(Upsell.id == upsell_id).first()
+        row = self._upsells().filter(Upsell.id == upsell_id).first()
         if row is None:
             return None
         row.active = not row.active
@@ -251,7 +293,7 @@ class UpsellEngine:
         return _serialize_upsell(row)
 
     def delete_upsell(self, upsell_id: str) -> bool:
-        row = self._db.query(Upsell).filter(Upsell.id == upsell_id).first()
+        row = self._upsells().filter(Upsell.id == upsell_id).first()
         if row is None:
             return False
         self._db.delete(row)
@@ -260,7 +302,7 @@ class UpsellEngine:
 
     def reorder(self, ordered_ids: list[str]) -> None:
         for idx, uid in enumerate(ordered_ids):
-            row = self._db.query(Upsell).filter(Upsell.id == uid).first()
+            row = self._upsells().filter(Upsell.id == uid).first()
             if row:
                 row.priority = len(ordered_ids) - idx
         self._db.commit()
@@ -270,6 +312,7 @@ class UpsellEngine:
     def log_event(self, data: UpsellEventIn) -> None:
         event = UpsellEvent(
             id=str(uuid.uuid4()),
+            tenant_id=self._tenant_id,
             upsell_id=data.upsell_id,
             order_id=data.order_id,
             session_id=data.session_id,
@@ -278,7 +321,7 @@ class UpsellEngine:
         )
         self._db.add(event)
 
-        metric = _ensure_metrics(self._db, data.upsell_id)
+        metric = _ensure_metrics(self._db, data.upsell_id, self._tenant_id)
         if data.event_type == "viewed":
             metric.views = (metric.views or 0) + 1
         elif data.event_type == "accepted":
@@ -292,7 +335,7 @@ class UpsellEngine:
     def metrics_summary(self):
         from backend.schemas.upsell import UpsellMetricsSummary, UpsellMetricsSummaryItem
         rows = (
-            self._db.query(Upsell)
+            self._upsells()
             .order_by(Upsell.priority.desc())
             .all()
         )

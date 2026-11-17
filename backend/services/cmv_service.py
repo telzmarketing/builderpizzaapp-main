@@ -38,7 +38,10 @@ class CmvService:
             self._db.query(Product)
             .filter(Product.tenant_id == self._tenant_id)
             .filter(Product.active == True)  # noqa: E712
-            .filter((Product.product_type == None) | (Product.product_type != "brinde"))  # noqa: E711
+            # A pizza without a recipe is still a catalog product and must be
+            # returned with status=missing_recipe. Only explicit bonus items
+            # are excluded from the CMV catalog.
+            .filter((Product.product_type == None) | (~Product.product_type.in_(["brinde", "bonus"])))  # noqa: E711
             .order_by(Product.name)
             .all()
         )

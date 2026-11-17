@@ -400,17 +400,22 @@ export default function CrmAgenteWhatsApp() {
     setError("");
     setLoading(true);
     try {
-      const [dash, rows] = await Promise.all([
+      const conversationRequest = agenteWhatsAppApi.listConversations({
+        status: filter === "all" ? undefined : filter,
+        search: search.trim() || undefined,
+        assigned_admin_id: agentFilter.trim() || undefined,
+        date_from: periodFrom || undefined,
+        date_to: periodTo || undefined,
+        limit: 120,
+      });
+      const [dashboardResult, conversationResult] = await Promise.allSettled([
         agenteWhatsAppApi.dashboard(),
-        agenteWhatsAppApi.listConversations({
-          status: filter === "all" ? undefined : filter,
-          search: search.trim() || undefined,
-          assigned_admin_id: agentFilter.trim() || undefined,
-          date_from: periodFrom || undefined,
-          date_to: periodTo || undefined,
-          limit: 120,
-        }),
+        conversationRequest,
       ]);
+      if (conversationResult.status === "rejected") {
+        throw conversationResult.reason;
+      }
+      const rows = conversationResult.value;
       const [liveMetrics, audioMetricsPayload, aiSettingsPayload, audioSettingsPayload, rolloutPayload, aiStatusPayload, channelPayload, gatewayPayload, internalAlertsPayload] = await Promise.all([
         agenteWhatsAppApi.operationalMetrics().catch(() => null),
         agenteWhatsAppApi.audioMetrics(7)
@@ -431,7 +436,11 @@ export default function CrmAgenteWhatsApp() {
         agenteWhatsAppApi.listInternalAlerts({ status: "active", limit: 30 }).catch(() => []),
       ]);
       if (revision !== controlRevision.current) return;
-      setDashboard(dash);
+      if (dashboardResult.status === "fulfilled") {
+        setDashboard(dashboardResult.value);
+      } else {
+        setError("Conversas carregadas. O painel de métricas está temporariamente indisponível.");
+      }
       setSessions(rows);
       setOperationalMetrics(liveMetrics);
       setAudioMetrics(audioMetricsPayload);
@@ -632,12 +641,20 @@ export default function CrmAgenteWhatsApp() {
         body: reply.trim(),
         raw_payload: { source: "crm_agente_whatsapp" },
       });
-      await agenteWhatsAppApi.processOutbox(10).catch(() => null);
+      let queueError = "";
+      try {
+        await agenteWhatsAppApi.processOutbox(10);
+      } catch (err) {
+        queueError = err instanceof Error
+          ? `Mensagem registrada, mas a fila de envio não pôde ser processada agora: ${err.message}`
+          : "Mensagem registrada, mas a fila de envio não pôde ser processada agora.";
+      }
       const outbox = await agenteWhatsAppApi.outboxMetrics().catch(() => null);
       if (outbox) setOutboxSummary(outbox);
       setReply("");
       setAiSuggestion("");
       await loadDetail(selected.id);
+      if (queueError) setError(queueError);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao registrar resposta.");
       await loadDetail(selected.id);
@@ -2947,6 +2964,11 @@ export default function CrmAgenteWhatsApp() {
                           </p>
                         ) : (
                           <p className="text-sm leading-relaxed text-stone">{message.message_type}</p>
+                        )}
+                        {outbound && message.error && (
+                          <p role="alert" className="mt-2 break-words text-xs text-red-300">
+                            {message.error}
+                          </p>
                         )}
                         {isAudio && (
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-stone">

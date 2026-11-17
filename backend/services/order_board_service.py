@@ -7,6 +7,8 @@ import json
 import secrets
 import string
 import uuid
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, contains_eager
 
 from backend.core.exceptions import DomainError
@@ -107,6 +109,37 @@ class OrderBoardService:
             self.db.flush()
         return tenant, profile
 
+    def _delivery_logo_url(self) -> str | None:
+        """Resolve the tenant logo from the canonical Delivery page branding."""
+        if self.context is None:
+            return None
+        try:
+            row = self.db.execute(
+                text("SELECT content FROM site_config WHERE id = :key"),
+                {"key": f"tenant:{self.tenant_id}:site-content"},
+            ).scalar()
+        except OperationalError:
+            # Older/test databases may not have Delivery branding yet.
+            self.db.rollback()
+            return None
+        if not row:
+            return None
+        try:
+            content = json.loads(row) if isinstance(row, str) else row
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(content, dict):
+            return None
+        brand = content.get("brand") if isinstance(content.get("brand"), dict) else {}
+        media = content.get("media") if isinstance(content.get("media"), dict) else {}
+        for value in (brand.get("logo"), brand.get("logoUrl"), media.get("logoUrl")):
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    def _resolved_logo_url(self, profile: TenantProfile | None) -> str | None:
+        return self._delivery_logo_url() or (profile.logo_url if profile else None)
+
     @staticmethod
     def serialize_device(row: OrderBoardDevice) -> dict:
         return {
@@ -127,7 +160,7 @@ class OrderBoardService:
         return self.serialize_settings(
             row,
             company_name=profile.trade_name if profile and profile.trade_name else tenant.name,
-            logo_url=profile.logo_url if profile else None,
+            logo_url=self._resolved_logo_url(profile),
         )
 
     def update_settings(self, body: OrderBoardSettingsIn) -> dict:
@@ -146,7 +179,7 @@ class OrderBoardService:
         return self.serialize_settings(
             row,
             company_name=profile.trade_name or tenant.name,
-            logo_url=profile.logo_url,
+            logo_url=self._resolved_logo_url(profile),
         )
 
     def list_devices(self) -> list[dict]:
@@ -370,13 +403,13 @@ class OrderBoardService:
         payload = {
             "tenant": {
                 "name": profile.trade_name if profile and profile.trade_name else tenant.name,
-                "logo_url": profile.logo_url if profile else None,
+                "logo_url": self._resolved_logo_url(profile),
                 "timezone": tenant.timezone,
             },
             "settings": self.serialize_settings(
                 settings,
                 company_name=profile.trade_name if profile and profile.trade_name else tenant.name,
-                logo_url=profile.logo_url if profile else None,
+                logo_url=self._resolved_logo_url(profile),
             ),
             "orders": serialized,
             "server_time": now,

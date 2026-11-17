@@ -1,5 +1,5 @@
 import type { ApiProductCategory } from "@/lib/api";
-import { sortCategoryNamesByCatalogOrder } from "@/lib/catalogOrdering";
+import { sortCategoryNamesByCatalogOrder, sortCommercialCategoryNames } from "@/lib/catalogOrdering";
 
 export const PROMO_LABEL = "Promoções";
 // A distinct key prevents a real category named "Todos" from becoming a catch-all.
@@ -152,9 +152,9 @@ export function getHomeCatalogCategories(
   const navigation: HomeCatalogCategory[] = [];
   if (hasUncategorized) navigation.push(ALL_PRODUCTS_CATEGORY);
   if (activeProducts.some((product) => product.promotion_applied)) navigation.push(PROMO_LABEL);
-  navigation.push(...sortCategoryNamesByCatalogOrder(
+  navigation.push(...sortCommercialCategoryNames(sortCategoryNamesByCatalogOrder(
     names,
     categories.filter((category) => !category.parent_id),
-  ));
+  )));
   return navigation;
 }

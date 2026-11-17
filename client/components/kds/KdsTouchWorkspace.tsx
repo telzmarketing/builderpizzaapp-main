@@ -270,7 +270,7 @@ export default function KdsTouchWorkspace(props: Props) {
   };
 
   return (
-    <div className="kds-touch-workspace w-full min-w-0 max-w-full space-y-3 overflow-x-auto overscroll-x-contain p-3 sm:p-4">
+    <div className="kds-touch-workspace flex w-full min-w-0 max-w-full flex-col space-y-3 overflow-hidden p-3 sm:p-4">
       {props.error && (
         <div
           role="alert"
@@ -285,20 +285,20 @@ export default function KdsTouchWorkspace(props: Props) {
           </button>
         </div>
       )}
-      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 bg-[#040e18] py-2 text-sm text-slate-300">
-        <p className="flex items-center gap-2">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#20374a] bg-[#081521]/95 px-3 py-2 text-sm text-slate-300 backdrop-blur">
+        <p className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
           <Users size={18} className="text-amber-400" />
           {presence
             ? [
                 presence.operator_name,
-                presence.station_id && `Estação: ${presence.station_id}`,
+                `Dispositivo: ${presence.station_id || props.station || "—"}`,
                 presenceLabels[presence.state],
               ]
                 .filter(Boolean)
                 .join(" · ")
             : "Conectando estação"}
         </p>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
           <button
             type="button"
             className={control}
@@ -335,9 +335,9 @@ export default function KdsTouchWorkspace(props: Props) {
           </button>
         </div>
       </div>
-      <div className="kds-touch-grid grid min-h-0 min-w-[960px] w-full grid-cols-[minmax(220px,24fr)_minmax(440px,52fr)_minmax(220px,24fr)] items-start gap-3">
+      <div className="kds-touch-grid grid min-h-0 min-w-0 w-full grid-cols-1 items-stretch gap-3 lg:h-[calc(100dvh-15rem)] lg:grid-cols-[minmax(220px,24fr)_minmax(440px,52fr)_minmax(220px,24fr)]">
         <section
-          className={`${panel} flex min-h-0 flex-col sticky top-3`}
+          className={`${panel} flex min-h-0 flex-col lg:h-full`}
           aria-label="Fila de pedidos"
         >
           <header className="flex items-center gap-3 border-b border-[#263f53] p-4">
@@ -352,7 +352,7 @@ export default function KdsTouchWorkspace(props: Props) {
               {queuedOrders.length}
             </span>
           </header>
-          <div className="kds-order-queue min-h-0 max-h-72 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 md:max-h-[calc(100dvh-260px)] md:min-h-40">
+          <div className="kds-order-queue min-h-0 max-h-72 flex-1 space-y-2 overflow-y-auto overscroll-contain p-2 md:max-h-[calc(100dvh-260px)] md:min-h-40 lg:max-h-none">
             {props.ordersLoading ? (
               <p
                 role="status"
@@ -374,7 +374,7 @@ export default function KdsTouchWorkspace(props: Props) {
                 type="button"
                 onClick={() => chooseOrder(candidate.id)}
                 aria-pressed={order?.id === candidate.id}
-                className={`relative min-h-12 w-full touch-manipulation overflow-hidden rounded-xl border p-4 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400 ${order?.id === candidate.id ? "border-amber-400 bg-amber-400/5" : "border-[#263f53] bg-[#07111c] hover:bg-[#102335]"}`}
+                className={`relative min-h-12 w-full touch-manipulation overflow-hidden rounded-xl border p-3 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400 ${order?.id === candidate.id ? "border-amber-400 bg-amber-400/5" : "border-[#263f53] bg-[#07111c] hover:bg-[#102335]"}`}
               >
                 <span
                   className={`absolute inset-y-0 left-0 w-1.5 ${candidate.status === "preparing" ? "bg-amber-400" : "bg-cyan-400"}`}
@@ -388,7 +388,7 @@ export default function KdsTouchWorkspace(props: Props) {
                     </span>
                   </span>
                 </span>
-                <span className="my-3 flex flex-wrap gap-2 text-xs">
+                <span className="my-2 flex flex-wrap gap-2 text-xs">
                   <span className="rounded-lg bg-[#1c3347] px-3 py-1 font-bold">
                     {channel(candidate)}
                   </span>
@@ -435,7 +435,7 @@ export default function KdsTouchWorkspace(props: Props) {
           </div>
         </section>
         <section
-          className={`${panel} flex min-h-0 flex-col border-amber-400 shadow-[0_0_24px_rgba(251,191,36,0.04)]`}
+          className={`${panel} flex min-h-0 flex-col border-amber-400 shadow-[0_0_24px_rgba(251,191,36,0.04)] lg:h-full`}
           aria-label="Pedido em preparo"
         >
           <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#263f53] bg-[#101a22] p-4">
@@ -469,7 +469,7 @@ export default function KdsTouchWorkspace(props: Props) {
               </div>
             )}
           </header>
-          <div className="kds-preparation-panel min-h-0 space-y-4 overflow-y-auto p-4">
+          <div className="kds-preparation-panel min-h-0 flex-1 space-y-3 overflow-y-auto p-3 overscroll-contain">
             {props.loading && !queue ? (
               <p className="flex min-h-64 items-center justify-center gap-2 text-slate-400">
                 <Loader2 className="animate-spin" />
@@ -591,7 +591,7 @@ export default function KdsTouchWorkspace(props: Props) {
                   <ProductVisual item={item} />
                   <div className="min-w-0 flex-1">
                     {ingredients.length > 0 ? (
-                      <ul className="mt-3 space-y-2">
+                      <ul className="mt-2 space-y-1">
                         {ingredients.map((ingredient, index) => (
                           <li
                             key={`${ingredient.inventory_item_id}-${index}`}
@@ -754,7 +754,7 @@ export default function KdsTouchWorkspace(props: Props) {
             )}
           </div>
         </section>
-        <aside className="kds-touch-aside grid min-w-0 gap-3">
+        <aside className="kds-touch-aside grid min-w-0 gap-3 overflow-y-auto overscroll-contain lg:h-full">
           <section className={panel}>
             <header className="flex items-center gap-3 border-b border-[#263f53] p-4">
               <ClipboardList size={30} className="shrink-0 text-slate-300" />

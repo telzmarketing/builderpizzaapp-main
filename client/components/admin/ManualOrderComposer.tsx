@@ -17,6 +17,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import { sortCommercialCategoryNames } from "@/lib/catalogOrdering";
 import Product from "@/pages/Product";
 import {
   ApiRequestError,
@@ -338,13 +339,13 @@ export default function ManualOrderComposer({
   }, [signature, draft.submission, created]);
   const currentQuote = quote?.signature === signature ? quote.value : null;
   const categories = useMemo(
-    () => [
+    () => sortCommercialCategoryNames([
       ...new Set(
         catalog
           .map((product) => product.category)
           .filter((value): value is string => !!value),
       ),
-    ],
+    ]),
     [catalog],
   );
   const filteredProducts = catalog.filter(

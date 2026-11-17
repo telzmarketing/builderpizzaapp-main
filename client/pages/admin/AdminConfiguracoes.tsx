@@ -454,6 +454,17 @@ export default function AdminConfiguracoes() {
                         placeholder="delivery.moschettieri.com.br"
                       />
                     </Field>
+                    <Field
+                      label="Logo exclusivo do comprovante"
+                      hint="Opcional. Use uma imagem de alto contraste, como um logo preto. Não altera o logo principal da loja."
+                    >
+                      <input
+                        className={cls}
+                        value={settings.logoUrl ?? ""}
+                        onChange={(e) => update({ logoUrl: e.target.value })}
+                        placeholder="/uploads/logo-comprovante.png ou https://..."
+                      />
+                    </Field>
                   </div>
                 </section>
 
