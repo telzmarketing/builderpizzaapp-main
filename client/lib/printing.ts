@@ -42,7 +42,9 @@ export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   storeAddress: "",
   storeCnpj: "",
   storeWebsite: "",
-  logoUrl: "/api/site-config/favicon?size=192",
+  // The receipt logo comes from the tenant's canonical Page Delivery brand.logo.
+  // Keep this field only for backwards-compatible local settings payloads.
+  logoUrl: undefined,
   defaultTemplate: "completo" as PrintTemplate,
   autoPrint: false,
   autoPrintConfirmedOrders: true,
@@ -83,8 +85,9 @@ export function withReceiptBranding(settings: PrinterSettings, content: Record<s
   return {
     ...settings,
     storeName: typeof brand.name === "string" && brand.name.trim() ? identity.name : settings.storeName,
-    // An explicit receipt logo is intentionally independent from the store logo.
-    storeLogoUrl: settings.logoUrl?.trim() || identity.logo || undefined,
+    // Receipts must use the canonical tenant logo, never the favicon or a
+    // stale browser-local URL.
+    storeLogoUrl: identity.logo || undefined,
   };
 }
 

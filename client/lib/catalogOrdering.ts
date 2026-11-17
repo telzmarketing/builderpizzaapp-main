@@ -24,6 +24,11 @@ export function sortCommercialCategoryNames(names: string[]) {
   });
 }
 
+/** Category tabs for PDV and manual orders: commercial categories first, catch-all last. */
+export function getCommercialCategoryTabs(names: string[]) {
+  return [...sortCommercialCategoryNames(names), ""];
+}
+
 export function sortCategoryNamesByCatalogOrder(
   names: string[],
   categories: ApiProductCategory[],

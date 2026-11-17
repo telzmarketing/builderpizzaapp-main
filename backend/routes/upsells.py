@@ -22,18 +22,27 @@ def _engine(db: Session, tenant_id: str | None = None) -> UpsellEngine:
     return UpsellEngine(db, tenant_id)
 
 
+def _catalog_tenant_id(context: TenantContext | None) -> str:
+    """Keep catalog lookups on the tenant selected by the request."""
+    # The product catalog already resolves the panel tenant even while the
+    # operations rollout flag is disabled. Reusing operation_tenant_id here
+    # incorrectly mapped admin-visible products to the legacy tenant and made
+    # the create endpoint reject the very product selected in the UI.
+    return context.tenant_id if context is not None else operation_tenant_id(None)
+
+
 # ── Public endpoints ──────────────────────────────────────────────────────────
 
 @router.post("/eligible", response_model=list[UpsellOut])
 def get_eligible(body: UpsellEligibleIn, db: Session = Depends(get_db), context: TenantContext | None = Depends(public_operation_context)):
     """Engine: retorna upsells elegíveis para o carrinho informado."""
-    return _engine(db, operation_tenant_id(context)).get_eligible(body.cart_items, body.cart_total)
+    return _engine(db, _catalog_tenant_id(context)).get_eligible(body.cart_items, body.cart_total)
 
 
 @router.post("/events")
 def log_event(body: UpsellEventIn, db: Session = Depends(get_db), context: TenantContext | None = Depends(public_operation_context)):
     """Registra evento de upsell (viewed / accepted / rejected)."""
-    _engine(db, operation_tenant_id(context)).log_event(body)
+    _engine(db, _catalog_tenant_id(context)).log_event(body)
     return ok({"recorded": True})
 
 
@@ -41,25 +50,25 @@ def log_event(body: UpsellEventIn, db: Session = Depends(get_db), context: Tenan
 
 @router.get("", response_model=list[UpsellOut])
 def list_upsells(db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_operation_context)):
-    return _engine(db, operation_tenant_id(context)).list_upsells()
+    return _engine(db, _catalog_tenant_id(context)).list_upsells()
 
 
 @router.post("", response_model=UpsellOut, status_code=201)
 def create_upsell(body: UpsellIn, db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_operation_context)):
     try:
-        return _engine(db, operation_tenant_id(context)).create_upsell(body)
+        return _engine(db, _catalog_tenant_id(context)).create_upsell(body)
     except UpsellEngine.ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/metrics", response_model=UpsellMetricsSummary)
 def metrics(db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_operation_context)):
-    return _engine(db, operation_tenant_id(context)).metrics_summary()
+    return _engine(db, _catalog_tenant_id(context)).metrics_summary()
 
 
 @router.get("/{upsell_id}", response_model=UpsellOut)
 def get_upsell(upsell_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_operation_context)):
-    result = _engine(db, operation_tenant_id(context)).get_upsell(upsell_id)
+    result = _engine(db, _catalog_tenant_id(context)).get_upsell(upsell_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Upsell nao encontrado.")
     return result
@@ -67,7 +76,7 @@ def get_upsell(upsell_id: str, db: Session = Depends(get_db), _=Depends(get_curr
 
 @router.put("/{upsell_id}", response_model=UpsellOut)
 def update_upsell(upsell_id: str, body: UpsellIn, db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_operation_context)):
-    result = _engine(db, operation_tenant_id(context)).update_upsell(upsell_id, body)
+    result = _engine(db, _catalog_tenant_id(context)).update_upsell(upsell_id, body)
     if result is None:
         raise HTTPException(status_code=404, detail="Upsell nao encontrado.")
     return result
@@ -75,7 +84,7 @@ def update_upsell(upsell_id: str, body: UpsellIn, db: Session = Depends(get_db),
 
 @router.patch("/{upsell_id}/toggle", response_model=UpsellOut)
 def toggle_upsell(upsell_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_operation_context)):
-    result = _engine(db, operation_tenant_id(context)).toggle_upsell(upsell_id)
+    result = _engine(db, _catalog_tenant_id(context)).toggle_upsell(upsell_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Upsell nao encontrado.")
     return result
@@ -83,7 +92,7 @@ def toggle_upsell(upsell_id: str, db: Session = Depends(get_db), _=Depends(get_c
 
 @router.delete("/{upsell_id}")
 def delete_upsell(upsell_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_operation_context)):
-    deleted = _engine(db, operation_tenant_id(context)).delete_upsell(upsell_id)
+    deleted = _engine(db, _catalog_tenant_id(context)).delete_upsell(upsell_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Upsell nao encontrado.")
     return ok({"deleted": True})
@@ -92,5 +101,5 @@ def delete_upsell(upsell_id: str, db: Session = Depends(get_db), _=Depends(get_c
 @router.post("/reorder")
 def reorder(body: list[str], db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_operation_context)):
     """Recebe lista ordenada de IDs e atualiza prioridades."""
-    _engine(db, operation_tenant_id(context)).reorder(body)
+    _engine(db, _catalog_tenant_id(context)).reorder(body)
     return ok({"reordered": True})

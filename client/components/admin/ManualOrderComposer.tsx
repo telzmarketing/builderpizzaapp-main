@@ -17,7 +17,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { sortCommercialCategoryNames } from "@/lib/catalogOrdering";
+import { getCommercialCategoryTabs, sortCommercialCategoryNames } from "@/lib/catalogOrdering";
 import Product from "@/pages/Product";
 import {
   ApiRequestError,
@@ -743,7 +743,7 @@ export default function ManualOrderComposer({
                   />
                 </label>
                 <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
-                  {["", ...categories].map((value) => (
+                  {getCommercialCategoryTabs(categories).map((value) => (
                     <button
                       type="button"
                       key={value}
@@ -1394,7 +1394,7 @@ export default function ManualOrderComposer({
                 />
               </label>
               <div className="flex gap-2 overflow-x-auto pb-2">
-                {["", ...categories].map((value) => (
+                {getCommercialCategoryTabs(categories).map((value) => (
                   <button
                     type="button"
                     key={value}

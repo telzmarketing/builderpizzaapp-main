@@ -357,3 +357,17 @@ def test_settings_bounds_are_enforced_by_schema():
         OrderBoardSettingsIn(company_name="Empresa", max_orders=500)
     with pytest.raises(ValueError):
         OrderBoardSettingsIn(company_name="Empresa", logo_url="javascript:alert(1)")
+
+
+def test_order_board_uses_canonical_delivery_brand_logo(db, monkeypatch):
+    monkeypatch.setattr(
+        "backend.services.order_board_service.SiteConfigService.operational_identity",
+        lambda _service, tenant_id: {"name": tenant_id, "logo_url": "/uploads/tenant-a/brand.png"},
+    )
+    profile = TenantProfile(tenant_id="tenant-a", trade_name="Loja A", logo_url="/uploads/legacy.png")
+    db.add(profile)
+    db.commit()
+
+    service = OrderBoardService(db, _context("tenant-a"))
+    assert service._resolved_logo_url(profile) == "/uploads/tenant-a/brand.png"
+    assert OrderBoardService(db)._resolved_logo_url(profile, "tenant-a") == "/uploads/tenant-a/brand.png"

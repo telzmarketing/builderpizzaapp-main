@@ -54,7 +54,10 @@ class CustomerContactRiskService:
     def get_or_create(self, customer_id: str, channel: str = "whatsapp", *, lock: bool = False) -> CustomerContactRisk:
         customer = self.db.query(Customer).filter(Customer.id == customer_id, Customer.tenant_id == self.tenant_id).first()
         if not customer:
-            raise DomainError("Cliente nao encontrado neste estabelecimento.", code="CustomerNotFound")
+            raise DomainError(
+                "O cadastro do cliente existe, mas nao ha vinculo WhatsApp valido neste estabelecimento.",
+                code="CustomerNotFound",
+            )
         query = self.db.query(CustomerContactRisk).filter(
             CustomerContactRisk.tenant_id == self.tenant_id,
             CustomerContactRisk.customer_id == customer_id, CustomerContactRisk.channel == channel,

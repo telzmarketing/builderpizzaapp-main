@@ -100,6 +100,7 @@ def test_upsell_creation_sets_tenant_and_creates_metrics(monkeypatch):
 
     class DummyMetric:
         upsell_id = None
+        tenant_id = None
 
         def __init__(self, **values):
             self.__dict__.update(values)

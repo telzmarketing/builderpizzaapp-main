@@ -356,6 +356,11 @@ export default function MarketingUpsell() {
       setError("Selecione o produto a ser ofertado no upsell.");
       return;
     }
+    const selectedProduct = activeProducts.find((product) => product.id === form.product_id);
+    if (!selectedProduct) {
+      setError("O produto ofertado não está disponível no catálogo atual. Recarregue a lista e selecione novamente.");
+      return;
+    }
     if (!form.main_text.trim()) {
       setError("Preencha o texto principal do upsell.");
       return;
@@ -392,6 +397,7 @@ export default function MarketingUpsell() {
                 : null,
           triggerMode === "category" ? form.trigger_category : triggerMode === "subcategory" ? form.trigger_subcategory : null,
         ),
+        product_id: selectedProduct.id,
         internal_name: internalName,
         allowed_weekdays: buildWeekdaysString(selectedWeekdays),
       };

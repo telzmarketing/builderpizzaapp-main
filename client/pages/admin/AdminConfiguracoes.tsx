@@ -15,6 +15,7 @@ import {
   type PrinterSettings, type PrintTemplate, type PaperWidth,
 } from "@/lib/printing";
 import { silentPrintFallbackMessage } from "@/lib/silentPrinting";
+import { storeBranding } from "@/lib/storeBranding";
 import {
   loadSoundType, saveSoundType, playOrderAlert,
   SOUND_OPTIONS, type OrderSoundType,
@@ -455,15 +456,16 @@ export default function AdminConfiguracoes() {
                       />
                     </Field>
                     <Field
-                      label="Logo exclusivo do comprovante"
-                      hint="Opcional. Use uma imagem de alto contraste, como um logo preto. Não altera o logo principal da loja."
+                      label="Logo do comprovante (Logo da marca)"
+                      hint="Herdado de Configurações → Página Delivery → Logo da marca. O favicon não é usado no comprovante."
                     >
-                      <input
-                        className={cls}
-                        value={settings.logoUrl ?? ""}
-                        onChange={(e) => update({ logoUrl: e.target.value })}
-                        placeholder="/uploads/logo-comprovante.png ou https://..."
-                      />
+                      <div className="flex min-h-12 items-center rounded-lg border border-surface-03 bg-white px-3 py-2">
+                        {storeBranding(siteContent as unknown as Record<string, unknown>).logo ? (
+                          <img src={storeBranding(siteContent as unknown as Record<string, unknown>).logo} alt="Logo da marca usado no comprovante" className="max-h-12 max-w-[180px] object-contain" />
+                        ) : (
+                          <span className="text-sm text-stone">Nenhum logo da marca configurado.</span>
+                        )}
+                      </div>
                     </Field>
                   </div>
                 </section>

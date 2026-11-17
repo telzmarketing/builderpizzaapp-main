@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Copy, Loader2, Monitor, Pencil, Power, RefreshCw, ShieldCheck, Trash2, X } from "lucide-react";
-import { adminOrderBoardApi, type OrderBoardDevice, type OrderBoardSettings } from "@/lib/api";
+import { adminOrderBoardApi, resolveAssetUrl, type OrderBoardDevice, type OrderBoardSettings } from "@/lib/api";
 
 const inputClass = "w-full rounded-xl border border-surface-03 bg-surface-01 px-3 py-2.5 text-sm text-cream outline-none focus:border-gold";
 
@@ -108,7 +108,7 @@ export default function OrderBoardSettingsPanel() {
 
         {settings && <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
           <label className="block text-sm text-parchment"><span className="mb-1.5 block font-medium">Nome da empresa no painel</span><input value={settings.company_name} maxLength={200} onChange={(event) => setSettings({ ...settings, company_name: event.target.value })} className={inputClass} /></label>
-          <label className="block text-sm text-parchment"><span className="mb-1.5 block font-medium">Logo da empresa</span><input value={settings.logo_url ?? ""} readOnly aria-readonly="true" placeholder="Herdado da Página Delivery" className={`${inputClass} cursor-not-allowed opacity-75`} /><span className="mt-1 block text-xs text-stone">O Painel TV usa automaticamente o logo da marca configurado em Página Delivery.</span></label>
+          <div className="block text-sm text-parchment"><span className="mb-1.5 block font-medium">Logo da empresa</span><div className="flex min-h-16 items-center gap-3 rounded-xl border border-surface-03 bg-surface-01 px-3 py-2.5"><div className="grid h-12 w-20 shrink-0 place-items-center rounded-lg bg-white p-1">{settings.logo_url ? <img src={resolveAssetUrl(settings.logo_url)} alt="Logo da empresa" className="max-h-full max-w-full object-contain" /> : <span className="text-center text-[10px] text-stone">Sem logo</span>}</div><span className="text-xs text-stone">Herdado automaticamente de Configurações → Página Delivery → Logo da marca.</span></div></div>
           <NumberField label="Atualização" suffix="seg" min={3} max={60} value={settings.polling_interval_seconds} onChange={(value) => setSettings({ ...settings, polling_interval_seconds: value })} />
           <NumberField label="Máximo de pedidos" suffix="" min={10} max={200} value={settings.max_orders} onChange={(value) => setSettings({ ...settings, max_orders: value })} />
         </div>}

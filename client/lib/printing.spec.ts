@@ -121,11 +121,12 @@ describe("buildEntregaHtml", () => {
 describe("buildPrintHtml", () => {
   it("uses the tenant logo and server drink projection in all receipt templates", () => {
     const order = { ...deliveryOrder(), sales_channel: "counter", fulfillment_type: "pickup", drinks: [{ product_id: "combo-drink", product_name: "Kuat 2 L", quantity: 2, notes: "Gelado" }] };
-    const settings = withReceiptBranding({ ...DEFAULT_PRINTER_SETTINGS, logoUrl: "https://tenant.example/logo.png" }, { brand: { name: "Gran Torino", logo: "https://tenant.example/store-logo.png" } });
+    const settings = withReceiptBranding({ ...DEFAULT_PRINTER_SETTINGS, logoUrl: "/api/site-config/favicon?size=192" }, { brand: { name: "Gran Torino", logo: "https://tenant.example/store-logo.png" } });
     for (const template of ["completo", "cozinha", "entrega"] as const) {
       const html = buildPrintHtml(order, template, settings);
       expect(html).toContain('class="receipt-logo"');
-      expect(html).toContain('src="https://tenant.example/logo.png"');
+      expect(html).toContain('src="https://tenant.example/store-logo.png"');
+      expect(html).not.toContain("site-config/favicon");
       expect(html).toContain("filter:none");
       expect(html).toContain("ATENÇÃO — BEBIDAS");
       expect(html).toContain("2 × Kuat 2 L");

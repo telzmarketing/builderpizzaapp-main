@@ -116,9 +116,9 @@ export function getConfiguredHomeCatalogCategories(
   products: HomeCatalogProduct[],
   categories: ApiProductCategory[],
   selectedCategories: string[],
-): HomeCatalogCategory[] {
+): string[] {
   const activeProducts = products.filter((product) => product.active);
-  const result: HomeCatalogCategory[] = [];
+  const result: string[] = [];
   const seen = new Set<string>();
 
   for (const selectedCategory of selectedCategories) {
@@ -135,7 +135,7 @@ export function getConfiguredHomeCatalogCategories(
     }
   }
 
-  return result;
+  return sortCommercialCategoryNames(result);
 }
 
 export function getHomeCatalogCategories(
@@ -150,11 +150,11 @@ export function getHomeCatalogCategories(
     !normalizeHomeCategory(getHomeCatalogParentName(product, categories))
   ));
   const navigation: HomeCatalogCategory[] = [];
-  if (hasUncategorized) navigation.push(ALL_PRODUCTS_CATEGORY);
-  if (activeProducts.some((product) => product.promotion_applied)) navigation.push(PROMO_LABEL);
   navigation.push(...sortCommercialCategoryNames(sortCategoryNamesByCatalogOrder(
     names,
     categories.filter((category) => !category.parent_id),
   )));
+  if (activeProducts.some((product) => product.promotion_applied)) navigation.push(PROMO_LABEL);
+  if (hasUncategorized) navigation.push(ALL_PRODUCTS_CATEGORY);
   return navigation;
 }

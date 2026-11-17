@@ -229,9 +229,13 @@ async function request<T>(
     const recoveryMessage = recoverUnauthorizedAdminSession(res.status, path);
     if (recoveryMessage) throw new Error(recoveryMessage);
     let message = `HTTP ${res.status}`;
+    let payload: unknown;
+    let code: string | undefined;
     try {
       const data = await res.json();
+      payload = data;
       const detail = data?.error?.message ?? data?.detail;
+      code = data?.error?.code ?? data?.detail?.code;
       if (Array.isArray(detail)) {
         message = detail.map((e: { msg?: string }) => e.msg ?? String(e)).join("; ");
       } else if (typeof detail === "string") {
@@ -240,7 +244,7 @@ async function request<T>(
     } catch {
       /* ignore parse errors */
     }
-    throw new ApiRequestError(message, res.status);
+    throw new ApiRequestError(message, res.status, code, payload);
   }
 
   if (method !== "GET" && path.startsWith("/products") && typeof window !== "undefined") window.dispatchEvent?.(new Event("catalog-products-changed"));

@@ -20,11 +20,15 @@ function eventLabel(value: string) {
   return known[value] ?? value.replaceAll("_", " ");
 }
 
-function contactRiskError(error: unknown) {
+export function contactRiskError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
   if (error instanceof ApiRequestError && error.code === "CustomerNotFound") {
     return "O cadastro do cliente existe, mas não há vínculo WhatsApp válido neste estabelecimento. Isso não significa que ele nunca interagiu com a loja.";
   }
-  return error instanceof Error ? error.message : "Não foi possível carregar o rating de contato.";
+  if (/cliente\s+n[aã]o\s+encontrado\s+neste\s+estabelecimento/i.test(message)) {
+    return "O cadastro do cliente existe, mas não há vínculo WhatsApp válido neste estabelecimento. Isso não significa que ele nunca interagiu com a loja.";
+  }
+  return message || "Não foi possível carregar o rating de contato.";
 }
 
 export default function CustomerContactRiskPanel({ customerId }: { customerId: string }) {

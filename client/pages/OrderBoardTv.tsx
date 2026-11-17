@@ -3,7 +3,7 @@ import {
   Bike, Box, Expand, Maximize2, PackageCheck, RefreshCw, WifiOff,
 } from "lucide-react";
 import {
-  ApiRequestError, orderBoardApi, type OrderBoardActivation, type OrderBoardSnapshot,
+  ApiRequestError, orderBoardApi, resolveAssetUrl, type OrderBoardActivation, type OrderBoardSnapshot,
 } from "@/lib/api";
 import {
   ORDER_BOARD_COLUMNS, ORDER_BOARD_POLL_INTERVAL_MS, groupBoardOrders, visiblePage,
@@ -354,6 +354,7 @@ export default function OrderBoardTv() {
   if (!snapshot) return null;
 
   const tenant = snapshot.tenant;
+  const tenantLogo = resolveAssetUrl(tenant.logo_url);
   const tenantDate = safeDateParts(now, tenant.timezone);
   const tenantTime = safeTime(now, tenant.timezone);
 
@@ -361,7 +362,7 @@ export default function OrderBoardTv() {
     <main className="kds-motoboys flex h-screen min-h-[32rem] min-w-0 flex-col overflow-hidden bg-[radial-gradient(circle_at_50%_-20%,#17343b_0%,#071318_43%,#020608_100%)] p-3 text-white lg:p-4">
       <header className="relative mb-3 grid min-h-[6.7rem] grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-white/25 px-4 pb-3 lg:min-h-[7.5rem] lg:px-8">
         <div className="flex min-w-0 items-center gap-4">
-          {tenant.logo_url && <img src={tenant.logo_url} alt={`Logo de ${tenant.name}`} className="h-16 w-16 shrink-0 object-contain lg:h-20 lg:w-20" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
+          {tenantLogo && <img src={tenantLogo} alt={`Logo de ${tenant.name}`} className="h-16 w-16 shrink-0 object-contain lg:h-20 lg:w-20" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
           <div className="min-w-0">
             <p className="truncate text-[clamp(1.2rem,2.1vw,2.5rem)] font-black uppercase tracking-[0.08em]">{tenant.name}</p>
             <div className="mt-2 h-1 w-28 rounded-full bg-gradient-to-r from-amber-400 via-orange-300 to-amber-600" />
