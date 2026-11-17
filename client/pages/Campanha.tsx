@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ChevronLeft, ShoppingCart, Clock, Tag } from "lucide-react";
 import { campaignsApi, type ApiCampaign, type ApiCampaignProduct, productsApi, type ApiProduct, isAssetUrl, resolveOptimizedAssetUrl } from "@/lib/api";
 import { useApp } from "@/context/AppContext";
@@ -7,9 +7,12 @@ import { trackEvent } from "@/lib/tracking";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import CategorySeal from "@/components/CategorySeal";
+import Combo from "@/pages/Combo";
 
 export default function Campanha() {
   const { slug } = useParams<{ slug: string }>();
+  const [searchParams] = useSearchParams();
+  const kitId = searchParams.get("kit") || undefined;
   const navigate = useNavigate();
   const { addToCart } = useApp();
 
@@ -20,7 +23,7 @@ export default function Campanha() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!slug) return;
+    if (!slug || kitId) return;
     setLoading(true);
     campaignsApi.getBySlug(slug)
       .then(async (c) => {
@@ -34,7 +37,9 @@ export default function Campanha() {
       })
       .catch(() => setError("Campanha não encontrada ou não disponível."))
       .finally(() => setLoading(false));
-  }, [slug]);
+  }, [kitId, slug]);
+
+  if (kitId) return <Combo kitId={kitId} />;
 
   const getProduct = (id: string) => products.find((p) => p.id === id);
 

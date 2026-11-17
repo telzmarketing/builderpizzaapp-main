@@ -294,6 +294,14 @@ class CampaignService:
             return None
         return kit
 
+    def get_public_kit_by_id(self, kit_id: str) -> PromotionalKit | None:
+        kit = self.get_kit(kit_id)
+        if not kit or not kit.active:
+            return None
+        if kit.valid_until and kit.valid_until < datetime.now(timezone.utc):
+            return None
+        return kit
+
     def _unique_kit_slug(self, raw: str, current_id: str | None = None) -> str:
         normalized = unicodedata.normalize("NFKD", raw or "").encode("ascii", "ignore").decode("ascii")
         base = re.sub(r"[^a-zA-Z0-9]+", "-", normalized.lower()).strip("-") or f"combo-{uuid.uuid4().hex[:8]}"

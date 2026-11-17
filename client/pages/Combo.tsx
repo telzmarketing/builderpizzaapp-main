@@ -6,7 +6,11 @@ import { useApp } from "@/context/AppContext";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 
-export default function Combo() {
+interface ComboProps {
+  kitId?: string;
+}
+
+export default function Combo({ kitId }: ComboProps) {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { addToCart } = useApp();
@@ -15,13 +19,15 @@ export default function Combo() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!slug) return;
-    campaignsApi.getKitBySlug(slug).then(async (kit) => {
+    const lookup = kitId || slug;
+    if (!lookup) return;
+    const loadKit = kitId ? campaignsApi.getKitById(kitId) : campaignsApi.getKitBySlug(slug!);
+    loadKit.then(async (kit) => {
       setCombo(kit);
       const loaded = await Promise.all(kit.items.map((item) => productsApi.get(item.product_id).catch(() => null)));
       setProducts(loaded.filter(Boolean) as ApiProduct[]);
     }).finally(() => setLoading(false));
-  }, [slug]);
+  }, [kitId, slug]);
 
   const productMap = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const originalTotal = combo?.price_original || 0;

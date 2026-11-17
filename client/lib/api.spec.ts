@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildApiBases, companyDomainsApi, inventoryFoundationApi, inventoryReceiptApi, kdsApi, manualOrdersApi, platformDomainsApi, platformTenantsApi, preparationApi, productRecipesApi, type ManualOrderIn, type PreparationInputAllocation, type PreparationOrder } from "./api";
+import { buildApiBases, campaignsApi, companyDomainsApi, inventoryFoundationApi, inventoryReceiptApi, kdsApi, manualOrdersApi, platformDomainsApi, platformTenantsApi, preparationApi, productRecipesApi, type ManualOrderIn, type PreparationInputAllocation, type PreparationOrder } from "./api";
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -61,6 +61,24 @@ describe("buildApiBases", () => {
 
   it("ignores a localhost API base in production", () => {
     expect(buildApiBases("http://localhost:8000", true, false)).toEqual(["/api", ""]);
+  });
+});
+
+describe("public promotional kit API", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    vi.stubGlobal("sessionStorage", memoryStorage());
+    vi.stubGlobal("window", { location: { pathname: "/campanha/combo-mata-fome", replace: vi.fn() } });
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  it("loads a banner-targeted kit by its public id endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { id: "kit-1" } }), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await campaignsApi.getKitById("kit/1");
+
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/campaigns\/kits\/id\/kit%2F1$/);
   });
 });
 

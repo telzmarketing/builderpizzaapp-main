@@ -171,6 +171,14 @@ def get_public_kit(slug: str, request: Request, db: Session = Depends(get_db)):
     return kit
 
 
+@router.get("/kits/id/{kit_id}", response_model=PromotionalKitOut)
+def get_public_kit_by_id(kit_id: str, request: Request, db: Session = Depends(get_db)):
+    kit = CampaignService(db, resolve_public_tenant_context(request, db)).get_public_kit_by_id(kit_id)
+    if not kit:
+        raise HTTPException(404, "Combo nao encontrado ou fora da validade.")
+    return kit
+
+
 @router.post("/kits", response_model=PromotionalKitOut, status_code=201)
 def create_kit(
     body: PromotionalKitCreate,

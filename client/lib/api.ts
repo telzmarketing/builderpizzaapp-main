@@ -8327,6 +8327,8 @@ export const campaignsApi = {
 
   getKitBySlug: (slug: string) => get<ApiPromotionalKit>(`/campaigns/kits/slug/${encodeURIComponent(slug)}`),
 
+  getKitById: (id: string) => get<ApiPromotionalKit>(`/campaigns/kits/id/${encodeURIComponent(id)}`),
+
   createKit: (data: Omit<ApiPromotionalKit, "id" | "created_at" | "updated_at" | "items"> & { items?: ApiKitItem[] }) =>
     post<ApiPromotionalKit>("/campaigns/kits", data),
 
