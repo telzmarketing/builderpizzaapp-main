@@ -316,7 +316,6 @@ export default function Home() {
               {[
                 { icon: <UtensilsCrossed size={20} />, label: "Cardápio", path: "/cardapio" },
                 { icon: <Tag size={20} />, label: "Promoções", path: "/promocoes" },
-                ...(homeConfig.showPromotionsLink ? [{ icon: <Tag size={20} />, label: "Promoções", path: "/promocoes" }] : []),
                 { icon: <ShoppingCart size={20} />, label: "Carrinho", path: "/cart" },
                 { icon: <Bell size={20} />, label: "Meus Pedidos", path: "/pedidos" },
                 { icon: <Tag size={20} />, label: "Cupons", path: "/cupons" },
@@ -463,6 +462,16 @@ export default function Home() {
 
         {/* Category Pills */}
         <div className="flex gap-2 mb-5 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4 lg:mx-0 lg:px-0 lg:flex-wrap">
+          {(homeConfig.showPromotions || homeConfig.showPromotionsLink) && (
+            <button
+              type="button"
+              onClick={() => navigate("/promocoes")}
+              className="inline-flex items-center gap-2 rounded-full border border-gold/50 bg-gold/10 px-3.5 py-1.5 text-sm font-semibold text-gold transition-colors hover:bg-gold/20"
+            >
+              <Tag size={16} />
+              Promoções
+            </button>
+          )}
           {effectiveCategories.map((category) => (
             <button
               key={category === ALL_PRODUCTS_CATEGORY ? "home-all-products" : `category-${category}`}
@@ -477,28 +486,6 @@ export default function Home() {
             </button>
           ))}
         </div>
-
-        {homeConfig.showPromotions && (
-          <button
-            type="button"
-            onClick={() => navigate("/promocoes")}
-            className="mb-5 inline-flex items-center gap-2 rounded-full border border-gold/50 bg-gold/10 px-4 py-2 text-sm font-semibold text-gold transition-colors hover:bg-gold/20"
-          >
-            <Tag size={16} />
-            Promoções
-          </button>
-        )}
-
-        {homeConfig.showPromotionsLink && (
-          <button
-            onClick={() => navigate("/promocoes")}
-            className="w-full mb-5 rounded-xl border border-gold/50 bg-gold/10 px-4 py-3 text-left text-gold font-semibold hover:bg-gold/20 transition-colors flex items-center gap-2"
-          >
-            <Tag size={18} />
-            <span>Promoções</span>
-            <ChevronRight size={18} className="ml-auto" />
-          </button>
-        )}
 
         {isCatalogLoading && <CatalogSkeleton />}
 

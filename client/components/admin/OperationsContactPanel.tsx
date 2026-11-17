@@ -28,6 +28,9 @@ export default function OperationsContactPanel() {
   const detailRequest = useRef(0);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const selectedWhatsApp = selected && "ai_enabled" in selected ? selected : null;
+  const selectedOrderSession = selected
+    ? selectedWhatsApp ?? { id: selected.id, customer_id: "cliente_id" in selected ? selected.cliente_id : null, phone: null }
+    : null;
   const canReply = selected && detailId === selected.id && !detailLoading && !busy && (
     channel === "chatbot" || whatsappAttendance(selectedWhatsApp).canSendHuman
   );
@@ -253,7 +256,7 @@ export default function OperationsContactPanel() {
               <button type="button" onClick={() => void send()} disabled={!canReply || !draft.trim()} aria-label="Enviar mensagem humana" className="rounded-lg bg-gold p-2 text-black disabled:opacity-50"><Send size={16} /></button>
             </div>
           </div>
-          {selectedWhatsApp && <WhatsAppOrderWorkspace session={selectedWhatsApp} />}
+          {selectedOrderSession && <WhatsAppOrderWorkspace session={selectedOrderSession} />}
           </div>
         )}
           </SheetPrimitive.Content>

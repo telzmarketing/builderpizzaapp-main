@@ -82,7 +82,9 @@ export default function MediaUpload({
   };
 
   const hasMedia = Boolean(value);
-  const showAsVideo = isVideoUrl(value);
+  // A legacy video URL may not expose a recognizable file extension. When the
+  // field is explicitly configured as video, keep that URL previewable too.
+  const showAsVideo = hasMedia && (mediaType === "video" || isVideoUrl(value));
 
   return (
     <div>

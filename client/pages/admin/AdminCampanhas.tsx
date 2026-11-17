@@ -1430,8 +1430,22 @@ export default function AdminCampanhas() {
           <form onSubmit={handleSaveKit} className="space-y-4">
             <div className="grid grid-cols-3 gap-4">
               <Inp label="Slug da página" value={kitForm.slug} onChange={(e) => setKitForm({ ...kitForm, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]+/g, "-") })} placeholder="combo-familia" />
-              <Inp label="Imagem do combo" value={kitForm.image_url} onChange={(e) => setKitForm({ ...kitForm, image_url: e.target.value })} placeholder="URL da imagem" />
-              <Inp label="Vídeo do combo" value={kitForm.video_url} onChange={(e) => setKitForm({ ...kitForm, video_url: e.target.value })} placeholder="URL do vídeo" />
+              <MediaUpload
+                value={kitForm.image_url}
+                onChange={(value) => setKitForm({ ...kitForm, image_url: value })}
+                mediaType="image"
+                label="Imagem do combo"
+                sizeGuide="Imagem do combo: WebP/JPG/PNG, preferencialmente até 2MB."
+                hint="Registros antigos com URL continuam sendo exibidos e podem ser substituídos por upload."
+              />
+              <MediaUpload
+                value={kitForm.video_url}
+                onChange={(value) => setKitForm({ ...kitForm, video_url: value })}
+                mediaType="video"
+                label="Vídeo do combo"
+                sizeGuide="Vídeo do combo: MP4/WebM/MOV curto e comprimido, preferencialmente até 5MB."
+                hint="Registros antigos com URL continuam sendo exibidos e podem ser substituídos por upload."
+              />
             </div>
             <div className="grid grid-cols-4 gap-4">
               <div className="col-span-3">

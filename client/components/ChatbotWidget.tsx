@@ -286,11 +286,12 @@ export default function ChatbotWidget() {
       {/* ── Chat window ── */}
       {open && (
         <div
-          className="fixed left-0 right-0 top-0 flex w-full flex-col overflow-hidden rounded-none border-0 bg-[#1a1a1a] shadow-2xl sm:static sm:w-[360px] sm:rounded-2xl sm:border sm:border-white/10"
+          className="fixed inset-x-0 top-0 flex h-[100dvh] min-h-0 w-full flex-col overflow-hidden overscroll-contain rounded-none border-0 bg-[#1a1a1a] shadow-2xl sm:static sm:h-auto sm:w-[360px] sm:rounded-2xl sm:border sm:border-white/10"
           style={{
             height: `var(--chatbot-viewport-height, ${viewport.height}px)`,
             top: `var(--chatbot-viewport-top, ${viewport.offsetTop}px)`,
-            maxHeight: "100dvh",
+            bottom: "auto",
+            maxHeight: "none",
             ["--chatbot-viewport-height" as string]: `${viewport.height}px`,
             ["--chatbot-viewport-top" as string]: `${viewport.offsetTop}px`,
           }}>
