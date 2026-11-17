@@ -87,10 +87,10 @@ export default function MediaUpload({
   const showAsVideo = hasMedia && (mediaType === "video" || isVideoUrl(value));
 
   return (
-    <div>
+    <div className="min-w-0">
       <label className="block text-parchment text-sm font-medium mb-2">{label}</label>
-      <div className="flex items-start gap-4">
-        <div className="w-24 h-16 bg-surface-03 border border-surface-03 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden">
+      <div className="flex min-w-0 flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:gap-4">
+        <div className="h-20 w-full bg-surface-03 border border-surface-03 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden sm:h-16 sm:w-24">
           {hasMedia ? (
             showAsVideo ? (
               <div className="relative w-full h-full">
@@ -124,11 +124,11 @@ export default function MediaUpload({
           )}
         </div>
 
-        <div className="flex-1 space-y-2">
-          <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
             <label
               htmlFor={uploading ? undefined : uid}
-              className={`cursor-pointer flex items-center gap-2 px-4 py-2 bg-surface-03 hover:bg-brand-mid text-parchment rounded-lg text-sm font-medium transition-colors border border-surface-03 ${
+              className={`cursor-pointer inline-flex max-w-full items-center gap-2 whitespace-nowrap px-4 py-2 bg-surface-03 hover:bg-brand-mid text-parchment rounded-lg text-sm font-medium transition-colors border border-surface-03 ${
                 uploading ? "opacity-60 cursor-not-allowed" : ""
               }`}
             >
@@ -154,11 +154,11 @@ export default function MediaUpload({
             className="hidden"
             disabled={uploading}
           />
-          <p className="text-gold/80 text-xs font-medium">{performanceGuide}</p>
+          <p className="break-words whitespace-normal text-gold/80 text-xs font-medium">{performanceGuide}</p>
           {mediaType === "video" && (
-            <p className="text-stone/70 text-xs">Formatos: MP4, WebM, MOV. Use videos curtos e comprimidos; evite arquivos acima de 2MB quando for banner ou landing.</p>
+            <p className="break-words whitespace-normal text-stone/70 text-xs">Formatos: MP4, WebM, MOV. Use videos curtos e comprimidos; evite arquivos acima de 2MB quando for banner ou landing.</p>
           )}
-          {hint && <p className="text-stone/70 text-xs">{hint}</p>}
+          {hint && <p className="break-words whitespace-normal text-stone/70 text-xs">{hint}</p>}
         </div>
       </div>
     </div>

@@ -461,12 +461,12 @@ export default function Home() {
         </div>
 
         {/* Category Pills */}
-        <div className="flex gap-2 mb-5 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4 lg:mx-0 lg:px-0 lg:flex-wrap">
+        <div className="flex items-center flex-nowrap gap-2 mb-5 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4 lg:mx-0 lg:px-0 lg:flex-wrap">
           {(homeConfig.showPromotions || homeConfig.showPromotionsLink) && (
             <button
               type="button"
               onClick={() => navigate("/promocoes")}
-              className="inline-flex items-center gap-2 rounded-full border border-gold/50 bg-gold/10 px-3.5 py-1.5 text-sm font-semibold text-gold transition-colors hover:bg-gold/20"
+              className="inline-flex h-9 min-h-9 max-h-9 flex-none items-center gap-2 whitespace-nowrap rounded-full border border-gold/50 bg-gold/10 px-3.5 py-1.5 text-sm font-semibold leading-none text-gold transition-colors hover:bg-gold/20"
             >
               <Tag size={16} />
               Promoções
@@ -480,7 +480,7 @@ export default function Home() {
                 activeCategory === category
                   ? "bg-gold text-cream shadow-lg shadow-gold/20"
                   : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
-              }`}
+              } h-9 min-h-9 max-h-9 flex-none leading-none`}
             >
               {category === ALL_PRODUCTS_CATEGORY ? "Todos" : category}
             </button>

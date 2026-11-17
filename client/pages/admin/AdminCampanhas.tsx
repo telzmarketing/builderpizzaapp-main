@@ -43,18 +43,18 @@ const Txt = ({ label, ...p }: { label: string } & React.TextareaHTMLAttributes<H
   </div>
 );
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({ title, onClose, children, className = "max-w-2xl", contentClassName = "px-6" }: { title: string; onClose: () => void; children: React.ReactNode; className?: string; contentClassName?: string }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4" onMouseDown={onClose}>
       <div
-        className="bg-surface-01 rounded-2xl border border-surface-03 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+        className={`bg-surface-01 rounded-2xl border border-surface-03 w-full ${className} max-h-[90vh] overflow-y-auto`}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03">
           <h3 className="text-cream font-bold text-lg">{title}</h3>
           <button onClick={onClose} className="text-stone hover:text-cream transition-colors"><X size={20} /></button>
         </div>
-        <div className="px-6 py-4">{children}</div>
+        <div className={`${contentClassName} py-4`}>{children}</div>
       </div>
     </div>
   );
@@ -1426,9 +1426,9 @@ export default function AdminCampanhas() {
 
       {/* ── Modal: Kit Form ────────────────────────────────────────────────────── */}
       {showKitModal && (
-        <Modal title={editingKitId ? "Editar Kit" : "Novo Kit Promocional"} onClose={() => setShowKitModal(false)}>
+        <Modal title={editingKitId ? "Editar Kit" : "Novo Kit Promocional"} onClose={() => setShowKitModal(false)} className="max-w-6xl" contentClassName="px-4 sm:px-6">
           <form onSubmit={handleSaveKit} className="space-y-4">
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
               <Inp label="Slug da página" value={kitForm.slug} onChange={(e) => setKitForm({ ...kitForm, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]+/g, "-") })} placeholder="combo-familia" />
               <MediaUpload
                 value={kitForm.image_url}
@@ -1447,8 +1447,8 @@ export default function AdminCampanhas() {
                 hint="Registros antigos com URL continuam sendo exibidos e podem ser substituídos por upload."
               />
             </div>
-            <div className="grid grid-cols-4 gap-4">
-              <div className="col-span-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+              <div className="sm:col-span-3">
                 <Inp label="Nome do Kit *" value={kitForm.name} onChange={(e) => setKitForm({ ...kitForm, name: e.target.value })} placeholder="Ex: Kit Família Feliz" />
               </div>
               <Inp label="Ícone / Emoji" value={kitForm.icon} onChange={(e) => setKitForm({ ...kitForm, icon: e.target.value })} placeholder="🎁" className="text-2xl" />
@@ -1456,7 +1456,7 @@ export default function AdminCampanhas() {
 
             <Txt label="Descrição" value={kitForm.description} onChange={(e) => setKitForm({ ...kitForm, description: e.target.value })} rows={2} placeholder="Descrição do kit" />
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Sel label="Tipo" value={kitForm.kit_type} onChange={(e) => setKitForm({ ...kitForm, kit_type: e.target.value as KitType })}>
                 <option value="kit">Kit</option>
                 <option value="product">Produto</option>
@@ -1465,12 +1465,12 @@ export default function AdminCampanhas() {
               <Inp label="Validade" type="datetime-local" value={kitForm.valid_until} onChange={(e) => setKitForm({ ...kitForm, valid_until: e.target.value })} />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Inp label="Preço Original calculado (R$)" type="number" step="0.01" value={kitPriceOriginal} readOnly aria-readonly="true" className="cursor-not-allowed opacity-80" />
               <Inp label="Preço Promocional calculado (R$)" type="number" step="0.01" value={kitPricePromotional} readOnly aria-readonly="true" className="cursor-not-allowed opacity-80" />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Sel label="Tipo de Desconto" value={kitForm.discount_type} onChange={(e) => setKitForm({ ...kitForm, discount_type: e.target.value as CpDiscountType | "" })}>
                 <option value="">Sem desconto calculado</option>
                 <option value="percentage">Percentual (%)</option>
@@ -1492,7 +1492,7 @@ export default function AdminCampanhas() {
                   ))}
                 </div>
               </div>
-              <div className="grid grid-cols-[1fr_96px_auto] gap-2 items-end">
+              <div className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[minmax(0,1fr)_96px_auto]">
                 <Sel label="Produto" value={kitDraftProductId} onChange={(e) => setKitDraftProductId(e.target.value)}>
                   <option value="">Selecione um produto...</option>
                   {products.map((p) => (
@@ -1500,7 +1500,7 @@ export default function AdminCampanhas() {
                   ))}
                 </Sel>
                 <Inp label="Quantidade" type="number" min={1} value={kitDraftQuantity} onChange={(e) => setKitDraftQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))} />
-                <button type="button" onClick={addKitDraftItem} disabled={!kitDraftProductId} className="h-[38px] px-3 bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold rounded-lg text-sm inline-flex items-center gap-1">
+                <button type="button" onClick={addKitDraftItem} disabled={!kitDraftProductId} className="h-[38px] w-full px-3 bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold rounded-lg text-sm inline-flex items-center justify-center gap-1 sm:w-auto">
                   <Plus size={14} /> Adicionar
                 </button>
               </div>
@@ -1547,7 +1547,7 @@ export default function AdminCampanhas() {
               <span className="text-parchment text-sm">Ativo</span>
             </label>
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row">
               <SaveBtn loading={kitSaving} />
               <button type="button" onClick={() => setShowKitModal(false)} className="flex-1 bg-surface-03 hover:bg-slate-600 text-cream font-bold py-2 px-4 rounded-lg text-sm transition-colors">
                 Cancelar
