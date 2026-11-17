@@ -122,6 +122,8 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20261114_upsell_subcategory_triggers:20261114_product_landing_pages",
         "20261114_product_landing_pages:20261115_delivery_daily_allowances",
         "20261115_delivery_daily_allowances:20261114_product_landing_pages",
+        "20261114_upsell_subcategory_triggers:20261115_delivery_daily_allowances",
+        "20261115_delivery_daily_allowances:20261114_upsell_subcategory_triggers",
     }
 
     sources = {
@@ -205,6 +207,8 @@ def test_schema_predicates_allow_reviewed_recovery_and_reject_unknown_pairs():
             ("20261114_upsell_subcategory_triggers", "20261114_product_landing_pages", 0),
             ("20261114_product_landing_pages", "20261115_delivery_daily_allowances", 0),
             ("20261115_delivery_daily_allowances", "20261114_product_landing_pages", 0),
+            ("20261114_upsell_subcategory_triggers", "20261115_delivery_daily_allowances", 0),
+            ("20261115_delivery_daily_allowances", "20261114_upsell_subcategory_triggers", 0),
             ("unknown", "20261017_runtime_schema", 1),
         )
         for code, database, expected in cases:
