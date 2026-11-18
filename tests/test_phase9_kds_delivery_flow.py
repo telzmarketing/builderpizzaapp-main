@@ -63,6 +63,12 @@ def test_phase9_backend_contract_keeps_audit_gate_and_dispatch_order():
     assert "self._oven_check_is_eligible(old_unit_state, old_attempt_state)" in dispatch
     assert '"baking", "checking"' in kds[kds.index("    def _oven_check_is_eligible(") : kds.index("    def kitchen_orders(")]
     assert '"ready"' in dispatch
+    assert "OrderStatus.preparing.value" in packaging
+    assert "OrderStatus.ready_for_pickup.value" in packaging
+    assert "DispatchOrderNotReady" in packaging
+    assert "self._assert_all_units_ready(order)" not in packaging
+    assert 'unit.state != "ready"' in packaging
+    assert 'if all_closed and order.fulfillment_type == "delivery"' in packaging
     assert "self._auto_assign_order" in packaging
     assert "dispatch_completed_at" in packaging
     assert "DeliveryStatus.pending_assignment, DeliveryStatus.assigned" in audit

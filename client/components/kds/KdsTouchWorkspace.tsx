@@ -284,12 +284,14 @@ export default function KdsTouchWorkspace(props: Props) {
       [
         "assembling",
         "assembled",
-        "baking",
-        "checking",
         "checking_stock",
       ].includes(task.state),
     ) ??
     visibleTasks[0];
+  const selectableOrderIds = new Set([
+    ...queuedOrders.map((candidate) => candidate.id),
+    ...visibleTasks.map((candidate) => candidate.order_id),
+  ]);
   const selectedTask = visibleTasks.find(
     (candidate) => candidate.id === taskId,
   );
@@ -298,10 +300,13 @@ export default function KdsTouchWorkspace(props: Props) {
     !orders.some((candidate) => candidate.id === selectedTask.order_id)
       ? undefined
       : (orders.find((candidate) => candidate.id === selectedTask?.order_id) ??
-        orders.find((candidate) => candidate.id === orderId) ??
+        orders.find(
+          (candidate) =>
+            candidate.id === orderId && selectableOrderIds.has(candidate.id),
+        ) ??
         orders.find((candidate) => candidate.id === activeTask?.order_id) ??
-        orders.find((candidate) => candidate.status === "preparing") ??
-        orders[0]);
+        queuedOrders[0] ??
+        orders.find((candidate) => selectableOrderIds.has(candidate.id)));
   const orderTasks = visibleTasks.filter((task) => task.order_id === order?.id);
   const focusTasks = order ? orderTasks : visibleTasks;
   const task =

@@ -145,7 +145,7 @@ describe("KDS order identity", () => {
     expect(markup).toContain("Nenhuma baixa durante a contagem.");
   });
 
-  it("keeps oven units out of the pizzaiolo task list but shows an actionable dispatch status", () => {
+  it("removes an oven-only order from the pizzaiolo workspace", () => {
     const ovenUnit = {
       id: "unit-oven",
       order_item_id: "item-1",
@@ -199,11 +199,10 @@ describe("KDS order identity", () => {
       "Próxima ação: retirar e conferir no KDS Expedição",
     );
     expect(summary.actionable).toBe(false);
-    expect(markup).toContain("No forno — aguardando Expedição");
-    expect(markup).toContain(
-      "Próxima ação: retirar e conferir no KDS Expedição",
-    );
-    expect(markup).toContain("Pendências:");
+    expect(markup).not.toContain("#GTV5");
+    expect(markup).not.toContain("Pizza Peperoni");
+    expect(markup).not.toContain("Aguardando todas as unidades");
+    expect(markup).not.toContain("Nenhuma tarefa deste pedido atribuída");
     expect(markup).toContain("lg:grid-rows-[minmax(0,1fr)_auto_auto]");
   });
 

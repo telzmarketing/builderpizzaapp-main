@@ -562,9 +562,14 @@ class KdsService:
         self, order_id: str, unit_id: str, *, expected_version: int, actor_id: str,
     ) -> dict:
         order = self._load_order(order_id, lock=True)
-        if self._status(order) != OrderStatus.ready_for_pickup.value:
-            raise DomainError("A unidade só pode ser fechada após o pedido ficar pronto.", code="DispatchOrderNotReady")
-        self._assert_all_units_ready(order)
+        if self._status(order) not in {
+            OrderStatus.preparing.value,
+            OrderStatus.ready_for_pickup.value,
+        }:
+            raise DomainError(
+                "A unidade so pode ser fechada enquanto o pedido estiver em preparo ou pronto para retirada.",
+                code="DispatchOrderNotReady",
+            )
         unit = self.db.query(ProductionUnit).filter(
             ProductionUnit.tenant_id == self.tenant_id,
             ProductionUnit.order_id == order.id,
@@ -590,6 +595,9 @@ class KdsService:
         )
         assignment = None
         if all_closed and order.fulfillment_type == "delivery":
+            # Each ready unit can be packed independently while another unit is
+            # still in the oven.  Driver assignment remains an order-level
+            # action and is only attempted after every unit has been closed.
             assignment = self._auto_assign_order(order_id, actor_id=actor_id)
         updated = self._serialize_orders(
             [self._load_order(order_id)], include_dispatch_details=True,
