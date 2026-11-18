@@ -144,6 +144,101 @@ function taskAction(
   }
 }
 
+type ProductionUnitSummary = {
+  label: string;
+  detail: string;
+  actionable: boolean;
+  tone: "ready" | "oven" | "blocked" | "active";
+};
+
+export function productionUnitSummary(
+  unit: KdsKitchenOrder["production_units"][number],
+  task?: KdsProductionTask,
+): ProductionUnitSummary {
+  const effectiveState = task?.state ?? unit.state;
+  if (effectiveState === "baking") {
+    return {
+      label: "No forno — aguardando Expedição",
+      detail: "Próxima ação: retirar e conferir no KDS Expedição",
+      actionable: false,
+      tone: "oven",
+    };
+  }
+  if (effectiveState === "checking") {
+    return {
+      label: "Em conferência na Expedição",
+      detail: "Próxima ação: concluir a conferência no KDS Expedição",
+      actionable: false,
+      tone: "oven",
+    };
+  }
+  if (effectiveState === "ready") {
+    return {
+      label: "Pronta",
+      detail: "Nenhuma ação pendente nesta unidade",
+      actionable: false,
+      tone: "ready",
+    };
+  }
+  if (task) {
+    return {
+      label: stateLabels[task.state] ?? task.state,
+      detail: `Próxima ação: ${taskAction(task)?.label ?? "acompanhar etapa atual"}`,
+      actionable: true,
+      tone: "active",
+    };
+  }
+  return {
+    label: unit.task_id ? "Tarefa ausente da fila" : "Sem tarefa atribuída",
+    detail: unit.task_id
+      ? "Próxima ação: atualizar a fila ou verificar o direcionamento da estação"
+      : "Próxima ação: atualizar a fila e verificar o direcionamento do KDS Pizzaiolo",
+    actionable: false,
+    tone: "blocked",
+  };
+}
+
+export function pendingUnitMessage(
+  units: NonNullable<KdsKitchenOrder["production_units"]>,
+  tasks: KdsProductionTask[],
+  items: KdsOrderItem[] = [],
+) {
+  const pending = units.filter((unit) => unit.state !== "ready");
+  if (!pending.length) return "Todas as unidades estão prontas.";
+  const descriptions = pending.map((unit) => {
+    const task = tasks.find((entry) => entry.id === unit.task_id);
+    const summary = productionUnitSummary(unit, task);
+    const item = items.find((entry) => entry.id === unit.order_item_id);
+    const product = item ? description(item) : unit.product_name || "Produto";
+    return `Unidade ${unit.unit_index} — ${product}: ${summary.label}`;
+  });
+  const nextAction = pending.some((unit) => {
+    const task = tasks.find((entry) => entry.id === unit.task_id);
+    return ["baking", "checking"].includes(task?.state ?? unit.state);
+  })
+    ? "Próxima ação: retirar e conferir as unidades no KDS Expedição."
+    : pending.some(
+          (unit) =>
+            !unit.task_id || !tasks.some((task) => task.id === unit.task_id),
+        )
+      ? "Próxima ação: atualizar a fila e verificar o direcionamento da estação."
+      : "Próxima ação: concluir a etapa indicada em cada unidade.";
+  return `Pendências: ${descriptions.join("; ")}. ${nextAction}`;
+}
+
+function productionUnitToneClass(tone: ProductionUnitSummary["tone"]) {
+  switch (tone) {
+    case "ready":
+      return "border-emerald-400/50 bg-emerald-400/10 text-emerald-200";
+    case "oven":
+      return "border-amber-400/50 bg-amber-400/10 text-amber-200";
+    case "blocked":
+      return "border-red-400/50 bg-red-400/10 text-red-200";
+    default:
+      return "border-cyan-400/50 bg-cyan-400/10 text-cyan-200";
+  }
+}
+
 interface Props extends KdsWorkspaceProps {
   orders: KdsKitchenOrder[];
   ordersLoading: boolean;
@@ -178,8 +273,10 @@ export default function KdsTouchWorkspace(props: Props) {
     });
   }, [orders]);
   // Do not expose task records whose order has already left the active queue.
-  const visibleTasks = tasks.filter((task) =>
-    orders.some((candidate) => candidate.id === task.order_id),
+  const visibleTasks = tasks.filter(
+    (task) =>
+      orders.some((candidate) => candidate.id === task.order_id) &&
+      !["baking", "checking"].includes(task.state),
   );
   const activeTask =
     visibleTasks.find((task) => task.id === queue?.presence?.active_task_id) ??
@@ -193,7 +290,9 @@ export default function KdsTouchWorkspace(props: Props) {
       ].includes(task.state),
     ) ??
     visibleTasks[0];
-  const selectedTask = visibleTasks.find((candidate) => candidate.id === taskId);
+  const selectedTask = visibleTasks.find(
+    (candidate) => candidate.id === taskId,
+  );
   const order =
     selectedTask &&
     !orders.some((candidate) => candidate.id === selectedTask.order_id)
@@ -222,6 +321,9 @@ export default function KdsTouchWorkspace(props: Props) {
     : undefined;
   const readyCount = units.filter((unit) => unit.state === "ready").length;
   const allReady = units.length > 0 && readyCount === units.length;
+  const pendingMessage = order
+    ? pendingUnitMessage(units, tasks, order.items)
+    : "Aguardando unidades do pedido.";
   const action = taskAction(task);
   const taskIndex = task
     ? focusTasks.findIndex((candidate) => candidate.id === task.id)
@@ -243,7 +345,10 @@ export default function KdsTouchWorkspace(props: Props) {
             ? 0
             : -1;
   const ingredients = item?.recipe?.ingredients ?? [];
-  const runTaskCommand = async (currentTask: KdsProductionTask, currentAction: TaskAction) => {
+  const runTaskCommand = async (
+    currentTask: KdsProductionTask,
+    currentAction: TaskAction,
+  ) => {
     const succeeded = await props.command(currentTask, currentAction);
     if (succeeded && currentAction === "start") {
       setStartedOrderIds((current) => {
@@ -531,12 +636,14 @@ export default function KdsTouchWorkspace(props: Props) {
                     </p>
                   )}
                 </div>
-                {captureUnit && props.station && props.station !== "expedicao" && (
-                  <ProductionCaptureChecklist
-                    productionUnitId={captureUnit.id}
-                    stationId={props.station}
-                  />
-                )}
+                {captureUnit &&
+                  props.station &&
+                  props.station !== "expedicao" && (
+                    <ProductionCaptureChecklist
+                      productionUnitId={captureUnit.id}
+                      stationId={props.station}
+                    />
+                  )}
                 {action && task && (
                   <button
                     type="button"
@@ -569,23 +676,39 @@ export default function KdsTouchWorkspace(props: Props) {
                     </button>
                   )}
                 {order?.status === "preparing" && (
-                  <button
-                    type="button"
-                    disabled={!allReady || Boolean(props.updating)}
-                    onClick={() => void props.finishOrder(order)}
-                    className="flex min-h-12 w-full items-center justify-center gap-3 rounded-xl bg-emerald-400 p-3 text-base font-black text-slate-950 disabled:opacity-40"
-                  >
-                    {props.updating === order.id ? (
-                      <Loader2 className="animate-spin" />
-                    ) : (
-                      <Check />
+                  <>
+                    {!allReady && (
+                      <div
+                        role="status"
+                        aria-live="polite"
+                        className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100"
+                      >
+                        <strong className="block text-base text-amber-300">
+                          Unidades pendentes
+                        </strong>
+                        <span className="mt-2 block break-words leading-relaxed">
+                          {pendingMessage}
+                        </span>
+                      </div>
                     )}
-                    {props.updating === order.id
-                      ? "Finalizando preparo..."
-                      : allReady
-                        ? "Finalizar preparo do pedido"
-                        : "Aguardando todas as unidades"}
-                  </button>
+                    <button
+                      type="button"
+                      disabled={!allReady || Boolean(props.updating)}
+                      onClick={() => void props.finishOrder(order)}
+                      className="flex min-h-12 w-full items-center justify-center gap-3 rounded-xl bg-emerald-400 p-3 text-base font-black text-slate-950 disabled:opacity-40"
+                    >
+                      {props.updating === order.id ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        <Check />
+                      )}
+                      {props.updating === order.id
+                        ? "Finalizando preparo..."
+                        : allReady
+                          ? "Finalizar preparo do pedido"
+                          : "Aguardando unidades pendentes"}
+                    </button>
+                  </>
                 )}
                 <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
                   <ProductVisual item={item} />
@@ -691,7 +814,11 @@ export default function KdsTouchWorkspace(props: Props) {
                     {task.state === "checking_stock" && (
                       <StockCountdown
                         task={task}
-                        onConfirm={() => props.command(task, "confirm-stock").then(() => undefined)}
+                        onConfirm={() =>
+                          props
+                            .command(task, "confirm-stock")
+                            .then(() => undefined)
+                        }
                       />
                     )}
                     {["aguardando_analise", "atendimento", "blocked"].includes(
@@ -754,8 +881,8 @@ export default function KdsTouchWorkspace(props: Props) {
             )}
           </div>
         </section>
-        <aside className="kds-touch-aside grid min-w-0 gap-3 overflow-y-auto overscroll-contain lg:h-full">
-          <section className={panel}>
+        <aside className="kds-touch-aside grid min-h-0 min-w-0 gap-3 overflow-y-auto overscroll-contain lg:h-full lg:min-h-0 lg:grid-rows-[minmax(0,1fr)_auto_auto] lg:overflow-hidden">
+          <section className={`${panel} flex min-h-0 flex-col`}>
             <header className="flex items-center gap-3 border-b border-[#263f53] p-4">
               <ClipboardList size={30} className="shrink-0 text-slate-300" />
               <h2 className="text-lg font-bold">
@@ -765,7 +892,7 @@ export default function KdsTouchWorkspace(props: Props) {
                 )}
               </h2>
             </header>
-            <div className="space-y-3 p-3">
+            <div className="kds-order-summary-content min-h-0 flex-1 space-y-3 overflow-y-scroll overscroll-contain p-3 [scrollbar-gutter:stable]">
               {order ? (
                 <>
                   <div className="grid grid-cols-2 gap-3 rounded-xl bg-[#07111c] p-3 text-sm">
@@ -793,12 +920,15 @@ export default function KdsTouchWorkspace(props: Props) {
                       const line = order.items.find(
                         (entry) => entry.id === unit.order_item_id,
                       );
+                      const summary = productionUnitSummary(unit, unitTask);
                       return (
                         <button
                           key={unit.id}
                           type="button"
-                          disabled={!unitTask}
+                          disabled={!summary.actionable}
                           onClick={() => setTaskId(unitTask?.id ?? null)}
+                          aria-label={`Unidade ${unit.unit_index}: ${summary.label}`}
+                          title={summary.detail}
                           className={`flex min-h-20 w-full items-center gap-3 rounded-xl border p-3 text-left disabled:cursor-default ${unitTask?.id === task?.id ? "border-amber-400 bg-amber-400/5" : "border-[#263f53] bg-[#07111c]"}`}
                         >
                           <ProductVisual item={line} small />
@@ -810,10 +940,12 @@ export default function KdsTouchWorkspace(props: Props) {
                                 : unit.product_name || "Unidade"}
                             </strong>
                             <span
-                              className={`mt-1 block text-xs ${unit.state === "ready" ? "text-emerald-300" : "text-slate-400"}`}
+                              className={`mt-2 inline-flex max-w-full rounded-md border px-2 py-1 text-xs font-bold ${productionUnitToneClass(summary.tone)}`}
                             >
-                              {stateLabels[unitTask?.state ?? unit.state] ??
-                                unit.state}
+                              {summary.label}
+                            </span>
+                            <span className="mt-2 block break-words text-[11px] text-slate-400">
+                              {summary.detail}
                             </span>
                           </span>
                         </button>
