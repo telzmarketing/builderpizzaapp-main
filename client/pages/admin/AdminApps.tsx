@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { BarChart3, Bike, Check, Copy, ExternalLink, Monitor, Store } from "lucide-react";
+import { useState } from "react";
+import { BarChart3, Bike, Check, Copy, Download, Monitor, Store } from "lucide-react";
 import { PWA_APPS, manifestUrl, type PwaAppDefinition } from "@/lib/motoboyPwa";
 
 const iconByKey = {
@@ -15,17 +15,24 @@ function AppIcon({ app }: { app: PwaAppDefinition }) {
 
 export default function AdminApps() {
   const [copied, setCopied] = useState<string | null>(null);
-  const apps = useMemo(() => PWA_APPS, []);
-  const appUrl = (app: PwaAppDefinition) => `${window.location.origin}${app.entryPath}`;
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const installUrl = (app: PwaAppDefinition) => {
+    const url = new URL(app.aliasScope ?? app.entryPath, window.location.origin);
+    url.searchParams.set("instalar", "1");
+    return `${url.pathname}${url.search}`;
+  };
+  const appUrl = (app: PwaAppDefinition) => `${window.location.origin}${installUrl(app)}`;
 
   const copy = async (app: PwaAppDefinition) => {
     const url = appUrl(app);
     try {
       await navigator.clipboard.writeText(url);
       setCopied(app.key);
+      setCopyError(null);
       window.setTimeout(() => setCopied((value) => value === app.key ? null : value), 2200);
     } catch {
       setCopied(null);
+      setCopyError(app.key);
     }
   };
 
@@ -35,11 +42,11 @@ export default function AdminApps() {
         <header>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-gold">Configuracoes / Apps</p>
           <h1 className="mt-2 text-3xl font-black">Aplicativos</h1>
-          <p className="mt-2 max-w-2xl text-sm text-stone">Envie o link especifico de cada aplicativo. Cada PWA abre e permanece limitado ao seu proprio escopo de rota.</p>
+          <p className="mt-2 max-w-2xl text-sm text-stone">Abra este painel no dispositivo em que deseja instalar. Toque em Instalar para acessar a pagina do aplicativo e siga a solicitacao de instalacao do navegador.</p>
         </header>
 
         <section className="grid gap-4 md:grid-cols-2">
-          {apps.map((app) => {
+          {PWA_APPS.map((app) => {
             const url = appUrl(app);
             return (
               <article key={app.key} className="rounded-2xl border border-surface-03 bg-surface-02 p-5 shadow-lg shadow-black/10">
@@ -51,15 +58,20 @@ export default function AdminApps() {
                       <p className="text-xs text-stone">Escopo: {app.scope}</p>
                     </div>
                   </div>
-                  <a href={url} target="_blank" rel="noreferrer" className="rounded-lg p-2 text-stone hover:bg-surface-03 hover:text-cream" aria-label={`Abrir ${app.label}`} title={`Abrir ${app.label}`}><ExternalLink size={17} /></a>
                 </div>
-                <div className="mt-5 flex gap-2">
-                  <input readOnly value={url} className="min-w-0 flex-1 rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-xs text-parchment" aria-label={`Link do ${app.label}`} />
-                  <button type="button" onClick={() => void copy(app)} className="flex shrink-0 items-center gap-2 rounded-lg bg-gold px-3 py-2 text-xs font-bold text-cream hover:bg-gold/90" aria-label={`Copiar link do ${app.label}`}>
+                <a href={installUrl(app)} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-gold px-4 py-3 text-sm font-bold text-cream hover:bg-gold/90" aria-label={`Instalar ${app.label}`}>
+                  <Download size={17} aria-hidden="true" />
+                  Instalar
+                </a>
+                <p className="mt-2 text-xs text-stone">A instalacao sera oferecida na pagina do aplicativo, conforme o navegador deste dispositivo.</p>
+                <div className="mt-4 flex gap-2">
+                  <input readOnly value={url} className="min-w-0 flex-1 rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-xs text-parchment" aria-label={`Link de instalacao do ${app.label}`} />
+                  <button type="button" onClick={() => void copy(app)} className="flex shrink-0 items-center gap-2 rounded-lg border border-surface-03 px-3 py-2 text-xs font-bold text-parchment hover:bg-surface-03" aria-label={`Copiar link de instalacao do ${app.label}`}>
                     {copied === app.key ? <Check size={15} /> : <Copy size={15} />}
                     {copied === app.key ? "Copiado" : "Copiar"}
                   </button>
                 </div>
+                {copyError === app.key && <p role="alert" className="mt-2 text-xs text-red-400">Nao foi possivel copiar o link neste navegador.</p>}
                 <p className="mt-2 text-[11px] text-stone">Manifesto: {manifestUrl(app.key)}</p>
               </article>
             );

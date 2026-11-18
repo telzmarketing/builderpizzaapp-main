@@ -12,6 +12,7 @@ import { installVisibleTextEncodingRepair } from "./lib/visibleTextEncoding";
 import { PlatformSurfaceProvider, usePlatformSurface } from "./context/PlatformSurfaceContext";
 import MotoboyPwaBoundary from "./components/MotoboyPwaBoundary";
 import PwaInstallButton from "./components/PwaInstallButton";
+import PwaInstallIntent from "./components/PwaInstallIntent";
 import {
   isPlatformSupportPanelPathAllowed,
   readPlatformSupportSession,
@@ -549,6 +550,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
           <Toaster />
           <BrowserRouter>
             <MotoboyPwaBoundary />
+            <PwaInstallIntent />
             <PwaInstallButton only={["print-pedido"]} mobileOnly variant="banner" />
             {!platformSurface && !orderBoardSurface && <MotoboyNativeEntry />}
             {!platformSurface && !orderBoardSurface && <RouteDataLoader />}

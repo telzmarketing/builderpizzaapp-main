@@ -40,7 +40,7 @@ def test_all_supported_pwa_manifests_have_unique_installation_boundaries():
         "storefront",
         "motoboy", "bi-mobile", "kds-principal", "kds-pizzaiolo", "kds-esfiha",
         "kds-preparo", "kds-expedicao", "kds-motoboys", "kds-pdv", "print-pedido",
-        "kds-analitico",
+        "kds-analitico", "kds-auditoria",
     }
 
     service = SiteConfigService(None)
@@ -60,6 +60,7 @@ def test_all_supported_pwa_manifests_have_unique_installation_boundaries():
         "Motoboy", "BI Mobile", "KDS Principal", "KDS Pizzaiolo",
         "KDS Cozinha Preparo", "KDS Expedição", "KDS Motoboys",
         "KDS PDV", "KDS Analítico",
+        "KDS Auditoria",
     }
     assert all(manifest["icons"][0]["src"].startswith("/api/site-config/favicon?") for manifest in manifests)
 
@@ -97,9 +98,10 @@ def test_kds_manifests_start_from_the_operational_routes():
         "kds-esfiha": ("/app/kds/esfiha", "/painel/esfiha/"),
         "kds-preparo": ("/app/kds/preparo", "/painel/preparo/"),
         "kds-expedicao": ("/app/kds/expedicao", "/painel/expedicao/"),
-        "kds-motoboys": ("/app/kds/motoboys", "/painel/kds/sala-motoboy/"),
+        "kds-motoboys": ("/app/kds/motoboys", "/tv/motoboys/"),
         "kds-pdv": ("/app/kds/pdv", "/painel/kds/pdv/"),
         "kds-analitico": ("/app/kds/analitico", "/painel/kds/analitico/"),
+        "kds-auditoria": ("/app/kds/auditoria", "/painel/kds/auditoria/"),
     }
 
     for app, (manifest_id, start_url) in expected.items():
@@ -108,6 +110,22 @@ def test_kds_manifests_start_from_the_operational_routes():
         assert manifest["start_url"] == start_url
         assert manifest["scope"] == start_url
         assert manifest["orientation"] == "landscape"
+
+
+def test_kds_auditoria_manifest_uses_existing_operational_route_and_install_identity():
+    service = SiteConfigService(None)
+    service.read = lambda _request: (
+        {"brand": {"name": "Loja Tenant"}}, None, SiteIdentity(tenant_id="tenant-1"),
+    )
+
+    manifest = service.manifest(object(), app="kds-auditoria")
+
+    assert manifest["id"] == "/app/kds/auditoria"
+    assert manifest["start_url"] == manifest["scope"] == "/painel/kds/auditoria/"
+    assert manifest["name"] == "KDS Auditoria"
+    assert manifest["display"] == "standalone"
+    assert manifest["orientation"] == "landscape"
+    assert "tenant-1" not in str(manifest)
 
 
 def test_unknown_manifest_app_is_rejected_without_fallback():

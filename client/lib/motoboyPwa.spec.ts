@@ -145,12 +145,13 @@ describe("KDS PWA entries", () => {
 
   it("maps every dedicated entry and canonical route to its own app key", () => {
     expect(KDS_PWA_KEYS).toEqual([
-      "kds-principal", "kds-pizzaiolo", "kds-esfiha", "kds-preparo", "kds-expedicao",
+      "kds-principal", "kds-pizzaiolo", "kds-esfiha", "kds-preparo", "kds-expedicao", "kds-auditoria",
       "kds-motoboys", "kds-pdv", "kds-analitico",
     ]);
     expect(getPwaApp("/app/kds/principal/")?.key).toBe("kds-principal");
     expect(getPwaApp("/painel/kds/analitico")?.key).toBe("kds-analitico");
     expect(getPwaApp("/painel/esfiha")?.key).toBe("kds-esfiha");
+    expect(getPwaApp("/painel/kds/auditoria")?.key).toBe("kds-auditoria");
     expect(getPwaApp("/app/kds/esfiha")?.scope).toBe("/app/kds/esfiha/");
     expect(getPwaApp("/tv/motoboys")?.key).toBe("kds-motoboys");
     expect(getPwaApp("/painel/kds/pdv")?.scope).toBe("/app/kds/pdv/");
@@ -212,6 +213,7 @@ describe("KDS PWA entries", () => {
     ["/tv/motoboys", "/tv/motoboys/"],
     ["/painel/kds/pdv", "/painel/kds/pdv/"],
     ["/painel/kds/analitico", "/painel/kds/analitico/"],
+    ["/painel/kds/auditoria", "/painel/kds/auditoria/"],
   ])("registers an isolated scope from operational KDS route %s", async (path, scope) => {
     const container = { getRegistrations: vi.fn().mockResolvedValue([]), register: vi.fn().mockResolvedValue({}) };
     await configurePwaWorker(path, container as unknown as ServiceWorkerContainer, origin);

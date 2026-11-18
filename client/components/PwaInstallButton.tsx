@@ -52,7 +52,7 @@ export function canShowPwaInstallButton(pathname: string, only?: readonly PwaApp
   return !!app && (entryApp?.key === app.key || canonicalInstallable || legacyInstallable) && (!only || only.includes(app.key));
 }
 
-export default function PwaInstallButton({ only, pathname, hideOnKds = false, inline = false, mobileOnly = false, delayMs = 0, variant = "compact", menuItem = false }: { only?: readonly PwaAppKey[]; pathname?: string; hideOnKds?: boolean; inline?: boolean; mobileOnly?: boolean; delayMs?: number; variant?: "compact" | "banner"; menuItem?: boolean } = {}) {
+export default function PwaInstallButton({ only, pathname, hideOnKds = false, inline = false, mobileOnly = false, delayMs = 0, variant = "compact", menuItem = false, installIntent = false }: { only?: readonly PwaAppKey[]; pathname?: string; hideOnKds?: boolean; inline?: boolean; mobileOnly?: boolean; delayMs?: number; variant?: "compact" | "banner"; menuItem?: boolean; installIntent?: boolean } = {}) {
   const location = useLocation();
   const currentPathname = pathname ?? location.pathname;
   const app = getPwaApp(currentPathname);
@@ -60,6 +60,7 @@ export default function PwaInstallButton({ only, pathname, hideOnKds = false, in
   const isKds = app?.key.startsWith("kds-") === true;
   const [prompt, setPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
+  const [nativeInstalled, setNativeInstalled] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
   const [delayElapsed, setDelayElapsed] = useState(delayMs === 0);
   const [platform, setPlatform] = useState<PwaInstallPlatform>(() => detectPwaInstallPlatform());
@@ -67,7 +68,11 @@ export default function PwaInstallButton({ only, pathname, hideOnKds = false, in
   useEffect(() => {
     const standaloneMedia = window.matchMedia("(display-mode: standalone)");
     setPlatform(detectPwaInstallPlatform());
-    const refreshInstalledState = () => setInstalled(allowed && (isStandaloneMode(standaloneMedia) || (app ? hasRecordedPwaInstallation(app.key) : false)));
+    const refreshInstalledState = () => {
+      const standalone = isStandaloneMode(standaloneMedia);
+      setNativeInstalled(standalone);
+      setInstalled(allowed && (standalone || (app ? hasRecordedPwaInstallation(app.key) : false)));
+    };
     refreshInstalledState();
     setDelayElapsed(delayMs === 0);
     setShowInstructions(false);
@@ -79,11 +84,13 @@ export default function PwaInstallButton({ only, pathname, hideOnKds = false, in
     };
     const onInstalled = () => {
       if (app) recordPwaInstallation(app.key);
+      setNativeInstalled(true);
       setInstalled(true);
       setPrompt(null);
     };
     const onDisplayModeChange = () => {
       if (standaloneMedia.matches) {
+        setNativeInstalled(true);
         setInstalled(true);
         setPrompt(null);
       } else {
@@ -104,7 +111,8 @@ export default function PwaInstallButton({ only, pathname, hideOnKds = false, in
   }, [allowed, app, currentPathname, delayMs]);
 
   const canOfferInstall = !!prompt || platform === "android" || platform === "ios";
-  if (!allowed || installed || !delayElapsed || !app || (hideOnKds && isKds) || !canOfferInstall) return null;
+  if (installIntent && nativeInstalled && app) return <p role="status" className="text-sm text-green-300">{app.label} já está instalado neste dispositivo.</p>;
+  if (!allowed || (installed && !installIntent) || !delayElapsed || !app || (hideOnKds && isKds) || (!canOfferInstall && !installIntent)) return null;
   const instruction = platform === "ios"
     ? "No iPhone/iPad: use Compartilhar e escolha \"Adicionar à Tela de Início\"."
     : platform === "android"
@@ -130,11 +138,10 @@ export default function PwaInstallButton({ only, pathname, hideOnKds = false, in
         if (!current) { setShowInstructions((value) => !value); return; }
         setPrompt(null);
         void current.prompt().then(() => current.userChoice).then((choice) => {
-          if (choice.outcome === "accepted" && app) {
-            recordPwaInstallation(app.key);
-            setInstalled(true);
-          }
-        }).catch(() => setPrompt(current));
+          // appinstalled is the browser's confirmation; an accepted prompt
+          // alone is not proof that installation completed.
+          if (choice.outcome === "dismissed") setShowInstructions(true);
+        }).catch(() => setShowInstructions(true));
       }} className={menuItem ? "w-full flex items-center gap-4 px-4 py-3 rounded-xl text-parchment hover:text-cream hover:bg-surface-02 transition-colors text-left" : "pwa-install-button"} aria-expanded={showInstructions} aria-label={`Instalar ${app.label}`} title={`Instalar ${app.label}`}>
         <Download size={menuItem ? 20 : 15} aria-hidden="true" /> <span>{menuItem ? "Instalar app" : "Instalar"}</span>
       </button>

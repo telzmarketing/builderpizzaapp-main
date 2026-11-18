@@ -2,7 +2,7 @@ import { isPublicSalesPath } from "./tracking";
 
 export type PwaAppKey =
   | "storefront" | "motoboy" | "bi-mobile" | "kds-principal" | "kds-pizzaiolo" | "kds-preparo"
-  | "kds-esfiha" | "kds-expedicao" | "kds-motoboys" | "kds-pdv" | "kds-analitico" | "print-pedido";
+  | "kds-esfiha" | "kds-expedicao" | "kds-auditoria" | "kds-motoboys" | "kds-pdv" | "kds-analitico" | "print-pedido";
 
 export type PwaAppDefinition = {
   key: PwaAppKey;
@@ -22,6 +22,7 @@ export const PWA_APPS: readonly PwaAppDefinition[] = [
   { key: "kds-esfiha", scope: "/app/kds/esfiha/", entryPath: "/app/kds/esfiha/", aliasScope: "/painel/esfiha/", canonicalPaths: ["/painel/esfiha"], label: "KDS Esfiha" },
   { key: "kds-preparo", scope: "/app/kds/preparo/", entryPath: "/app/kds/preparo/", aliasScope: "/painel/preparo/", canonicalPaths: ["/painel/preparo"], label: "KDS Cozinha Preparo" },
   { key: "kds-expedicao", scope: "/app/kds/expedicao/", entryPath: "/app/kds/expedicao/", aliasScope: "/painel/expedicao/", canonicalPaths: ["/painel/expedicao"], label: "KDS Expedição" },
+  { key: "kds-auditoria", scope: "/app/kds/auditoria/", entryPath: "/app/kds/auditoria/", aliasScope: "/painel/kds/auditoria/", canonicalPaths: ["/painel/kds/auditoria"], label: "KDS Auditoria" },
   { key: "kds-motoboys", scope: "/app/kds/motoboys/", entryPath: "/app/kds/motoboys/", aliasScope: "/tv/motoboys/", canonicalPaths: ["/tv/motoboys"], label: "KDS Motoboys" },
   { key: "kds-pdv", scope: "/app/kds/pdv/", entryPath: "/app/kds/pdv/", aliasScope: "/painel/kds/pdv/", canonicalPaths: ["/painel/kds/pdv"], label: "KDS PDV" },
   { key: "kds-analitico", scope: "/app/kds/analitico/", entryPath: "/app/kds/analitico/", aliasScope: "/painel/kds/analitico/", canonicalPaths: ["/painel/kds/analitico"], label: "KDS Analítico" },

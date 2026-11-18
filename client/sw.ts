@@ -33,6 +33,7 @@ const PWA_APPS: Record<string, PwaApp> = {
   "/app/kds/esfiha/": { key: "kds-esfiha", scope: "/app/kds/esfiha/", cachePrefix: "telz-kds-esfiha" },
   "/app/kds/preparo/": { key: "kds-preparo", scope: "/app/kds/preparo/", cachePrefix: "telz-kds-preparo" },
   "/app/kds/expedicao/": { key: "kds-expedicao", scope: "/app/kds/expedicao/", cachePrefix: "telz-kds-expedicao" },
+  "/app/kds/auditoria/": { key: "kds-auditoria", scope: "/app/kds/auditoria/", cachePrefix: "telz-kds-auditoria" },
   "/app/kds/motoboys/": { key: "kds-motoboys", scope: "/app/kds/motoboys/", cachePrefix: "telz-kds-motoboys" },
   "/app/kds/pdv/": { key: "kds-pdv", scope: "/app/kds/pdv/", cachePrefix: "telz-kds-pdv" },
   "/app/kds/analitico/": { key: "kds-analitico", scope: "/app/kds/analitico/", cachePrefix: "telz-kds-analitico" },
@@ -41,6 +42,7 @@ const PWA_APPS: Record<string, PwaApp> = {
   "/painel/esfiha/": { key: "kds-esfiha", scope: "/painel/esfiha/", cachePrefix: "telz-kds-esfiha-alias" },
   "/painel/preparo/": { key: "kds-preparo", scope: "/painel/preparo/", cachePrefix: "telz-kds-preparo-alias" },
   "/painel/expedicao/": { key: "kds-expedicao", scope: "/painel/expedicao/", cachePrefix: "telz-kds-expedicao-alias" },
+  "/painel/kds/auditoria/": { key: "kds-auditoria", scope: "/painel/kds/auditoria/", cachePrefix: "telz-kds-auditoria-alias" },
   "/tv/motoboys/": { key: "kds-motoboys", scope: "/tv/motoboys/", cachePrefix: "telz-kds-motoboys-alias" },
   "/painel/kds/pdv/": { key: "kds-pdv", scope: "/painel/kds/pdv/", cachePrefix: "telz-kds-pdv-alias" },
   "/painel/kds/analitico/": { key: "kds-analitico", scope: "/painel/kds/analitico/", cachePrefix: "telz-kds-analitico-alias" },
@@ -92,6 +94,10 @@ const APP_PRECACHE_PATTERNS: Record<string, RegExp[]> = {
   ],
   "kds-expedicao": [
     /^\/assets\/Expedicao-[^/]+\.(?:js|css)$/,
+    /^\/assets\/(?:KdsBrandLogo|KdsSessionActions|kds)-[^/]+\.js$/,
+  ],
+  "kds-auditoria": [
+    /^\/assets\/KdsAuditoria-[^/]+\.js$/,
     /^\/assets\/(?:KdsBrandLogo|KdsSessionActions|kds)-[^/]+\.js$/,
   ],
   "kds-motoboys": [

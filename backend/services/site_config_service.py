@@ -107,8 +107,8 @@ PWA_MANIFESTS = {
     },
     "kds-motoboys": {
         "id": "/app/kds/motoboys",
-        "start_url": "/painel/kds/sala-motoboy/",
-        "scope": "/painel/kds/sala-motoboy/",
+        "start_url": "/tv/motoboys/",
+        "scope": "/tv/motoboys/",
         "name": "KDS Motoboys",
         "short_name": "KDS Motoboys",
         "description": "Painel de chamadas e acompanhamento dos motoboys",
@@ -128,6 +128,14 @@ PWA_MANIFESTS = {
         "name": "KDS Analítico",
         "short_name": "KDS Analítico",
         "description": "Indicadores históricos e análise de todos os KDS",
+    },
+    "kds-auditoria": {
+        "id": "/app/kds/auditoria",
+        "start_url": "/painel/kds/auditoria/",
+        "scope": "/painel/kds/auditoria/",
+        "name": "KDS Auditoria",
+        "short_name": "KDS Auditoria",
+        "description": "Conferência final e transferência ao entregador",
     },
 }
 
