@@ -99,7 +99,12 @@ class InventoryAdjustmentService(InventoryFoundationService):
             reserved = Decimal(bucket["reserved"])
             if current != body.expected_physical:
                 raise FoundationConflict("Saldo fisico mudou desde a leitura.", code="VersionConflict")
-            delta = body.quantity - current if body.kind == "correction" else -body.quantity
+            if body.kind == "correction":
+                delta = body.quantity - current
+            elif body.kind == "addition":
+                delta = body.quantity
+            else:
+                delta = -body.quantity
             result = current + delta
             if result < 0 or result < reserved:
                 raise FoundationConflict("Ajuste ficaria abaixo de zero ou das reservas ativas.", code="InventoryUnavailable")

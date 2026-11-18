@@ -17,6 +17,10 @@ describe("ajuste de estoque", () => {
   it("distingue saldo contado de quantidade perdida e preserva o bucket selecionado", () => {
     expect(validAdjustmentQuantity("7,125", "correction", false)).toBe(true);
     expect(validAdjustmentQuantity("0", "correction", false)).toBe(true);
+    expect(validAdjustmentQuantity("0", "addition", false)).toBe(false);
+    expect(validAdjustmentQuantity("2,5", "addition", false)).toBe(true);
+    expect(validAdjustmentQuantity("2.5", "addition", true)).toBe(false);
+    expect(validAdjustmentQuantity("2", "addition", true)).toBe(true);
     expect(validAdjustmentQuantity("0", "loss", false)).toBe(false);
     expect(validAdjustmentQuantity("1.1234567", "loss", false)).toBe(false);
     expect(validAdjustmentQuantity("2.5", "loss", true)).toBe(false);
@@ -27,6 +31,9 @@ describe("ajuste de estoque", () => {
     });
     expect(adjustmentInput(buckets[0], "event-2", "loss", "2", " Quebra ", "Validade")).toMatchObject({
       business_key: "event-2", kind: "loss", quantity: "2", expected_physical: "12.500000", lot_id: "lot-a", reason: "Quebra", notes: "Validade",
+    });
+    expect(adjustmentInput(buckets[0], "event-3", "addition", "2,5", " Entrada avulsa ", "")).toEqual({
+      business_key: "event-3", kind: "addition", quantity: "2.5", expected_physical: "12.500000", location_id: "cold", lot_id: "lot-a", reason: "Entrada avulsa",
     });
   });
 

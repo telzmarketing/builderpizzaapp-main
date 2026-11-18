@@ -78,6 +78,38 @@ def test_correction_positive_negative_loss_and_zero_bucket(stock):
     assert all('"actor_id": "actor"' in row.notes and '"delta":' in row.notes for row in movements)
 
 
+def test_addition_sums_to_current_balance_and_preserves_delta_history(stock):
+    svc = service(stock)
+    svc.adjust("ingredient", body(quantity="10"), "addition-seed")
+    command = body(kind="addition", quantity="2.5", expected="10")
+
+    result = svc.adjust("ingredient", command, "addition-key")
+
+    assert result["previous_physical"] == "10.000000"
+    assert Decimal(result["delta"]) == Decimal("2.5")
+    assert result["physical"] == "12.500000"
+    movement = stock.query(InventoryStockMovement).filter_by(operation_id=result["operation_id"]).one()
+    assert movement.quantity_delta == Decimal("2.5")
+    assert movement.movement_type == "in"
+    assert '"kind": "addition"' in movement.notes
+    assert svc.adjust("ingredient", command, "addition-key") == result
+    assert stock.query(InventoryStockMovement).filter_by(operation_id=result["operation_id"]).count() == 1
+
+
+def test_addition_rejects_stale_expected_balance(stock):
+    svc = service(stock)
+    svc.adjust("ingredient", body(quantity="4"), "stale-addition-seed")
+
+    with pytest.raises(FoundationConflict) as exc:
+        svc.adjust("ingredient", body(kind="addition", quantity="2", expected="0"), "stale-addition")
+
+    assert exc.value.code == "VersionConflict"
+    assert svc.buckets("ingredient")[0]["physical"] == "4.000000"
+
+    with pytest.raises(ValidationError):
+        body(kind="addition", quantity="0", expected="4")
+
+
 def test_ingredient_precision_and_stale_expected_physical(stock):
     svc = service(stock)
     assert svc.adjust("ingredient", body(quantity="0.123456"), "a")["physical"] == "0.123456"

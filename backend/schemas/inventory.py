@@ -229,7 +229,7 @@ class InventoryAdjustmentBucketOut(BaseModel):
 
 
 class InventoryAdjustmentIn(StrictIn):
-    kind: Literal["correction", "loss"]
+    kind: Literal["correction", "addition", "loss"]
     business_key: UUID
     quantity: Quantity
     expected_physical: SignedQuantity
@@ -239,9 +239,9 @@ class InventoryAdjustmentIn(StrictIn):
     notes: str | None = Field(default=None, max_length=2000)
 
     @model_validator(mode="after")
-    def loss_requires_positive_quantity(self):
-        if self.kind == "loss" and self.quantity <= 0:
-            raise ValueError("Perda exige quantidade positiva.")
+    def delta_operations_require_positive_quantity(self):
+        if self.kind in {"addition", "loss"} and self.quantity <= 0:
+            raise ValueError("Adicao e perda exigem quantidade positiva.")
         return self
 
 
@@ -249,7 +249,7 @@ class InventoryAdjustmentOut(BaseModel):
     operation_id: str
     movement_id: str | None
     item_id: str
-    kind: Literal["correction", "loss"]
+    kind: Literal["correction", "addition", "loss"]
     location_id: str | None
     lot_id: str | None
     previous_physical: str

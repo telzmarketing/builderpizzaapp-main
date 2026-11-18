@@ -18,6 +18,7 @@ interface Props {
 }
 
 const fieldClass = "w-full rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream focus:border-gold focus:outline-none";
+export type InventoryAdjustmentKind = "correction" | "addition" | "loss";
 type PendingOperation = { key: string; businessKey: string; body?: InventoryAdjustmentInput };
 const unresolvedAdjustments = new Map<string, PendingOperation>();
 const pendingStorageKey = (itemId: string) => `inventory-adjustment-pending:${itemId}`;
@@ -54,17 +55,17 @@ export function selectedAdjustmentBucket(buckets: InventoryAdjustmentBucket[], i
   return index === "" ? undefined : buckets[Number(index)];
 }
 
-export function validAdjustmentQuantity(value: string, kind: "correction" | "loss", portioned: boolean) {
+export function validAdjustmentQuantity(value: string, kind: InventoryAdjustmentKind, portioned: boolean) {
   const normalized = value.trim().replace(",", ".");
   const amount = Number(normalized);
-  return /^\d+(?:\.\d{1,6})?$/.test(normalized) && Number.isFinite(amount) && (kind === "loss" ? amount > 0 : amount >= 0) && (!portioned || Number.isInteger(amount));
+  return /^\d+(?:\.\d{1,6})?$/.test(normalized) && Number.isFinite(amount) && (kind === "correction" ? amount >= 0 : amount > 0) && (!portioned || Number.isInteger(amount));
 }
 
 export function adjustmentReady(bucket: InventoryAdjustmentBucket | undefined, quantityValid: boolean, reason: string, confirmed: boolean) {
   return Boolean(bucket && quantityValid && reason.trim() && confirmed);
 }
 
-export function adjustmentInput(bucket: InventoryAdjustmentBucket, businessKey: string, kind: "correction" | "loss", quantity: string, reason: string, notes: string): InventoryAdjustmentInput {
+export function adjustmentInput(bucket: InventoryAdjustmentBucket, businessKey: string, kind: InventoryAdjustmentKind, quantity: string, reason: string, notes: string): InventoryAdjustmentInput {
   return {
     business_key: businessKey,
     kind,
@@ -80,7 +81,7 @@ export function adjustmentInput(bucket: InventoryAdjustmentBucket, businessKey: 
 export default function InventoryStockAdjustmentDialog({ item, onClose, onAdjusted }: Props) {
   const [buckets, setBuckets] = useState<InventoryAdjustmentBucket[]>([]);
   const [bucketIndex, setBucketIndex] = useState("");
-  const [kind, setKind] = useState<"correction" | "loss">("correction");
+  const [kind, setKind] = useState<InventoryAdjustmentKind>("correction");
   const [quantity, setQuantity] = useState("");
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
@@ -185,7 +186,7 @@ export default function InventoryStockAdjustmentDialog({ item, onClose, onAdjust
     <Dialog open={Boolean(item)} onOpenChange={(open) => { if (!open && !saving && !uncertain) onClose(); }}>
       <DialogContent className="max-h-[90vh] overflow-y-auto border-surface-03 bg-surface-02 text-cream">
         <DialogHeader>
-          <DialogTitle>Corrigir / registrar perda</DialogTitle>
+          <DialogTitle>Ajustar saldo de estoque</DialogTitle>
           <DialogDescription className="text-stone">{item?.name || "Item"} · {unit}</DialogDescription>
         </DialogHeader>
         {item?.portioned && <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">O ajuste ou a perda altera o saldo de porções produzidas. Não altera a matéria-prima nem as etiquetas históricas.</p>}
@@ -203,14 +204,14 @@ export default function InventoryStockAdjustmentDialog({ item, onClose, onAdjust
                   <p className="font-semibold text-cream">{selected.location_name || "Local não informado"} · {selected.lot_code || "Sem lote"}</p>
                   <div className="mt-2 grid grid-cols-3 gap-2"><span>Físico<br /><strong className="text-cream">{formatQuantity(selected.physical)} {unit}</strong></span><span>Reservado<br /><strong className="text-cream">{formatQuantity(selected.reserved)} {unit}</strong></span><span>Disponível<br /><strong className="text-cream">{formatQuantity(selected.available)} {unit}</strong></span></div>
                 </div>}
-                <fieldset className="space-y-2"><legend className="text-sm font-semibold">Operação</legend><div className="flex flex-wrap gap-4 text-sm"><label className="flex items-center gap-2"><input type="radio" name="inventory-adjustment-kind" checked={kind === "correction"} onChange={() => { setKind("correction"); setQuantity(""); setConfirmed(false); }} /> Corrigir saldo</label><label className="flex items-center gap-2"><input type="radio" name="inventory-adjustment-kind" checked={kind === "loss"} onChange={() => { setKind("loss"); setQuantity(""); setConfirmed(false); }} /> Registrar perda</label></div></fieldset>
-                <label className="block text-sm font-semibold">{kind === "correction" ? "Saldo físico contado" : "Quantidade perdida"} ({unit}) <span className="text-red-300">*</span>
-                  <input className={`${fieldClass} mt-1`} type="number" min={kind === "correction" ? "0" : item?.portioned ? "1" : "0.000001"} step={item?.portioned ? "1" : "0.000001"} inputMode={item?.portioned ? "numeric" : "decimal"} value={quantity} onChange={(event) => { setQuantity(event.target.value); setConfirmed(false); }} placeholder={kind === "correction" ? "Informe o total contado, não a diferença" : "Informe a quantidade que será baixada"} />
-                  <span className="mt-1 block text-xs font-normal text-stone">{kind === "correction" ? "O valor informado substituirá o saldo físico deste local/lote." : "A perda será descontada do saldo físico deste local/lote."}</span>
+                <fieldset className="space-y-2"><legend className="text-sm font-semibold">Operação</legend><div className="flex flex-wrap gap-4 text-sm"><label className="flex items-center gap-2"><input type="radio" name="inventory-adjustment-kind" checked={kind === "correction"} onChange={() => { setKind("correction"); setQuantity(""); setConfirmed(false); }} /> Corrigir / definir saldo total</label><label className="flex items-center gap-2"><input type="radio" name="inventory-adjustment-kind" checked={kind === "addition"} onChange={() => { setKind("addition"); setQuantity(""); setConfirmed(false); }} /> Adicionar ao saldo atual</label><label className="flex items-center gap-2"><input type="radio" name="inventory-adjustment-kind" checked={kind === "loss"} onChange={() => { setKind("loss"); setQuantity(""); setConfirmed(false); }} /> Registrar perda</label></div></fieldset>
+                <label className="block text-sm font-semibold">{kind === "correction" ? "Novo saldo físico total" : kind === "addition" ? "Quantidade a adicionar" : "Quantidade perdida"} ({unit}) <span className="text-red-300">*</span>
+                  <input className={`${fieldClass} mt-1`} type="number" min={kind === "correction" ? "0" : item?.portioned ? "1" : "0.000001"} step={item?.portioned ? "1" : "0.000001"} inputMode={item?.portioned ? "numeric" : "decimal"} value={quantity} onChange={(event) => { setQuantity(event.target.value); setConfirmed(false); }} placeholder={kind === "correction" ? "Informe o saldo total correto" : kind === "addition" ? "Informe quanto deve ser somado" : "Informe a quantidade que será baixada"} />
+                  <span className="mt-1 block text-xs font-normal text-stone">{kind === "correction" ? "O valor informado definirá o saldo físico total deste local/lote." : kind === "addition" ? "A quantidade informada será somada ao saldo físico atual deste local/lote." : "A perda será descontada do saldo físico deste local/lote."}</span>
                 </label>
                 <label className="block text-sm font-semibold">Motivo <span className="text-red-300">*</span><input className={`${fieldClass} mt-1`} value={reason} onChange={(event) => { setReason(event.target.value); setConfirmed(false); }} maxLength={120} placeholder="Descreva o motivo do ajuste" /></label>
                 <label className="block text-sm font-semibold">Observações (opcional)<textarea className={`${fieldClass} mt-1`} rows={2} maxLength={2000} value={notes} onChange={(event) => { setNotes(event.target.value); setConfirmed(false); }} /></label>
-                {selected && validQuantity && reason.trim() && <label className="flex items-start gap-2 rounded-lg border border-gold/40 bg-gold/10 p-3 text-sm text-cream"><input className="mt-1" type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>Confirmo {kind === "correction" ? `o saldo físico contado de ${formatQuantity(normalizedQuantity)} ${unit}` : `a perda de ${formatQuantity(normalizedQuantity)} ${unit}`} em {selected.location_name || "local não informado"}, {selected.lot_code || "sem lote"}.</span></label>}
+                {selected && validQuantity && reason.trim() && <label className="flex items-start gap-2 rounded-lg border border-gold/40 bg-gold/10 p-3 text-sm text-cream"><input className="mt-1" type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>Confirmo {kind === "correction" ? `o novo saldo físico total de ${formatQuantity(normalizedQuantity)} ${unit}` : kind === "addition" ? `a adição de ${formatQuantity(normalizedQuantity)} ${unit} ao saldo atual` : `a perda de ${formatQuantity(normalizedQuantity)} ${unit}`} em {selected.location_name || "local não informado"}, {selected.lot_code || "sem lote"}.</span></label>}
               </>
             )}
           </fieldset>
@@ -220,7 +221,7 @@ export default function InventoryStockAdjustmentDialog({ item, onClose, onAdjust
         <DialogFooter className="gap-2">
           <button type="button" className="inline-flex items-center justify-center gap-2 rounded-lg border border-surface-03 px-3 py-2 text-sm text-stone" disabled={saving} onClick={() => void reloadBuckets()}><RefreshCw size={15} /> Atualizar saldos</button>
           <button type="button" className="rounded-lg border border-surface-03 px-3 py-2 text-sm text-stone disabled:opacity-50" disabled={saving} onClick={onClose}>{uncertain ? "Sair com resultado pendente" : "Cancelar"}</button>
-          <button type="button" className="inline-flex items-center justify-center gap-2 rounded-lg bg-gold px-3 py-2 text-sm font-bold text-black disabled:opacity-50" disabled={!canSubmit} onClick={() => void submit()}>{saving && <Loader2 size={15} className="animate-spin" />} {retryPending ? "Repetir mesma operação" : `Confirmar ${kind === "correction" ? "correção" : "perda"}`}</button>
+          <button type="button" className="inline-flex items-center justify-center gap-2 rounded-lg bg-gold px-3 py-2 text-sm font-bold text-black disabled:opacity-50" disabled={!canSubmit} onClick={() => void submit()}>{saving && <Loader2 size={15} className="animate-spin" />} {retryPending ? "Repetir mesma operação" : `Confirmar ${kind === "correction" ? "correção" : kind === "addition" ? "adição" : "perda"}`}</button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

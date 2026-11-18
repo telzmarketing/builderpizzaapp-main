@@ -17,7 +17,11 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { getCommercialCategoryTabs, sortCommercialCategoryNames } from "@/lib/catalogOrdering";
+import {
+  getCommercialCategoryTabs,
+  getPreferredInitialCategory,
+  sortCommercialCategoryNames,
+} from "@/lib/catalogOrdering";
 import Product from "@/pages/Product";
 import {
   ApiRequestError,
@@ -151,12 +155,14 @@ export default function ManualOrderComposer({
   initialCustomer = null,
   storageScope = "",
   defaultStep,
+  preferredInitialProductType,
 }: {
   onCreated?: (order: ApiOrder) => void;
   mode?: "default" | "pos" | "embedded";
   initialCustomer?: ApiCustomer | null;
   storageScope?: string;
   defaultStep?: 0 | 1 | 2;
+  preferredInitialProductType?: string;
 }) {
   const [draft, setDraft] = useState<Draft>(() => readDraft(storageScope));
   const [storageKey] = useState(() => draftStorageKey(storageScope));
@@ -192,6 +198,7 @@ export default function ManualOrderComposer({
   const [paymentError, setPaymentError] = useState("");
   const submitting = useRef(false);
   const seededCustomer = useRef(false);
+  const initialCategoryApplied = useRef(false);
   const allowed = useMemo(() => {
     try {
       return canCreateManualOrder(
@@ -234,7 +241,18 @@ export default function ManualOrderComposer({
       setSessionChanged(true);
       return;
     }
-    if (results[0].status === "fulfilled") setCatalog(results[0].value);
+    if (results[0].status === "fulfilled") {
+      const products = results[0].value;
+      setCatalog(products);
+      if (!initialCategoryApplied.current) {
+        initialCategoryApplied.current = true;
+        if (preferredInitialProductType) {
+          setCategory(
+            getPreferredInitialCategory(products, preferredInitialProductType),
+          );
+        }
+      }
+    }
     if (results[1].status === "fulfilled") setCustomers(results[1].value);
     if (results[2].status === "fulfilled") {
       const value = results[2].value;

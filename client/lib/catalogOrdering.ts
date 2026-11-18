@@ -1,4 +1,4 @@
-import type { ApiProductCategory } from "@/lib/api";
+import type { ApiProduct, ApiProductCategory } from "@/lib/api";
 
 function normalized(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
@@ -27,6 +27,24 @@ export function sortCommercialCategoryNames(names: string[]) {
 /** Category tabs for PDV and manual orders: commercial categories first, catch-all last. */
 export function getCommercialCategoryTabs(names: string[]) {
   return [...sortCommercialCategoryNames(names), ""];
+}
+
+/** Selects the first category that actually contains the preferred product type. */
+export function getPreferredInitialCategory(
+  products: Array<Pick<ApiProduct, "category" | "product_type">>,
+  preferredProductType: string,
+) {
+  const preferred = normalized(preferredProductType);
+  const matchingCategories = products
+    .filter((product) => {
+      const productType = normalized(product.product_type || "");
+      const category = normalized(product.category || "");
+      return productType === preferred || category.includes(preferred);
+    })
+    .map((product) => product.category)
+    .filter((category): category is string => !!category?.trim());
+
+  return sortCommercialCategoryNames([...new Set(matchingCategories)])[0] || "";
 }
 
 export function sortCategoryNamesByCatalogOrder(

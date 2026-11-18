@@ -2452,7 +2452,7 @@ export interface InventoryAdjustmentBucket {
 
 export interface InventoryAdjustmentInput {
   business_key: string;
-  kind: "correction" | "loss";
+  kind: "correction" | "addition" | "loss";
   quantity: string;
   expected_physical: string | number;
   location_id?: string | null;
