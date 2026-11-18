@@ -25,6 +25,18 @@ class KdsStockConflict(DomainError):
     http_status = 409
 
 
+def _format_stock_shortages(shortages):
+    lines = ["Conferência de estoque bloqueada. Insumos faltantes:"]
+    for shortage in shortages:
+        unit = shortage.get("unit_symbol") or shortage.get("unit_id") or "un."
+        lines.append(
+            f"- {shortage['name']}: necessário {shortage['required']} {unit}; "
+            f"disponível {shortage['available']} {unit}; "
+            f"faltam {shortage['missing']} {unit}."
+        )
+    return "\n".join(lines)
+
+
 def ensure_kds_units_ready(db: Session, tenant_id: str, order_id: str) -> None:
     """Legacy orders without physical units retain their published flow."""
     if db.query(ProductionUnit.id).filter(
@@ -511,6 +523,15 @@ class KdsProductionService:
                     raise FoundationConflict("Cobertura legada incompleta; atendimento deve conciliar a baixa.", code="LegacyCoverageIncomplete")
             return {"consumed": True, "reason": "legacy_covered", "mode": "legacy_covered", "lines": len(requirements)}
         foundation = InventoryFoundationService(self.db, self.tenant_id, actor_id)
+        shortages = foundation.shortages(
+            requirements,
+            reservation_order_id=attempt.unit.order_id,
+        )
+        if shortages:
+            raise FoundationConflict(
+                _format_stock_shortages(shortages),
+                code="InventoryUnavailable",
+            )
         foundation.consume_legacy_sale(
             attempt.id, requirements, costs,
             source_type="foundation_production_attempt",

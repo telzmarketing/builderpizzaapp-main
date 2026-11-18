@@ -374,6 +374,79 @@ class InventoryFoundationService:
                         and not (own_order and row.source_type == "order" and row.source_id == own_order)), ZERO)
         return physical - reserved
 
+    def shortages(self, requirements, *, reservation_order_id=None):
+        """Project per-item shortages with the same rules used by consumption."""
+        normalized = {
+            item_id: Decimal(str(quantity))
+            for item_id, quantity in requirements.items()
+            if Decimal(str(quantity)) > 0
+        }
+        if not normalized:
+            return []
+        item_rows = self._query(InventoryItem).filter(
+            InventoryItem.id.in_(normalized),
+        ).all()
+        items_by_id = {item.id: item for item in item_rows}
+        now = utcnow()
+        reservations = self._active_reservations()
+        result = []
+        for item_id, required in normalized.items():
+            item = items_by_id.get(item_id)
+            buckets = []
+            lots = self._query(InventoryLot).filter(InventoryLot.item_id == item_id).all()
+            buckets.extend(
+                (lot.location_id, lot.id)
+                for lot in lots
+                if self._eligible(lot, now)
+            )
+            legacy_locations = self._query(InventoryStockMovement).filter(
+                InventoryStockMovement.item_id == item_id,
+                InventoryStockMovement.lot_id.is_(None),
+            ).with_entities(InventoryStockMovement.location_id).distinct().all()
+            buckets.extend((row[0], None) for row in legacy_locations)
+            available = sum(
+                (
+                    max(
+                        ZERO,
+                        self._physical(item_id, location_id, lot_id)
+                        - sum(
+                            (
+                                row.quantity
+                                for row in reservations
+                                if row.item_id == item_id
+                                and row.location_id == location_id
+                                and row.lot_id == lot_id
+                                and not (
+                                    reservation_order_id
+                                    and row.source_type == "order"
+                                    and row.source_id == reservation_order_id
+                                )
+                            ),
+                            ZERO,
+                        ),
+                    )
+                    for location_id, lot_id in buckets
+                ),
+                ZERO,
+            )
+            missing = max(ZERO, required - available)
+            if missing <= 0:
+                continue
+            unit = self._query(InventoryUnit).filter(
+                InventoryUnit.id == item.unit_id,
+            ).first() if item and item.unit_id else None
+            result.append(output({
+                "item_id": item_id,
+                "name": item.name if item else item_id,
+                "required": required,
+                "available": available,
+                "missing": missing,
+                "unit_id": item.unit_id if item else None,
+                "unit_symbol": unit.symbol if unit else None,
+                "portionable": bool(item.portionable) if item else False,
+            }))
+        return result
+
     def _movement(self, op, line, sequence, item_id, location_id, lot_id, delta, cost, source_type, source_id, reason):
         movement = InventoryStockMovement(id=str(uuid.uuid4()), tenant_id=self.tenant_id, item_id=item_id,
             location_id=location_id, lot_id=lot_id, operation_id=op.id, operation_sequence=sequence,

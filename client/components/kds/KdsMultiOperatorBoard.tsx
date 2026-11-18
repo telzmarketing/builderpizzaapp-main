@@ -572,7 +572,7 @@ export default function KdsMultiOperatorBoard({
                     task.state === "atendimento") && (
                     <div
                       role="alert"
-                      className="mt-3 rounded-lg border border-red-400/50 bg-red-500/10 p-3 text-sm font-bold text-red-200"
+                      className="mt-3 whitespace-pre-line rounded-lg border border-red-400/50 bg-red-500/10 p-3 text-sm font-bold text-red-200"
                     >
                       {task.state === "atendimento"
                         ? "Encaminhado ao atendimento"

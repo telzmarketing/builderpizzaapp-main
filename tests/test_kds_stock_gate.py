@@ -300,7 +300,8 @@ def test_operator_queue_keeps_owned_active_states_and_excludes_unowned_or_final(
     gate.db.commit()
     tasks = gate.service.queue("cook")
     task_ids = {row["task_id"] for row in tasks}
-    assert {f"active-task-{index}" for index in range(10, 17)} <= task_ids
+    assert {f"active-task-{index}" for index in range(10, 15)} <= task_ids
+    assert not {"active-task-15", "active-task-16"} & task_ids
     assert not {"active-task-unowned-active", "active-task-other-owner"} & task_ids
     assert not {"active-task-ready", "active-task-cancelled"} & task_ids
 
@@ -333,6 +334,10 @@ def test_failed_second_ingredient_rolls_back_all_attempt_movements(gate):
     gate.clock[0] += timedelta(seconds=5)
     result = gate.service.command("task1", "cook", command(task["version"]), "confirm-stock")
     assert result["state"] == "aguardando_analise"
+    assert "Sauce" in result["blocked_reason"]
+    assert "necessário 1" in result["blocked_reason"]
+    assert "disponível 0" in result["blocked_reason"]
+    assert "faltam 1" in result["blocked_reason"]
     assert balance(gate) == Decimal("1")
     assert gate.db.query(InventoryOperation).count() == 0
     assert gate.db.query(ProductionAttemptConsumption).count() == 0

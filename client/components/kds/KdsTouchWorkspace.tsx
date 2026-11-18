@@ -824,13 +824,27 @@ export default function KdsTouchWorkspace(props: Props) {
                     {["aguardando_analise", "atendimento", "blocked"].includes(
                       task.state,
                     ) && (
-                      <p
+                      <div
                         role="alert"
-                        className="rounded-xl border border-red-400/40 bg-red-400/10 p-4 text-red-200"
+                        className="whitespace-pre-line rounded-xl border border-red-400/40 bg-red-400/10 p-4 text-red-200"
                       >
-                        {task.blocked_reason ||
-                          "Estoque não confirmado. Preparo bloqueado."}
-                      </p>
+                        <p>
+                          {task.blocked_reason ||
+                            "Estoque não confirmado. Preparo bloqueado."}
+                        </p>
+                        <button
+                          type="button"
+                          className={`${control} mt-3 w-full border-red-300/50 text-red-100`}
+                          disabled={props.refreshing}
+                          onClick={() => void props.load(true)}
+                        >
+                          <RefreshCw
+                            size={18}
+                            className={props.refreshing ? "animate-spin" : ""}
+                          />
+                          {props.refreshing ? "Atualizando..." : "Atualizar fila"}
+                        </button>
+                      </div>
                     )}
                     {(task.consumption_operation_id ||
                       task.composition_revision_id) && (
@@ -849,13 +863,29 @@ export default function KdsTouchWorkspace(props: Props) {
                     )}
                   </section>
                 ) : (
-                  <p className="rounded-xl border border-[#263f53] p-4 text-sm text-slate-400">
-                    {order?.status === "ready_for_pickup"
-                      ? "Preparo concluído. Pedido disponível para servir no salão."
-                      : order?.status === "preparing"
-                        ? "Nenhuma tarefa deste pedido atribuída a esta estação. Acompanhe as unidades no resumo."
-                        : "Inicie o preparo para encaminhar as unidades à fila do pizzaiolo."}
-                  </p>
+                  <div className="rounded-xl border border-[#263f53] p-4 text-sm text-slate-300">
+                    <p>
+                      {order?.status === "ready_for_pickup"
+                        ? "Preparo concluído. Pedido disponível para servir no salão."
+                        : order?.status === "preparing"
+                          ? pendingMessage
+                          : "Inicie o preparo para encaminhar as unidades à fila do pizzaiolo."}
+                    </p>
+                    {order?.status === "preparing" && (
+                      <button
+                        type="button"
+                        className={`${control} mt-3 w-full`}
+                        disabled={props.refreshing}
+                        onClick={() => void props.load(true)}
+                      >
+                        <RefreshCw
+                          size={18}
+                          className={props.refreshing ? "animate-spin" : ""}
+                        />
+                        {props.refreshing ? "Atualizando..." : "Atualizar fila"}
+                      </button>
+                    )}
+                  </div>
                 )}
                 <details className="rounded-xl border border-[#263f53] bg-[#07111c] p-2">
                   <summary className="flex min-h-12 cursor-pointer items-center gap-3 font-bold">

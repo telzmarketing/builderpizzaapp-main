@@ -264,4 +264,64 @@ describe("KDS order identity", () => {
       "retirar e conferir as unidades no KDS Expedição",
     );
   });
+
+  it("shows the stock shortage detail and a manual queue refresh", () => {
+    const markup = renderToStaticMarkup(
+      <KdsTouchWorkspace
+        queue={{
+          generated_at: "2026-11-15T14:00:01Z",
+          presence: {
+            operator_id: "operator-1",
+            operator_name: "Pizzaiolo",
+            state: "available",
+            station_id: "pizza",
+            queue_count: 1,
+            active_task_id: "task-blocked",
+            updated_at: "2026-11-15T14:00:01Z",
+            version: 1,
+          },
+          tasks: [{
+            id: "task-blocked",
+            order_id: order.id,
+            order_code: order.order_code,
+            order_item_id: "item-1",
+            unit_index: 1,
+            state: "aguardando_analise",
+            version: 3,
+            priority: 0,
+            created_at: order.created_at,
+            product_name: "Pizza Peperoni",
+            blocked_reason: "Conferência de estoque bloqueada.\n- Tomato sauce: faltam 1 kg.",
+          }],
+        }}
+        loading={false}
+        refreshing={false}
+        error={null}
+        busy={null}
+        selected={[]}
+        targetOperator=""
+        setSelected={() => {}}
+        setTargetOperator={() => {}}
+        load={noop}
+        updatePresence={noop}
+        command={command}
+        redistribute={noop}
+        orders={[{ ...order, status: "preparing", production_units: [{
+          id: "unit-blocked",
+          order_item_id: "item-1",
+          unit_index: 1,
+          task_id: "task-blocked",
+          state: "aguardando_analise",
+          version: 3,
+        }] }]}
+        ordersLoading={false}
+        updating={null}
+        startOrder={noop}
+        finishOrder={noop}
+      />,
+    );
+
+    expect(markup).toContain("Tomato sauce: faltam 1 kg.");
+    expect(markup).toContain("Atualizar fila");
+  });
 });
