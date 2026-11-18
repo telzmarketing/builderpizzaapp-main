@@ -69,6 +69,7 @@ def test_phase9_backend_contract_keeps_audit_gate_and_dispatch_order():
     assert "self._assert_all_units_ready(order)" not in packaging
     assert 'unit.state != "ready"' in packaging
     assert 'if all_closed and order.fulfillment_type == "delivery"' in packaging
+    assert 'changed_by=f"kds:expedicao:{actor_id}"' in dispatch
     assert "self._auto_assign_order" in packaging
     assert "dispatch_completed_at" in packaging
     assert "DeliveryStatus.pending_assignment, DeliveryStatus.assigned" in audit

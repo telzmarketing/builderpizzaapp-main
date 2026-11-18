@@ -554,7 +554,11 @@ class KdsService:
         )
         if all_ready and self._status(order) == OrderStatus.preparing.value:
             self._audit_order_transition(order, self._status(order), OrderStatus.ready_for_pickup.value, actor_id, module_key="expedicao")
-            OrderService(self.db, self.tenant_context).change_status(order.id, OrderStatus.ready_for_pickup.value, changed_by=f"expedicao:{actor_id}")
+            OrderService(self.db, self.tenant_context).change_status(
+                order.id,
+                OrderStatus.ready_for_pickup.value,
+                changed_by=f"kds:expedicao:{actor_id}",
+            )
         self.db.commit()
         return self._serialize_orders([self._load_order(order_id)], include_dispatch_details=True)[0]
 
