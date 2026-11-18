@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from pathlib import Path
 
+from backend.services.kds_service import KdsService
 from backend.services.kds_production_service import KdsProductionService
 
 
@@ -37,3 +38,22 @@ def test_dispatch_keeps_oven_states_and_expedição_pipeline_has_both_scroll_axe
     assert "overflow: auto" in css_source
     assert "grid-template-columns: repeat(3, minmax(min(20rem, 88vw), 1fr))" in css_source
     assert "orientation: portrait" in css_source
+
+
+def test_dispatch_oven_check_reconciles_a_stale_attempt_from_the_unit_state():
+    assert KdsService._oven_check_is_eligible("baking", "assembled")
+    assert KdsService._oven_check_is_eligible("checking", "baking")
+
+    for attempt_state in ("ready", "blocked", "cancelled", None):
+        assert not KdsService._oven_check_is_eligible("baking", attempt_state)
+    for unit_state in ("queued", "assembled", "ready", "cancelled"):
+        assert not KdsService._oven_check_is_eligible(unit_state, "assembled")
+
+    service_source = (ROOT / "backend/services/kds_service.py").read_text(encoding="utf-8")
+    dispatch = service_source[
+        service_source.index("    def check_oven_in_dispatch(") :
+        service_source.index("    def complete_dispatch_unit(")
+    ]
+    assert "old_unit_state = unit.state" in dispatch
+    assert "attempt.state = unit.state = \"ready\"" in dispatch
+    assert "self._audit_unit(order.id, unit.id, actor_id, old_unit_state, \"ready\", \"expedicao\")" in dispatch

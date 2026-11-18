@@ -58,7 +58,10 @@ def test_phase9_backend_contract_keeps_audit_gate_and_dispatch_order():
         kds.index("    def complete_dispatch_unit(") :
         kds.index("    def _auto_assign_order(")
     ]
-    assert '"baking", "checking"' in dispatch
+    assert "old_unit_state = unit.state" in dispatch
+    assert "old_attempt_state = attempt.state if attempt is not None else None" in dispatch
+    assert "self._oven_check_is_eligible(old_unit_state, old_attempt_state)" in dispatch
+    assert '"baking", "checking"' in kds[kds.index("    def _oven_check_is_eligible(") : kds.index("    def kitchen_orders(")]
     assert '"ready"' in dispatch
     assert "self._auto_assign_order" in packaging
     assert "dispatch_completed_at" in packaging

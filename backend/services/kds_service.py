@@ -53,6 +53,16 @@ class KdsService:
         DeliveryStatus.delivered,
         DeliveryStatus.completed,
     )
+    OVEN_CHECK_ATTEMPT_STATES = frozenset({
+        "queued",
+        "checking_stock",
+        "aguardando_analise",
+        "atendimento",
+        "assembling",
+        "assembled",
+        "baking",
+        "checking",
+    })
 
     def __init__(self, db: Session, tenant_context: TenantContext):
         self.db = db
@@ -153,6 +163,18 @@ class KdsService:
             entity_type="production_unit", entity_id=unit_id,
             old_value=old, new_value=f"{new}; order_id={order_id}",
         ))
+
+    @classmethod
+    def _oven_check_is_eligible(cls, unit_state: str | None, attempt_state: str | None) -> bool:
+        """Use the physical unit state as the dispatch source of truth.
+
+        The oven transition updates the unit and its attempt in one transaction,
+        but older or interrupted requests can leave only the attempt stale.  A
+        non-terminal attempt state may therefore be reconciled when the unit is
+        visibly in the oven flow.  Terminal, blocked, or missing attempt states
+        remain fail-closed.
+        """
+        return unit_state in {"baking", "checking"} and attempt_state in cls.OVEN_CHECK_ATTEMPT_STATES
 
     def kitchen_orders(self, station_id: str = "pizza") -> list[dict]:
         orders = self._order_query().options(
@@ -506,7 +528,9 @@ class KdsService:
             ProductionAttempt.tenant_id == self.tenant_id,
             ProductionAttempt.production_unit_id == unit.id,
         ).order_by(ProductionAttempt.attempt_number.desc()).with_for_update().first()
-        if attempt is None or attempt.state not in {"baking", "checking"}:
+        old_unit_state = unit.state
+        old_attempt_state = attempt.state if attempt is not None else None
+        if not self._oven_check_is_eligible(old_unit_state, old_attempt_state):
             raise DomainError("A unidade nao esta aguardando retirada e conferencia do forno.", code="OvenCheckNotEligible")
         if unit.version != expected_version:
             raise DomainError("A unidade foi alterada por outro operador.", code="VersionConflict")
@@ -517,7 +541,7 @@ class KdsService:
         attempt.state = unit.state = "ready"
         attempt.version += 1
         unit.version += 1
-        self._audit_unit(order.id, unit.id, actor_id, "baking", "ready", "expedicao")
+        self._audit_unit(order.id, unit.id, actor_id, old_unit_state, "ready", "expedicao")
         self.db.flush()
 
         all_units = self.db.query(ProductionUnit).filter(
