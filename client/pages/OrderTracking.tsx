@@ -290,14 +290,6 @@ export default function OrderTracking() {
           </div>
         )}
 
-        {order.delivery?.confirmation_code && order.status !== "delivered" && order.status !== "cancelled" && (
-          <div className="mb-6 rounded-xl border border-gold/30 bg-gold/10 p-4 text-center">
-            <p className="text-xs font-bold uppercase tracking-wide text-gold">Código de confirmação da entrega</p>
-            <p className="mt-2 font-mono text-3xl font-black tracking-[0.35em] text-cream">{order.delivery.confirmation_code}</p>
-            <p className="mt-2 text-xs text-parchment">Informe este código ao motoboy no recebimento do pedido.</p>
-          </div>
-        )}
-
         <div className="mb-6">
           <h3 className="text-cream font-bold mb-4 text-lg">Itens do Pedido</h3>
           <div className="space-y-3">

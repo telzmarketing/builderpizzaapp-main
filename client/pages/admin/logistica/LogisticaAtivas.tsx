@@ -180,14 +180,6 @@ export default function LogisticaAtivas() {
                   })()}
                 </div>
 
-                {d.confirmation_code && (
-                  <div className="mt-4 rounded-xl bg-surface-03/60 p-3 text-center">
-                    <p className="text-stone text-[10px] uppercase tracking-widest mb-1">Código de confirmação</p>
-                    <p className="text-gold font-mono text-2xl font-black tracking-[0.3em]">
-                      {d.confirmation_code}
-                    </p>
-                  </div>
-                )}
               </div>
             );
           })}

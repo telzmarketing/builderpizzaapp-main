@@ -190,14 +190,6 @@ export default function Pedidos() {
                   </span>
                 </div>
 
-                {order.delivery?.confirmation_code && !order.delivery.confirmed_by_code_at && order.status !== "cancelled" && order.status !== "delivered" && (
-                  <div className="mx-4 mt-3 rounded-xl border border-gold/35 bg-gold/10 px-4 py-3 text-center">
-                    <p className="text-xs font-bold uppercase tracking-wide text-stone">Código para confirmar a entrega</p>
-                    <p className="mt-1 font-mono text-2xl font-black tracking-[0.35em] text-gold">{order.delivery.confirmation_code}</p>
-                    <p className="mt-1 text-xs text-parchment">Informe este código ao motoboy na chegada.</p>
-                  </div>
-                )}
-
                 {/* Items */}
                 <div className="px-4 py-3 space-y-2">
                   {order.items.map((item) => {

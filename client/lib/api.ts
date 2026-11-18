@@ -9308,16 +9308,12 @@ export const deliveryApi = {
     driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/start`, { notes }),
   driverConfirmPayment: (deliveryId: string) =>
     driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/confirm-payment`, {}),
-  driverCompleteDelivery: (deliveryId: string, confirmation_code: string, notes?: string, payment_received = false) =>
-    driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/complete`, { confirmation_code, notes, payment_received }),
+  driverCompleteDelivery: (deliveryId: string, notes?: string, payment_received = false) =>
+    driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/complete`, { notes, payment_received }),
   driverReportProblem: (deliveryId: string, reason: string, description?: string) =>
     driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/problem`, { reason, description }),
   driverScanItem: (deliveryId: string, payload: string) =>
     driverRequest<{ confirmed: boolean; idempotent: boolean; confirmation_id: string; delivery_id: string; order_item_id: string; label_volume_id: string; confirmed_count?: number; total_count?: number; all_items_confirmed?: boolean }>("POST", `/delivery/driver/deliveries/${encodeURIComponent(deliveryId)}/scan-item`, { payload }),
-
-  // Confirm delivery (public — no auth needed)
-  confirmCode: (deliveryId: string, code: string) =>
-    driverRequest<DeliveryRecord>("POST", `/delivery/${deliveryId}/confirm-code`, { code }),
 
   // Customer — rate a delivery
   rateDelivery: (deliveryId: string, rating: number, comment?: string) =>

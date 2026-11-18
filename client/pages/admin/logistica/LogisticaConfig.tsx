@@ -44,7 +44,9 @@ export default function LogisticaConfig() {
     setSaved(false);
     setError("");
     try {
-      await deliveryApi.updateSettings(settings);
+      const payload = { ...settings };
+      delete payload.confirmation_code_enabled;
+      await deliveryApi.updateSettings(payload);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch {
@@ -72,15 +74,6 @@ export default function LogisticaConfig() {
           description="Atribui automaticamente o motoboy disponível mais próximo ao marcar pedido como pronto"
           checked={settings.auto_assign ?? false}
           onChange={(v) => setSettings((s) => ({ ...s, auto_assign: v }))}
-        />
-
-        <div className="border-t border-surface-03" />
-
-        <Toggle
-          label="Código de confirmação"
-          description="Gera um código de 4 dígitos que o cliente precisa fornecer ao motoboy para confirmar a entrega"
-          checked={settings.confirmation_code_enabled ?? true}
-          onChange={(v) => setSettings((s) => ({ ...s, confirmation_code_enabled: v }))}
         />
 
         <div className="border-t border-surface-03" />

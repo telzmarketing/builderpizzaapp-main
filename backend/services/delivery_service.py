@@ -8,7 +8,6 @@ RULE: no route or ERP integration may change delivery.status or
 """
 from __future__ import annotations
 
-import random
 import hmac
 import uuid
 import json
@@ -377,9 +376,6 @@ class DeliveryService:
 
         now = datetime.now(timezone.utc)
 
-        # Generate confirmation code
-        code = "".join(random.choices("0123456789", k=4))
-
         # Create or reuse delivery record
         previous_person = None
         previous_status = existing.status.value if existing else None
@@ -427,8 +423,6 @@ class DeliveryService:
             delivery.delivery_photo_url = None
             delivery.recipient_name = None
             delivery.estimated_minutes = estimated_minutes
-            delivery.confirmation_code = code
-            delivery.confirmed_by_code_at = None
         else:
             delivery = Delivery(
                 id=str(uuid.uuid4()),
@@ -438,7 +432,6 @@ class DeliveryService:
                 status=DeliveryStatus.assigned,
                 assigned_at=now,
                 estimated_minutes=estimated_minutes,
-                confirmation_code=code,
             )
             self._db.add(delivery)
 
@@ -1196,13 +1189,8 @@ class DeliveryService:
             return owned
         if owned.status not in {DeliveryStatus.on_the_way, DeliveryStatus.delivered}:
             raise DomainError("Inicie a entrega antes de marcala como entregue.", code="DeliveryNotInRoute")
-        if confirmation_code is not None or not owned.confirmed_by_code_at:
-            if not confirmation_code:
-                raise DomainError(
-                    "Informe e valide o codigo do cliente antes de finalizar a entrega.",
-                    code="DeliveryConfirmationCodeRequired",
-                )
-            self._confirm_delivery_code_locked(owned, confirmation_code, actor_id=person_id)
+        # Legacy clients may still send confirmation_code, but completion no
+        # longer depends on it. Keep existing code evidence on historical rows.
         order = self._get_order(owned.order_id)
         payment = order.payment
         pending_pay_on_delivery = bool(

@@ -4,6 +4,7 @@ import pytest
 
 from backend.core.exceptions import DomainError
 from backend.models.delivery import DeliveryStatus
+from backend.models.payment import PaymentStatus
 from backend.schemas.delivery import DeliveryConfirmIn
 from backend.services.delivery_service import DeliveryService
 
@@ -17,27 +18,7 @@ def test_delivery_confirmation_schema_accepts_only_four_digits():
         DeliveryConfirmIn(code="42ab")
 
 
-def test_driver_completion_requires_customer_code_before_finishing():
-    service = DeliveryService.__new__(DeliveryService)
-    delivery = type(
-        "DeliveryFixture",
-        (),
-        {
-            "delivery_person_id": "driver-1",
-            "status": DeliveryStatus.delivered,
-            "confirmed_by_code_at": None,
-        },
-    )()
-    service._get_delivery_person = lambda _person_id: object()
-    service._get_delivery_for_completion = lambda _delivery_id: delivery
-
-    with pytest.raises(DomainError) as error:
-        service.complete_driver_delivery("driver-1", "delivery-1")
-
-    assert error.value.code == "DeliveryConfirmationCodeRequired"
-
-
-def test_driver_completion_validates_code_in_the_same_command():
+def _completion_service(*, status=DeliveryStatus.on_the_way, driver_id="driver-1", payment=None):
     service = DeliveryService.__new__(DeliveryService)
     delivery = type(
         "DeliveryFixture",
@@ -45,68 +26,86 @@ def test_driver_completion_validates_code_in_the_same_command():
         {
             "id": "delivery-1",
             "order_id": "order-1",
-            "delivery_person_id": "driver-1",
-            "status": DeliveryStatus.on_the_way,
+            "delivery_person_id": driver_id,
+            "status": status,
             "confirmation_code": "0427",
             "confirmed_by_code_at": None,
         },
     )()
     service._get_delivery_person = lambda _person_id: object()
     service._get_delivery_for_completion = lambda _delivery_id: delivery
-    service._add_event = lambda *args, **kwargs: None
-    service._get_order = lambda _order_id: type("OrderFixture", (), {"payment": None})()
-    service.mark_driver_delivered = lambda _person_id, _delivery_id, notes=None: delivery
-    service.complete = lambda _delivery_id, **kwargs: delivery
+    events = []
+    calls = []
+    service._add_event = lambda *args, **kwargs: events.append((args, kwargs))
+    service._get_order = lambda _order_id: type("OrderFixture", (), {"payment": payment})()
+
+    def mark_delivered(_person_id, _delivery_id, notes=None):
+        calls.append("delivered")
+        delivery.status = DeliveryStatus.delivered
+        return delivery
+
+    def complete(_delivery_id, **kwargs):
+        calls.append("completed")
+        delivery.status = DeliveryStatus.completed
+        return delivery
+
+    service.mark_driver_delivered = mark_delivered
+    service.complete = complete
     service._db = type(
         "DbFixture",
         (),
         {"commit": lambda self: None, "refresh": lambda self, _row: None},
     )()
 
-    completed = service.complete_driver_delivery(
-        "driver-1",
-        "delivery-1",
-        confirmation_code="0427",
-    )
+    return service, delivery, calls, events
+
+
+def test_driver_completion_needs_no_code_and_retry_does_not_repeat_completion():
+    service, delivery, calls, events = _completion_service()
+    completed = service.complete_driver_delivery("driver-1", "delivery-1")
+    retried = service.complete_driver_delivery("driver-1", "delivery-1")
 
     assert completed is delivery
-    assert delivery.confirmed_by_code_at is not None
-
-
-def test_driver_completion_rejects_invalid_code_without_confirming():
-    service = DeliveryService.__new__(DeliveryService)
-    delivery = type(
-        "DeliveryFixture",
-        (),
-        {
-            "id": "delivery-1",
-            "order_id": "order-1",
-            "delivery_person_id": "driver-1",
-            "status": DeliveryStatus.on_the_way,
-            "confirmation_code": "0427",
-            "confirmed_by_code_at": None,
-        },
-    )()
-    service._get_delivery_person = lambda _person_id: object()
-    service._get_delivery_for_completion = lambda _delivery_id: delivery
-
-    with pytest.raises(DomainError) as error:
-        service.complete_driver_delivery(
-            "driver-1",
-            "delivery-1",
-            confirmation_code="9999",
-        )
-
-    assert error.value.code == "InvalidCode"
+    assert retried is delivery
+    assert calls == ["delivered", "completed"]
+    assert len(events) == 1
+    assert events[0][0][1] == "driver_completed"
+    assert delivery.confirmation_code == "0427"
     assert delivery.confirmed_by_code_at is None
+
+
+def test_driver_completion_keeps_ownership_and_route_gate():
+    service, delivery, calls, _events = _completion_service(driver_id="driver-2")
+    with pytest.raises(DomainError) as error:
+        service.complete_driver_delivery("driver-1", "delivery-1")
+    assert error.value.code == "DeliveryOwnershipDenied"
+    assert calls == []
+
+    delivery.delivery_person_id = "driver-1"
+    delivery.status = DeliveryStatus.assigned
+    with pytest.raises(DomainError) as error:
+        service.complete_driver_delivery("driver-1", "delivery-1")
+    assert error.value.code == "DeliveryNotInRoute"
+    assert calls == []
+
+
+def test_driver_completion_keeps_payment_receipt_gate():
+    payment = type("PaymentFixture", (), {"pay_on_delivery": True, "status": PaymentStatus.pending})()
+    service, delivery, calls, _events = _completion_service(payment=payment)
+    with pytest.raises(DomainError) as error:
+        service.complete_driver_delivery("driver-1", "delivery-1")
+    assert error.value.code == "PaymentReceiptRequired"
+    assert calls == []
+
+    payment.status = PaymentStatus.approved
+    assert service.complete_driver_delivery("driver-1", "delivery-1") is delivery
+    assert calls == ["delivered", "completed"]
 
 
 def test_phase9_backend_contract_keeps_audit_gate_and_dispatch_order():
     delivery = (ROOT / "backend/services/delivery_service.py").read_text(encoding="utf-8")
     kds = (ROOT / "backend/services/kds_service.py").read_text(encoding="utf-8")
     audit = (ROOT / "backend/services/kds_audit_service.py").read_text(encoding="utf-8")
-    motoboy = (ROOT / "client/pages/Motoboy.tsx").read_text(encoding="utf-8")
-    api = (ROOT / "client/lib/api.ts").read_text(encoding="utf-8")
 
     start = delivery[
         delivery.index("    def start_driver_delivery(") :
@@ -118,13 +117,13 @@ def test_phase9_backend_contract_keeps_audit_gate_and_dispatch_order():
     ]
     assert 'code="DeliveryAuditRequired"' in start
     assert 'audit.status != "completed"' in start
-    assert 'code="DeliveryConfirmationCodeRequired"' in complete
+    assert 'code="DeliveryConfirmationCodeRequired"' not in complete
+    assert "self._confirm_delivery_code_locked" not in complete
+    assert "random.choices" not in delivery
+    assert "random.choices" not in kds
     assert "confirmation_code=payload.confirmation_code" in (
         ROOT / "backend/routes/delivery.py"
     ).read_text(encoding="utf-8")
-    assert "deliveryApi.driverCompleteDelivery(d.id, code)" in motoboy
-    assert "await deliveryApi.confirmCode(d.id, code)" not in motoboy
-    assert "{ confirmation_code, notes, payment_received }" in api
 
     dispatch = kds[
         kds.index("    def check_oven_in_dispatch(") :

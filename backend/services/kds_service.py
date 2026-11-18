@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import random
 import uuid
 from datetime import datetime, timezone
 
@@ -771,8 +770,6 @@ class KdsService:
         delivery.status = DeliveryStatus.assigned
         delivery.assigned_at = now
         delivery.estimated_minutes = estimated_minutes
-        delivery.confirmation_code = "".join(random.choices("0123456789", k=4))
-        delivery.confirmed_by_code_at = None
         person.status = DeliveryPersonStatus.busy
         self.db.flush()
         self.db.add(DeliveryEvent(
