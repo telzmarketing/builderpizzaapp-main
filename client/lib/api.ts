@@ -9308,8 +9308,8 @@ export const deliveryApi = {
     driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/start`, { notes }),
   driverConfirmPayment: (deliveryId: string) =>
     driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/confirm-payment`, {}),
-  driverCompleteDelivery: (deliveryId: string, notes?: string, payment_received = false) =>
-    driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/complete`, { notes, payment_received }),
+  driverCompleteDelivery: (deliveryId: string, confirmation_code: string, notes?: string, payment_received = false) =>
+    driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/complete`, { confirmation_code, notes, payment_received }),
   driverReportProblem: (deliveryId: string, reason: string, description?: string) =>
     driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/problem`, { reason, description }),
   driverScanItem: (deliveryId: string, payload: string) =>

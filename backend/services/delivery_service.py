@@ -9,6 +9,7 @@ RULE: no route or ERP integration may change delivery.status or
 from __future__ import annotations
 
 import random
+import hmac
 import uuid
 import json
 import math
@@ -1180,6 +1181,7 @@ class DeliveryService:
         person_id: str,
         delivery_id: str,
         *,
+        confirmation_code: str | None = None,
         recipient_name: str | None = None,
         delivery_photo_url: str | None = None,
         notes: str | None = None,
@@ -1187,16 +1189,20 @@ class DeliveryService:
     ) -> Delivery:
         """Driver completes own delivered delivery with proof fields."""
         self._get_delivery_person(person_id)
-        owned = self._get_driver_delivery(person_id, delivery_id)
+        owned = self._get_delivery_for_completion(delivery_id)
+        if owned.delivery_person_id != person_id:
+            raise DomainError("Entrega nao encontrada para este motoboy.", code="DeliveryOwnershipDenied")
         if owned.status == DeliveryStatus.completed:
             return owned
         if owned.status not in {DeliveryStatus.on_the_way, DeliveryStatus.delivered}:
             raise DomainError("Inicie a entrega antes de marcala como entregue.", code="DeliveryNotInRoute")
-        if not owned.confirmed_by_code_at:
-            raise DomainError(
-                "Informe e valide o codigo do cliente antes de finalizar a entrega.",
-                code="DeliveryConfirmationCodeRequired",
-            )
+        if confirmation_code is not None or not owned.confirmed_by_code_at:
+            if not confirmation_code:
+                raise DomainError(
+                    "Informe e valide o codigo do cliente antes de finalizar a entrega.",
+                    code="DeliveryConfirmationCodeRequired",
+                )
+            self._confirm_delivery_code_locked(owned, confirmation_code, actor_id=person_id)
         order = self._get_order(owned.order_id)
         payment = order.payment
         pending_pay_on_delivery = bool(
@@ -1386,27 +1392,46 @@ class DeliveryService:
             "total_active": len(active_deliveries),
         }
 
-    def confirm_delivery_code(self, delivery_id: str, code: str) -> Delivery:
+    def _confirm_delivery_code_locked(
+        self,
+        delivery: Delivery,
+        code: str,
+        *,
+        actor_id: str | None = None,
+    ) -> bool:
+        """Validate a customer code on an already locked delivery row."""
+        if not hmac.compare_digest(str(delivery.confirmation_code or ""), str(code or "")):
+            raise DomainError("Codigo de confirmacao invalido.", code="InvalidCode")
+        if delivery.confirmed_by_code_at:
+            return False
+        delivery.confirmed_by_code_at = datetime.now(timezone.utc)
+        self._add_event(
+            delivery.id,
+            "confirmed_by_code",
+            description="Entrega confirmada pelo codigo de confirmacao.",
+            actor_type="driver",
+            actor_id=actor_id,
+        )
+        return True
+
+    def confirm_delivery_code(
+        self,
+        delivery_id: str,
+        code: str,
+        *,
+        actor_id: str | None = None,
+    ) -> Delivery:
         """Driver submits 4-digit code to confirm delivery completion."""
         # Serialize retries on the canonical delivery row so a timeout or
         # double tap cannot create two confirmation events.
         delivery = self._get_delivery_for_completion(delivery_id)
-        if delivery.confirmation_code != code:
-            raise DomainError("Codigo de confirmacao invalido.", code="InvalidCode")
-        if delivery.confirmed_by_code_at:
-            return delivery  # already confirmed — idempotent
-        now = datetime.now(timezone.utc)
-        delivery.confirmed_by_code_at = now
-
-        event = DeliveryEvent(
-            id=str(uuid.uuid4()),
-            tenant_id=self._tenant_id if self._tenant_enabled else None,
-            delivery_id=delivery_id,
-            event_type="confirmed_by_code",
-            description="Entrega confirmada pelo codigo de confirmacao.",
-            actor_type="driver",
+        newly_confirmed = self._confirm_delivery_code_locked(
+            delivery,
+            code,
+            actor_id=actor_id,
         )
-        self._db.add(event)
+        if not newly_confirmed:
+            return delivery  # already confirmed — idempotent
 
         # Add to customer_timeline if customer exists
         try:

@@ -530,14 +530,17 @@ def driver_complete_delivery(
         delivery = _driver_service(db, person_id).complete_driver_delivery(
             person_id,
             delivery_id,
+            confirmation_code=payload.confirmation_code,
             recipient_name=payload.recipient_name,
             delivery_photo_url=payload.delivery_photo_url,
             notes=payload.notes,
             payment_received=payload.payment_received,
         )
         return ok(_driver_delivery_payload(delivery), "Entrega marcada como entregue.")
-    except (ValueError, DomainError) as exc:
+    except ValueError as exc:
         return err_msg(str(exc), code="Unauthorized", status_code=401)
+    except DomainError as exc:
+        return err(exc)
 
 
 @router.post("/driver/deliveries/{delivery_id}/problem")
@@ -942,7 +945,7 @@ def confirm_delivery_code(
         person_id = _decode_driver_token(authorization)
         service = _driver_service(db, person_id)
         service._get_driver_delivery(person_id, delivery_id)
-        delivery = service.confirm_delivery_code(delivery_id, body.code)
+        delivery = service.confirm_delivery_code(delivery_id, body.code, actor_id=person_id)
         return ok(delivery, "Entrega confirmada com sucesso!")
     except ValueError as exc:
         return err_msg(str(exc), code="Unauthorized", status_code=401)

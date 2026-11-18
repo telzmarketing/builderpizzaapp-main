@@ -799,7 +799,7 @@ export default function Motoboy() {
                 busy={actionLoading === activeDeliveries[0].id}
                 onStart={(d) => runAction(d.id, () => deliveryApi.driverStartDelivery(d.id))}
                 onConfirmPayment={(d) => runAction(d.id, () => deliveryApi.driverConfirmPayment(d.id))}
-                onComplete={(d, code) => runAction(d.id, async () => { await deliveryApi.confirmCode(d.id, code); return deliveryApi.driverCompleteDelivery(d.id); })}
+                onComplete={(d, code) => runAction(d.id, () => deliveryApi.driverCompleteDelivery(d.id, code))}
                 onProblem={setProblem}
                 onView={setDetail}
               />
@@ -844,7 +844,7 @@ export default function Motoboy() {
                     busy={actionLoading === delivery.id}
                     onStart={(d) => runAction(d.id, () => deliveryApi.driverStartDelivery(d.id))}
                     onConfirmPayment={(d) => runAction(d.id, () => deliveryApi.driverConfirmPayment(d.id))}
-                    onComplete={(d, code) => runAction(d.id, async () => { await deliveryApi.confirmCode(d.id, code); return deliveryApi.driverCompleteDelivery(d.id); })}
+                    onComplete={(d, code) => runAction(d.id, () => deliveryApi.driverCompleteDelivery(d.id, code))}
                     onProblem={setProblem}
                     onView={setDetail}
                   />

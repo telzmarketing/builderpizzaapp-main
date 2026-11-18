@@ -106,6 +106,7 @@ class DeliveryStatusUpdate(BaseModel):
 
 
 class DeliveryCompleteIn(BaseModel):
+    confirmation_code: Optional[str] = Field(default=None, min_length=4, max_length=4, pattern=r"^\d{4}$")
     recipient_name: Optional[str] = None
     delivery_photo_url: Optional[str] = None
     notes: Optional[str] = None
