@@ -8,8 +8,23 @@ import WhatsAppAttendanceControls, { WhatsAppAttendanceBadge } from "./WhatsAppA
 import WhatsAppOrderWorkspace from "./WhatsAppOrderWorkspace";
 import { whatsappAttendance } from "@/lib/whatsappAttendance";
 import { isPendingChatbotConversation } from "@/lib/chatbotAttendance";
+import {
+  contactConversationKey,
+  pendingChatbotConversations,
+  pendingWhatsAppConversations,
+} from "@/lib/contactNotificationCounts";
 
 type Channel = "chatbot" | "whatsapp";
+
+function conversationActivityMarker(
+  channel: Channel,
+  conversation: ChatbotConversation | ApiAgenteWhatsAppConversation,
+): string {
+  if (channel === "whatsapp" && "last_message_at" in conversation) {
+    return `${conversation.last_message_at ?? ""}:${conversation.unread_count}`;
+  }
+  return `${conversation.status}:${conversation.iniciada_em}`;
+}
 
 export default function OperationsContactPanel() {
   const [channel, setChannel] = useState<Channel>("chatbot");
@@ -24,6 +39,8 @@ export default function OperationsContactPanel() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [openedConversationKeys, setOpenedConversationKeys] = useState<Set<string>>(new Set());
+  const openedConversationMarkers = useRef(new Map<string, string>());
   const actionRef = useRef(false);
   const detailRequest = useRef(0);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -68,8 +85,23 @@ export default function OperationsContactPanel() {
       const conversations = [...(chatOpen.items ?? []), ...(chatHuman.items ?? [])]
         .filter(isPendingChatbotConversation)
         .sort((a, b) => new Date(b.iniciada_em).getTime() - new Date(a.iniciada_em).getTime());
-      setChatbot(conversations);
-      setWhatsapp(wa ?? []);
+      const nextChatbot = conversations;
+      const nextWhatsApp = wa ?? [];
+      setOpenedConversationKeys((current) => {
+        const next = new Set(current);
+        for (const item of [...nextChatbot, ...nextWhatsApp]) {
+          const channel = "ai_enabled" in item ? "whatsapp" : "chatbot";
+          const key = contactConversationKey(channel, item.id);
+          const marker = openedConversationMarkers.current.get(key);
+          if (marker && marker !== conversationActivityMarker(channel, item)) {
+            next.delete(key);
+            openedConversationMarkers.current.delete(key);
+          }
+        }
+        return next;
+      });
+      setChatbot(nextChatbot);
+      setWhatsapp(nextWhatsApp);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao atualizar atendimentos.");
     } finally {
@@ -80,11 +112,21 @@ export default function OperationsContactPanel() {
   useEffect(() => { void load(); const id = window.setInterval(() => void load(), 15000); return () => window.clearInterval(id); }, [load]);
 
   const pending = useMemo(() => ({
-    chatbot: chatbot.filter(isPendingChatbotConversation).length,
-    whatsapp: whatsapp.filter((item) => item.status === "open" || item.unread_count > 0).length,
-  }), [chatbot, whatsapp]);
+    chatbot: pendingChatbotConversations(chatbot, openedConversationKeys).length,
+    whatsapp: pendingWhatsAppConversations(whatsapp, openedConversationKeys).length,
+  }), [chatbot, whatsapp, openedConversationKeys]);
 
   const openConversation = async (item: ChatbotConversation | ApiAgenteWhatsAppConversation) => {
+    const itemChannel = "ai_enabled" in item ? "whatsapp" : "chatbot";
+    openedConversationMarkers.current.set(
+      contactConversationKey(itemChannel, item.id),
+      conversationActivityMarker(itemChannel, item),
+    );
+    setOpenedConversationKeys((current) => {
+      const next = new Set(current);
+      next.add(contactConversationKey(itemChannel, item.id));
+      return next;
+    });
     const request = ++detailRequest.current;
     setSelected(item);
     setDraft("");
