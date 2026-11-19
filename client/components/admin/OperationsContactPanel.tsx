@@ -23,7 +23,8 @@ function conversationActivityMarker(
   if (channel === "whatsapp" && "last_message_at" in conversation) {
     return `${conversation.last_message_at ?? ""}:${conversation.unread_count}`;
   }
-  return `${conversation.status}:${conversation.iniciada_em}`;
+  const chatbotConversation = conversation as ChatbotConversation;
+  return `${chatbotConversation.status}:${chatbotConversation.iniciada_em}`;
 }
 
 export default function OperationsContactPanel() {
