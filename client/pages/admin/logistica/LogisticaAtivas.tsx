@@ -1,6 +1,6 @@
 import { deliveryOrderCode } from "@/lib/deliveryPresentation";
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, MapPin, RefreshCw, Route, Clock, Zap } from "lucide-react";
+import { Loader2, MapPin, RefreshCw, Route, Clock, Zap, CheckCircle2 } from "lucide-react";
 import { deliveryApi, type DeliveryRecord } from "@/lib/api";
 
 function etaText(assignedAt?: string, estimatedMinutes?: number): { text: string; urgent: boolean } | null {
@@ -30,6 +30,9 @@ const STATUS_CLS: Record<string, string> = {
   completed:   "bg-green-500/15 text-green-300",
 };
 
+const ADMIN_COMPLETABLE_STATUSES = new Set(["assigned", "picked_up", "on_the_way", "delivered"]);
+const ADMIN_COMPLETION_REASON = "Corrida finalizada manualmente pelo painel após confirmação de entrega.";
+
 function formatTime(iso?: string) {
   if (!iso) return "—";
   return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -41,6 +44,8 @@ export default function LogisticaAtivas() {
   const [error, setError] = useState("");
   const [autoAssigning, setAutoAssigning] = useState(false);
   const [autoAssignMsg, setAutoAssignMsg] = useState("");
+  const [completingDeliveryId, setCompletingDeliveryId] = useState<string | null>(null);
+  const [completionFeedback, setCompletionFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -54,6 +59,25 @@ export default function LogisticaAtivas() {
       setLoading(false);
     }
   }, []);
+
+  const completeAsDelivered = async (deliveryId: string) => {
+    if (!window.confirm(`Confirma finalizar esta corrida como entregue?\n\nMotivo: ${ADMIN_COMPLETION_REASON}`)) return;
+
+    setCompletingDeliveryId(deliveryId);
+    setCompletionFeedback(null);
+    try {
+      await deliveryApi.adminComplete(deliveryId, ADMIN_COMPLETION_REASON);
+      setCompletionFeedback({ type: "success", message: "Corrida finalizada como entregue." });
+      await load(true);
+    } catch (err) {
+      setCompletionFeedback({
+        type: "error",
+        message: err instanceof Error ? err.message : "Não foi possível finalizar a corrida.",
+      });
+    } finally {
+      setCompletingDeliveryId(null);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -112,6 +136,12 @@ export default function LogisticaAtivas() {
       {error && (
         <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           {error}
+        </div>
+      )}
+
+      {completionFeedback && (
+        <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${completionFeedback.type === "success" ? "border-green-500/30 bg-green-500/10 text-green-300" : "border-red-500/30 bg-red-500/10 text-red-300"}`} role="status">
+          {completionFeedback.message}
         </div>
       )}
 
@@ -179,6 +209,18 @@ export default function LogisticaAtivas() {
                     );
                   })()}
                 </div>
+
+                {ADMIN_COMPLETABLE_STATUSES.has(d.status) && (
+                  <button
+                    type="button"
+                    onClick={() => void completeAsDelivered(d.id)}
+                    disabled={completingDeliveryId === d.id}
+                    className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-green-500/40 bg-green-500/10 px-3 py-2 text-sm font-semibold text-green-300 transition-colors hover:bg-green-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {completingDeliveryId === d.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                    {completingDeliveryId === d.id ? "Finalizando..." : "Finalizar como entregue"}
+                  </button>
+                )}
 
               </div>
             );

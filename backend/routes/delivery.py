@@ -61,6 +61,7 @@ from backend.schemas.delivery import (
     DeliveryAssignIn,
     DeliveryStatusUpdate,
     DeliveryCompleteIn,
+    DeliveryAdminCompleteIn,
     DeliveryConfirmIn,
     DriverItemScanIn,
     DeliveryRateIn,
@@ -925,6 +926,30 @@ def complete_delivery(
             notes=body.notes,
         )
         return ok(delivery, "Entrega finalizada.")
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/{delivery_id}/admin-complete")
+def admin_complete_delivery(
+    delivery_id: str,
+    body: DeliveryAdminCompleteIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+    _orders_edit_permission=Depends(require_rbac_permission("pedidos", "edit")),
+):
+    """Force-complete an active delivery after an operator confirms delivery."""
+    try:
+        actor_id = str(getattr(admin, "id", None) or getattr(admin, "email", None) or "admin")
+        delivery = _admin_service(request, db, admin).admin_complete(
+            delivery_id,
+            reason=body.reason,
+            actor_id=actor_id,
+            recipient_name=body.recipient_name,
+            delivery_photo_url=body.delivery_photo_url,
+        )
+        return ok(delivery, "Entrega finalizada administrativamente.")
     except DomainError as exc:
         return err(exc)
 

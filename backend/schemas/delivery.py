@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, date
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from backend.models.delivery import VehicleType, DeliveryPersonStatus, DeliveryStatus
 
@@ -111,6 +111,22 @@ class DeliveryCompleteIn(BaseModel):
     delivery_photo_url: Optional[str] = None
     notes: Optional[str] = None
     payment_received: bool = False
+
+
+class DeliveryAdminCompleteIn(BaseModel):
+    """Administrative recovery proof for a delivery stuck in an active state."""
+
+    reason: str = Field(..., min_length=1, max_length=500)
+    recipient_name: Optional[str] = Field(default=None, max_length=200)
+    delivery_photo_url: Optional[str] = Field(default=None, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_not_be_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("reason must not be blank")
+        return value
 
 
 class DeliveryRateIn(BaseModel):

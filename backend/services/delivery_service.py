@@ -647,6 +647,79 @@ class DeliveryService:
 
         return delivery
 
+    def admin_complete(
+        self,
+        delivery_id: str,
+        *,
+        reason: str,
+        actor_id: str,
+        recipient_name: str | None = None,
+        delivery_photo_url: str | None = None,
+    ) -> Delivery:
+        """Complete a stuck active delivery through the canonical state machine."""
+        reason = (reason or "").strip()
+        if not reason:
+            raise DomainError(
+                "Informe o motivo da finalizacao administrativa.",
+                code="AdminCompletionReasonRequired",
+            )
+        actor_id = str(actor_id or "").strip()
+        if not actor_id:
+            raise DomainError("Administrador invalido.", code="AdminActorRequired")
+
+        delivery = self._get_delivery_for_completion(delivery_id)
+        initial_status = delivery.status.value
+        allowed = {
+            DeliveryStatus.assigned,
+            DeliveryStatus.picked_up,
+            DeliveryStatus.on_the_way,
+            DeliveryStatus.delivered,
+            DeliveryStatus.completed,
+        }
+        if delivery.status not in allowed:
+            raise DomainError(
+                "Somente entregas ativas podem ser finalizadas administrativamente.",
+                code="DeliveryNotActive",
+            )
+
+        # A completed row is already the successful outcome. ``complete`` is
+        # idempotent and repairs a missing legacy earning without duplicating
+        # the operational completion event or driver counter.
+        if delivery.status == DeliveryStatus.completed:
+            return self.complete(
+                delivery_id,
+                recipient_name=recipient_name,
+                delivery_photo_url=delivery_photo_url,
+            )
+
+        # Walk the normal graph; update_status delegates every edge to
+        # delivery_sm and synchronizes the order at on_the_way/delivered.
+        for next_status in ("picked_up", "on_the_way", "delivered"):
+            if delivery.status.value == next_status:
+                continue
+            delivery = self.update_status(delivery_id, next_status)
+
+        delivery = self.complete(
+            delivery_id,
+            recipient_name=recipient_name,
+            delivery_photo_url=delivery_photo_url,
+        )
+        self._add_event(
+            delivery_id,
+            "admin_completed",
+            description=f"Entrega finalizada administrativamente: {reason}",
+            actor_type="admin",
+            actor_id=actor_id,
+            metadata={
+                "from_status": initial_status,
+                "to_status": DeliveryStatus.completed.value,
+                "reason": reason,
+            },
+        )
+        self._db.commit()
+        self._db.refresh(delivery)
+        return delivery
+
     def rate(self, delivery_id: str, rating: int, comment: str | None = None) -> Delivery:
         """Record customer rating (1–5) for a completed delivery."""
         delivery = self._get_delivery(delivery_id)
