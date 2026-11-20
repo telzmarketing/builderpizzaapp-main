@@ -505,7 +505,11 @@ class DeliveryService:
             if not delivery.picked_up_at:
                 delivery.picked_up_at = now
             order = self._get_order(delivery.order_id)
-            if order.status != OrderStatus.on_the_way:
+            # An administrative recovery can find a delivery still active
+            # while its order was already marked delivered (for example by a
+            # previous retry). Never regress the canonical order state just to
+            # advance the delivery row.
+            if order.status not in (OrderStatus.on_the_way, OrderStatus.delivered):
                 old_order_status = order.status.value
                 order_sm.transition(delivery.order_id, old_order_status, "on_the_way")
                 order.status = OrderStatus.on_the_way
@@ -518,20 +522,30 @@ class DeliveryService:
             # Order advances to 'delivered'
             order = self._get_order(delivery.order_id)
             if order:
-                if order.status != OrderStatus.on_the_way:
-                    old_order_status = order.status.value
-                    order_sm.transition(delivery.order_id, old_order_status, "on_the_way")
-                    order.status = OrderStatus.on_the_way
-                    self._publish_order_status_changed(order, old_order_status, "on_the_way")
-                    order.out_for_delivery_at = order.out_for_delivery_at or now
-                order_sm.transition(delivery.order_id, order.status.value, "delivered")
-                order.status = OrderStatus.delivered
-                self._publish_order_status_changed(order, "on_the_way", "delivered")
-                order.delivered_at = order.delivered_at or now
-                order.updated_at = now
+                order_reached_delivered = False
+                if order.status == OrderStatus.delivered:
+                    # The order is already terminal. This is the expected
+                    # state when recovering a delivery whose previous
+                    # attempt committed the order transition first.
+                    pass
+                else:
+                    if order.status != OrderStatus.on_the_way:
+                        old_order_status = order.status.value
+                        order_sm.transition(delivery.order_id, old_order_status, "on_the_way")
+                        order.status = OrderStatus.on_the_way
+                        self._publish_order_status_changed(order, old_order_status, "on_the_way")
+                        order.out_for_delivery_at = order.out_for_delivery_at or now
+                    order_sm.transition(delivery.order_id, order.status.value, "delivered")
+                    order.status = OrderStatus.delivered
+                    self._publish_order_status_changed(order, "on_the_way", "delivered")
+                    order_reached_delivered = True
+                    order.delivered_at = order.delivered_at or now
+                    order.updated_at = now
 
-                # Award loyalty points
-                if order.customer_id:
+                # Award loyalty points only when this call actually performs
+                # the order's on_the_way -> delivered transition. A recovery
+                # of an already delivered order must not duplicate points.
+                if order_reached_delivered and order.customer_id:
                     from backend.services.loyalty_service import award_points_for_order
                     from backend.services.customer_metrics_service import sync_customer_order_metrics
                     points = award_points_for_order(

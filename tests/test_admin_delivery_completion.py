@@ -5,6 +5,7 @@ import pytest
 
 from backend.core.exceptions import DomainError
 from backend.models.delivery import DeliveryStatus
+from backend.models.order import OrderStatus
 from backend.schemas.delivery import DeliveryAdminCompleteIn
 from backend.services.delivery_service import DeliveryService
 
@@ -103,3 +104,61 @@ def test_admin_completion_route_is_rbac_protected_and_service_is_tenant_scoped()
     assert 'actor_type="admin"' in service
     assert '"reason": reason' in service
     assert "self.update_status(delivery_id, next_status)" in service
+
+
+def test_delivery_recovery_does_not_regress_delivered_order_or_duplicate_loyalty(monkeypatch):
+    delivery = SimpleNamespace(
+        id="delivery-1",
+        order_id="order-1",
+        tenant_id="tenant-1",
+        status=DeliveryStatus.picked_up,
+        picked_up_at=None,
+        delivered_at=None,
+    )
+    order = SimpleNamespace(
+        id="order-1",
+        tenant_id="tenant-1",
+        status=OrderStatus.delivered,
+        customer_id="customer-1",
+        total=42.0,
+        delivered_at=SimpleNamespace(),
+        out_for_delivery_at=SimpleNamespace(),
+        updated_at=SimpleNamespace(),
+        loyalty_points_earned=10,
+    )
+    service = DeliveryService.__new__(DeliveryService)
+    service._db = SimpleNamespace(commit=lambda: None, refresh=lambda _row: None)
+    service._get_delivery = lambda _delivery_id: delivery
+    service._get_delivery_for_completion = lambda _delivery_id: delivery
+    service._get_order = lambda _order_id: order
+    service._add_event = lambda *args, **kwargs: None
+    service.complete = lambda _delivery_id, **_kwargs: (
+        setattr(delivery, "status", DeliveryStatus.completed) or delivery
+    )
+    order_status_events = []
+    service._publish_order_status_changed = lambda _order, old, new: order_status_events.append((old, new))
+    loyalty_calls = []
+    monkeypatch.setattr(
+        "backend.services.loyalty_service.award_points_for_order",
+        lambda *args, **kwargs: loyalty_calls.append((args, kwargs)) or 99,
+    )
+    monkeypatch.setattr(
+        "backend.services.customer_metrics_service.sync_customer_order_metrics",
+        lambda *args, **kwargs: loyalty_calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        "backend.services.kds_production_service.ensure_kds_units_ready",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr("backend.services.delivery_service.bus.publish", lambda _event: None)
+
+    service.admin_complete(
+        "delivery-1",
+        reason="Cliente confirmou a entrega por telefone",
+        actor_id="admin-1",
+    )
+
+    assert delivery.status == DeliveryStatus.completed
+    assert order.status == OrderStatus.delivered
+    assert order_status_events == []
+    assert loyalty_calls == []
