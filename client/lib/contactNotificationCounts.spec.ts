@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   contactConversationKey,
+  isContactConversationUnread,
   pendingChatbotConversations,
   pendingWhatsAppConversations,
 } from "./contactNotificationCounts";
@@ -34,5 +35,24 @@ describe("operations contact notification counts", () => {
         new Set([contactConversationKey("whatsapp", "wa-2")]),
       ).map((conversation) => conversation.id),
     ).toEqual(["wa-3"]);
+  });
+
+  it("identifies the visual unread state for each channel", () => {
+    expect(
+      isContactConversationUnread("chatbot", { id: "chat-1", status: "aberta" } as any, new Set()),
+    ).toBe(true);
+    expect(
+      isContactConversationUnread(
+        "chatbot",
+        { id: "chat-1", status: "aberta" } as any,
+        new Set([contactConversationKey("chatbot", "chat-1")]),
+      ),
+    ).toBe(false);
+    expect(
+      isContactConversationUnread("whatsapp", { id: "wa-1", unread_count: 1 } as any, new Set()),
+    ).toBe(true);
+    expect(
+      isContactConversationUnread("whatsapp", { id: "wa-1", unread_count: 0 } as any, new Set()),
+    ).toBe(false);
   });
 });

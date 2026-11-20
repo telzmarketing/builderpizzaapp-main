@@ -10,6 +10,7 @@ import { whatsappAttendance } from "@/lib/whatsappAttendance";
 import { isPendingChatbotConversation } from "@/lib/chatbotAttendance";
 import {
   contactConversationKey,
+  isContactConversationUnread,
   pendingChatbotConversations,
   pendingWhatsAppConversations,
 } from "@/lib/contactNotificationCounts";
@@ -266,14 +267,18 @@ export default function OperationsContactPanel() {
         {!selected ? (
           <div className="flex-1 space-y-2 overflow-y-auto p-3">
             {items.length === 0 && <p className="py-10 text-center text-sm text-stone">Nenhum atendimento pendente.</p>}
-            {items.map((item) => <button type="button" key={item.id} onClick={() => void openConversation(item)} className="w-full rounded-xl border border-surface-03 bg-surface-02 p-3 text-left">
+            {items.map((item) => {
+              const itemChannel = "ai_enabled" in item ? "whatsapp" : "chatbot";
+              const isUnread = isContactConversationUnread(itemChannel, item, openedConversationKeys);
+              return <button type="button" key={item.id} onClick={() => void openConversation(item)} className={`w-full rounded-xl border p-3 text-left ${isUnread ? "border-gold/60 bg-gold/10" : "border-surface-03 bg-surface-02"}`}>
               <div className="flex items-center justify-between gap-2">
-                <span className="truncate font-bold text-cream">{"nome_cliente" in item ? (item.nome_cliente || "Visitante") : (item.customer_name || item.phone || "WhatsApp")}</span>
-                <span className="text-xs text-stone">{"unread_count" in item ? item.unread_count : item.status}</span>
+                <span className={`truncate ${isUnread ? "font-black text-gold" : "font-bold text-cream"}`}>{"nome_cliente" in item ? (item.nome_cliente || "Visitante") : (item.customer_name || item.phone || "WhatsApp")}</span>
+                <span className={`text-xs ${isUnread ? "font-black text-gold" : "text-stone"}`}>{"unread_count" in item ? item.unread_count : item.status}</span>
               </div>
               {"ai_enabled" in item && <div className="mt-2"><WhatsAppAttendanceBadge session={item} /></div>}
-              <p className="mt-1 truncate text-xs text-stone">{"last_message" in item ? (item.last_message?.body || "") : (item.resumo_conversa || "Solicitação de atendimento")}</p>
-            </button>)}
+              <p className={`mt-1 truncate text-xs ${isUnread ? "font-bold text-gold" : "text-stone"}`}>{"last_message" in item ? (item.last_message?.body || "") : (item.resumo_conversa || "Solicitação de atendimento")}</p>
+              </button>;
+            })}
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
