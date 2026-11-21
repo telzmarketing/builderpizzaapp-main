@@ -1,4 +1,5 @@
 import type { ProductConfiguratorProps } from "@/pages/Product";
+import type { CartPromotionMeta } from "@/context/AppContext";
 import type {
   ApiEffectivePermissions,
   ApiProduct,
@@ -9,6 +10,7 @@ export interface ManualCartLine {
   id: string;
   name: string;
   item: CheckoutItemIn;
+  promotion?: CartPromotionMeta;
 }
 
 export function configuredManualLine(
@@ -27,13 +29,14 @@ export function configuredManualLine(
     crust,
     drink,
     sizeId,
-    ,
+    promotion,
     border,
     selectedOptions,
   ] = args;
   return {
     id,
     name: product.name,
+    promotion,
     item: {
       product_id: product.id,
       quantity,
@@ -74,9 +77,25 @@ export function simpleManualLine(
   quantity = 1,
 ): ManualCartLine {
   const price = product.current_price ?? product.price;
+  const promotion = product.promotion_applied
+    ? {
+        applied: true,
+        id: product.promotion_id,
+        name: product.promotion_name,
+        discount: product.promotion_discount,
+        freeShipping: product.promotion_free_shipping,
+        giftEnabled: product.promotion_gift_enabled,
+        giftProductId: product.promotion_gift_product_id,
+        giftQuantity: product.promotion_gift_quantity,
+        giftName: product.promotion_gift_name,
+        giftIcon: product.promotion_gift_icon,
+        blocksOtherCoupons: product.promotion_blocks_other_coupons,
+      }
+    : undefined;
   return {
     id,
     name: product.name,
+    promotion,
     item: {
       product_id: product.id,
       quantity: Math.max(1, Math.floor(quantity)),

@@ -87,6 +87,25 @@ const button =
   "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-gold px-4 py-3 font-bold text-black disabled:opacity-40";
 const money = (amount: number) =>
   amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+function QuotePromotionsSummary({ quote, lines }: { quote: ManualOrderQuote; lines: ManualCartLine[] }) {
+  const applied = quote.items
+    .map((item, index) => ({ item, line: lines[index] }))
+    .filter(({ item }) => item.promotion_applied);
+  if (!applied.length) return null;
+  return (
+    <div data-testid="manual-order-promotions" className="space-y-1 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs">
+      <p className="font-bold uppercase tracking-wide text-emerald-200">Promoções aplicadas</p>
+      {applied.map(({ item, line }, index) => (
+        <p key={`${item.product_id}-${index}`} className="text-emerald-100">
+          {line?.name || item.product_id}: {item.promotion_name || "Promoção"}
+          {(item.promotion_discount || 0) > 0 && ` · desconto ${money((item.promotion_discount || 0) * (line?.item.quantity || 1))}`}
+          {item.promotion_gift_enabled && ` · brinde: ${item.promotion_gift_name || "item promocional"}`}
+          {item.promotion_free_shipping && " · frete grátis"}
+        </p>
+      ))}
+    </div>
+  );
+}
 const errorText = (error: unknown) =>
   error instanceof Error
     ? error.message
@@ -1040,9 +1059,23 @@ export default function ManualOrderComposer({
                             </p>
                           )}
                           {currentQuote?.items[index] && (
-                            <p className="mt-2 text-sm font-black text-gold">
-                              {money(currentQuote.items[index].line_total)}
-                            </p>
+                            <>
+                              <p className="mt-2 text-sm font-black text-gold">
+                                {money(currentQuote.items[index].line_total)}
+                              </p>
+                              {currentQuote.items[index].promotion_applied && (
+                                <p className="mt-1 text-xs font-semibold text-emerald-300">
+                                  {currentQuote.items[index].promotion_name || "Promoção"} aplicada
+                                  {(currentQuote.items[index].promotion_discount || 0) > 0 &&
+                                    ` · -${money(currentQuote.items[index].promotion_discount || 0)}`}
+                                </p>
+                              )}
+                              {currentQuote.items[index].promotion_gift_enabled && (
+                                <p className="mt-1 text-xs text-emerald-200">
+                                  Brinde: {currentQuote.items[index].promotion_gift_name || "item promocional"}
+                                </p>
+                              )}
+                            </>
                           )}
                         </div>
                         <button
@@ -1167,6 +1200,14 @@ export default function ManualOrderComposer({
                     {draft.staffBonus ? money(0) : currentQuote ? money(currentQuote.total) : "—"}
                   </strong>
                 </div>
+                {currentQuote?.promotion_free_shipping_applied && (
+                  <p className="mb-4 text-xs font-semibold text-emerald-300">
+                    Frete grátis da promoção aplicado
+                  </p>
+                )}
+                {currentQuote && (
+                  <QuotePromotionsSummary quote={currentQuote} lines={draft.lines} />
+                )}
                 <button
                   type="button"
                   disabled={busy || !currentQuote || !payload}
@@ -1688,6 +1729,7 @@ export default function ManualOrderComposer({
                     <p>Produtos: {money(currentQuote.subtotal)}</p>
                     <p>Entrega: {money(currentQuote.delivery_fee_final)}</p>
                     <p>Desconto: {money(currentQuote.discount || 0)}</p>
+                    <QuotePromotionsSummary quote={currentQuote} lines={draft.lines} />
                     {(currentQuote.manual_discount || 0) > 0 && <p>Desconto manual: {money(currentQuote.manual_discount || 0)}</p>}
                     {currentQuote.cash_change_amount != null && (
                       <p className="text-xl font-bold text-gold">

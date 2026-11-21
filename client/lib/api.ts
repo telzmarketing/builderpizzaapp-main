@@ -2148,7 +2148,27 @@ export interface ManualOrderQuote {
   discount?: number;
   manual_discount?: number;
   cash_change_amount?: number | null;
-  items: Array<{ product_id: string; unit_price: number; line_total: number }>;
+  promotion_free_shipping_applied?: boolean;
+  items: Array<{
+    product_id: string;
+    quantity?: number;
+    unit_price: number;
+    line_total: number;
+    standard_unit_price?: number;
+    promotion_applied?: boolean;
+    promotion_id?: string | null;
+    promotion_name?: string | null;
+    promotion_discount?: number;
+    promotion_free_shipping?: boolean;
+    promotion_gift_enabled?: boolean;
+    promotion_gift_product_id?: string | null;
+    promotion_gift_quantity?: number;
+    promotion_gift_name?: string | null;
+    promotion_gift_icon?: string | null;
+    promotion_blocks_other_coupons?: boolean;
+    promotion_blocked?: boolean;
+    promotion_block_reason?: string | null;
+  }>;
 }
 
 export interface StoreOperationInterval {

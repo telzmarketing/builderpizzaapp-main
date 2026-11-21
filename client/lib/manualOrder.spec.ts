@@ -59,6 +59,48 @@ describe("operator order adaptation", () => {
     expect(line.item.notes).toBe("Sem cebola");
   });
 
+  it("preserves ProductConfigurator promotion metadata in the manual cart line", () => {
+    const product = { id: "pizza", name: "Pizza", price: 40 } as ApiProduct;
+    const line = configuredManualLine(
+      [
+        product,
+        1,
+        "Grande",
+        [],
+        [{ productId: "pizza", name: "Pizza", price: 40, icon: "🍕" }],
+        1,
+        30,
+        undefined,
+        null,
+        null,
+        "large",
+        {
+          applied: true,
+          id: "promotion-1",
+          name: "Terça da pizza",
+          discount: 10,
+          freeShipping: true,
+          giftEnabled: true,
+          giftProductId: "drink",
+          giftQuantity: 1,
+          giftName: "Refrigerante",
+          giftIcon: "🥤",
+          blocksOtherCoupons: true,
+        },
+      ],
+      "line",
+    );
+
+    expect(line.promotion).toMatchObject({
+      applied: true,
+      id: "promotion-1",
+      name: "Terça da pizza",
+      discount: 10,
+      freeShipping: true,
+      giftName: "Refrigerante",
+    });
+  });
+
   it("uses the requested quantity for a simple manual line", () => {
     const product = {
       id: "drink",
