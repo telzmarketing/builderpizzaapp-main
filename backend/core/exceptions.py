@@ -27,6 +27,13 @@ class OrderNotFound(DomainError):
         super().__init__(f"Pedido '{order_id}' não encontrado.")
 
 
+class OrderAmendmentBlocked(DomainError):
+    http_status = 409
+
+    def __init__(self, message: str, *, code: str = "OrderAmendmentBlocked"):
+        super().__init__(message, code=code)
+
+
 class OrderAlreadyPaid(DomainError):
     def __init__(self, order_id: str):
         super().__init__(f"Pedido '{order_id}' já foi pago.")

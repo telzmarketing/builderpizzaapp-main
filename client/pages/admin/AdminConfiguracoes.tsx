@@ -94,9 +94,9 @@ function TemplateCard({
     setTestStatus("Enviando...");
     try {
       const result = await printReceiptTest(html, settings);
-      setTestStatus(`Aceito via ${result.transport === "qz" ? "QZ Tray" : "agente local"}`);
+      setTestStatus(`Trabalho aceito via ${result.transport === "qz" ? "QZ Tray" : "agente local"}. Confirme a saída em papel na impressora.`);
     } catch (error) {
-      setTestStatus(silentPrintFallbackMessage(error));
+      setTestStatus(`${silentPrintFallbackMessage(error)} Se estiver usando QZ Tray, verifique se está aberto, se você autorizou este site no aviso do QZ Tray, se o navegador permitiu acesso a aplicativos locais e se o nome da fila está correto.`);
     }
   };
 
@@ -499,25 +499,25 @@ export default function AdminConfiguracoes() {
                     </Field>
 
                     <Field
-                      label="Impressão automática"
-                      hint="Abre a janela de impressão automaticamente ao clicar no botão de imprimir."
+                      label="Impressão automática (opção legada)"
+                      hint="Esta preferência não é usada pelo fluxo atual de impressão. O botão Imprimir teste envia diretamente ao QZ Tray ou agente local; não abre a janela de impressão."
                     >
                       <button
                         type="button"
-                        onClick={() => update({ autoPrint: !settings.autoPrint })}
+                        disabled
                         className={`mt-1 w-full py-2.5 rounded-lg text-sm font-bold border-2 transition-all ${
                           settings.autoPrint
                             ? "border-gold bg-gold/15 text-gold"
                             : "border-surface-03 text-stone hover:border-gold/40 hover:text-parchment"
                         }`}
                       >
-                        {settings.autoPrint ? "✓ Ativada" : "Desativada"}
+                        {settings.autoPrint ? "Ativada, sem efeito" : "Desativada, sem efeito"}
                       </button>
                     </Field>
 
                     <Field
                       label="Imprimir pedido confirmado"
-                      hint="Quando o painel Pedidos estiver aberto, imprime uma via da cozinha e uma via completa da recepção ao confirmar pagamento."
+                      hint="Com o painel Pedidos aberto, tenta enviar uma via da cozinha e uma via completa quando detectar um pedido recém-marcado como pago. Requer QZ Tray ou agente local autorizado neste computador."
                     >
                       <button
                         type="button"
@@ -534,7 +534,7 @@ export default function AdminConfiguracoes() {
 
                     <Field
                       label="Nome da fila da impressora"
-                      hint="Use o nome exato da fila no Windows/QZ Tray. Ex.: Bematech MP-4200 TH."
+                      hint="Use o nome exato da fila instalada neste computador e visível no QZ Tray. Ex.: Bematech MP-4200 TH."
                     >
                       <input
                         className={cls}
@@ -544,6 +544,9 @@ export default function AdminConfiguracoes() {
                       />
                     </Field>
                   </div>
+                  <p className="mt-5 text-xs text-stone">
+                    Para testar com QZ Tray, abra o aplicativo neste computador e autorize este site quando o QZ Tray solicitar. Se o navegador pedir acesso a aplicativos locais, permita para este site. Sem assinatura confiável configurada fora do navegador, o QZ Tray pode pedir autorização a cada envio; esta página não instala nem autoriza o aplicativo automaticamente. Nunca informe uma chave privada aqui.
+                  </p>
                 </section>
 
                 {/* ── Modelos de impressão ──────────────────────── */}
@@ -551,7 +554,7 @@ export default function AdminConfiguracoes() {
                   <div className="mb-4">
                     <h3 className="text-cream font-bold text-lg">Modelos de impressão</h3>
                     <p className="text-stone text-sm mt-1">
-                      Clique em um modelo para defini-lo como padrão. O botão "Prévia" mostra o resultado real com dados de exemplo.
+                      Clique em um modelo para defini-lo como padrão. "Prévia" mostra dados de exemplo na tela; "Imprimir teste" envia o modelo ao QZ Tray ou agente local configurado neste computador.
                     </p>
                   </div>
 

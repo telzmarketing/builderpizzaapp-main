@@ -34,7 +34,38 @@ class PagarmeGateway:
         cents = int(round(amount * 100)) if amount is not None else None
         return self.client.cancel_charge(charge_id, amount_cents=cents)
 
-    def _order_payload(self, order: Order, payment: Payment, *, token: str | None, installments: int, document: str | None) -> dict[str, Any]:
+    def create_incremental_pix_charge(
+        self,
+        order: Order,
+        *,
+        amount: float,
+        reference: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        """Create a new Pix order while keeping the original charge immutable."""
+        payment = Payment(method=PaymentMethod.pix, amount=amount)
+        payload = self._order_payload(
+            order,
+            payment,
+            token=None,
+            installments=1,
+            document=None,
+            code=reference,
+            description=f"Alteracao do pedido {order.id}",
+        )
+        return self.client.create_order(payload, idempotency_key=idempotency_key)
+
+    def _order_payload(
+        self,
+        order: Order,
+        payment: Payment,
+        *,
+        token: str | None,
+        installments: int,
+        document: str | None,
+        code: str | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
         customer = order.customer
         customer_payload: dict[str, Any] = {
             "name": customer.name,
@@ -57,8 +88,8 @@ class PagarmeGateway:
             }
         cents = int(round(payment.amount * 100))
         return {
-            "code": order.id[:52],
-            "items": [{"amount": cents, "description": f"Pedido {order.id}"[:256], "quantity": 1}],
+            "code": (code or order.id)[:52],
+            "items": [{"amount": cents, "description": (description or f"Pedido {order.id}")[:256], "quantity": 1}],
             "customer": customer_payload,
             "payments": [payment_node],
             "closed": True,

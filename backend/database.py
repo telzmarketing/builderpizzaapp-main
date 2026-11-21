@@ -41,6 +41,8 @@ MASTER_CENTRAL_MIGRATION_TABLES = frozenset({
     "platform_error_events",
     "platform_worker_heartbeats",
     "idempotency_keys",
+    "order_amendments",
+    "payment_settlements",
     "tenant_upload_assets",
     "tenant_upload_legacy_references",
     "print_order_imports",

@@ -7,6 +7,7 @@ from backend.config import get_settings
 from backend.core.tenant_context import TenantContext, TenantSource
 from backend.core.tenant_route_context import panel_operation_context
 from backend.core.wave6_tenant_orm import wave6_tenant_orm_enabled
+from backend.core.wave6_tenant_context import bind_wave6_tenant_context
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
 from backend.models.whatsapp_gateway import WhatsAppGatewayInstance
@@ -43,6 +44,12 @@ def overview(db: Session = Depends(get_db), context=Depends(panel_operation_cont
 @router.get("/provider/status", response_model=WhatsAppGatewayProviderStatusOut)
 def provider_status(db: Session = Depends(get_db), context=Depends(panel_operation_context), _=Depends(get_current_admin)):
     return _tenant_service(db, context).provider_status()
+
+
+@router.get("/readiness")
+def readiness(db: Session = Depends(get_db), context=Depends(panel_operation_context), _=Depends(get_current_admin)):
+    """Read-only gate for a real, externally authenticated WhatsApp E2E test."""
+    return _tenant_service(db, context).external_e2e_readiness()
 
 
 @router.get("/updates/status", response_model=WhatsAppGatewayUpdateStatusOut)
@@ -223,6 +230,7 @@ def receive_runtime_event(
     if not instance:
         raise HTTPException(status_code=404, detail="Instancia do WhatsApp Gateway nao encontrada.")
     context = TenantContext(tenant_id=instance.tenant_id, source=TenantSource.WEBHOOK)
+    bind_wave6_tenant_context(db, context)
     result = _tenant_service(db, context).process_runtime_event(body.model_dump())
     db.commit()
     return result

@@ -18,7 +18,7 @@ from backend.models.inventory import InventoryItem, InventoryStockMovement
 from backend.models.rbac import AdminAuditLog
 from backend.models.product import Product
 from backend.models.gestao import GestaoModuleSettings
-from backend.core.kds_stations import PIZZA_STATION_IDS, station_scope
+from backend.core.kds_stations import PIZZA_STATION_IDS, station_scope, operational_stage
 
 
 class KdsStockConflict(DomainError):
@@ -100,7 +100,7 @@ class KdsProductionService:
         operation_ids = [row.operation_id for row in consumption if row.operation_id]
         snapshot = self.db.query(OrderItemCmvSnapshot).filter_by(tenant_id=self.tenant_id, order_item_id=u.order_item_id).first()
         order_code = self.db.query(Order.order_code).filter(Order.tenant_id == self.tenant_id, Order.id == u.order_id).scalar()
-        return {"id":a.id,"task_id":a.id,"production_unit_id":u.id,"order_id":u.order_id,"order_code":order_code,"order_item_id":u.order_item_id,"unit_index":u.unit_index,"attempt_id":a.id,"attempt_number":a.attempt_number,"state":a.state,"version":a.version,"operator_id":a.operator_id,"station_id":u.station_id,"requires_oven":u.requires_oven,"assigned_at":a.assigned_at,"started_at":a.started_at,"assembly_finished_at":a.assembly_finished_at,"completed_at":a.completed_at,"consumption_mode":a.stock_consumption_mode or ("attempts" if consumption else "pending"),"consumption_operation_id":operation_ids[0] if operation_ids else None,"composition_revision_id":snapshot.snapshot_id if snapshot else None,"server_time":self._now(),"stock_requested_at":a.stock_requested_at,"stock_check_after":a.stock_check_after,"blocked_reason":a.blocked_reason,"product_name":snapshot.product_name if snapshot else None,"created_at":a.created_at,"priority":0}
+        return {"operational_stage": operational_stage(u.station_id, a.state), "id":a.id,"task_id":a.id,"production_unit_id":u.id,"order_id":u.order_id,"order_code":order_code,"order_item_id":u.order_item_id,"unit_index":u.unit_index,"attempt_id":a.id,"attempt_number":a.attempt_number,"state":a.state,"version":a.version,"operator_id":a.operator_id,"station_id":u.station_id,"requires_oven":u.requires_oven,"assigned_at":a.assigned_at,"started_at":a.started_at,"assembly_finished_at":a.assembly_finished_at,"completed_at":a.completed_at,"consumption_mode":a.stock_consumption_mode or ("attempts" if consumption else "pending"),"consumption_operation_id":operation_ids[0] if operation_ids else None,"composition_revision_id":snapshot.snapshot_id if snapshot else None,"server_time":self._now(),"stock_requested_at":a.stock_requested_at,"stock_check_after":a.stock_check_after,"blocked_reason":a.blocked_reason,"product_name":snapshot.product_name if snapshot else None,"created_at":a.created_at,"priority":1 if (a.priority or a.attempt_number > 1) else 0}
 
     @staticmethod
     def _aware(value):
@@ -217,6 +217,10 @@ class KdsProductionService:
             KdsOperatorState.station_id.notin_(allowed),
         ).first() is not None
 
+    def _assert_operator_station(self, actor_id: str, station_id: str) -> None:
+        if self._operator_has_other_station(actor_id, station_id):
+            raise DomainError("Operador conectado a outra estacao.", code="KdsOperatorStationConflict")
+
     def _production_stock_control_enabled(self) -> bool:
         settings = self.db.query(GestaoModuleSettings).filter_by(
             tenant_id=self.tenant_id, module_key="inventory",
@@ -232,7 +236,9 @@ class KdsProductionService:
     def start_stock_check(self, task_id, actor_id, body):
         self._lock_station()
         a = self._unit(task_id, True)
-        self._assert_attempt_station(a, getattr(body, "station_id", "pizza"))
+        station_id = self.normalize_station(getattr(body, "station_id", "pizza"))
+        self._assert_attempt_station(a, station_id)
+        self._assert_operator_station(actor_id, station_id)
         self._owner(a, actor_id)
         self._order_for_attempt(a)
         # Replaying start never creates another timer, movement or attempt.
@@ -254,7 +260,9 @@ class KdsProductionService:
     def confirm_stock(self, task_id, actor_id, body):
         self._lock_station()
         target = self._unit(task_id, True)
-        self._assert_attempt_station(target, getattr(body, "station_id", "pizza"))
+        station_id = self.normalize_station(getattr(body, "station_id", "pizza"))
+        self._assert_attempt_station(target, station_id)
+        self._assert_operator_station(actor_id, station_id)
         self._owner(target, actor_id)
         if target.state != "checking_stock":
             if target.stock_requested_at is not None:
@@ -305,7 +313,9 @@ class KdsProductionService:
     def return_to_service(self, task_id, actor_id, body):
         self._lock_station()
         a = self._unit(task_id, True)
-        self._assert_attempt_station(a, getattr(body, "station_id", "pizza"))
+        station_id = self.normalize_station(getattr(body, "station_id", "pizza"))
+        self._assert_attempt_station(a, station_id)
+        self._assert_operator_station(actor_id, station_id)
         self._owner(a, actor_id)
         if a.state == "atendimento":
             return self._payload(a)
@@ -334,7 +344,7 @@ class KdsProductionService:
         ).order_by(ProductionAttempt.stock_requested_at, ProductionAttempt.id).all()
         drink_item_ids = self._drink_item_ids([row.unit.order_item_id for row in rows])
         return [self._payload(row) for row in rows if row.unit.order_item_id not in drink_item_ids]
-    def initialize_order(self, order_id: str, actor_id: str, *, station_id="pizza", commit=True):
+    def initialize_order(self, order_id: str, actor_id: str, *, station_id="pizza", priority=False, commit=True):
         station_id = self.normalize_station(station_id)
         order=self.db.query(Order).filter(Order.tenant_id==self.tenant_id,Order.id==order_id).with_for_update().first()
         if not order: raise OrderNotFound(order_id)
@@ -361,7 +371,7 @@ class KdsProductionService:
                 requires_oven = not is_drink
                 unit=ProductionUnit(id=str(uuid.uuid4()),tenant_id=self.tenant_id,order_id=order.id,order_item_id=item.id,unit_index=idx,station_id=item_station,state="ready" if is_drink else "queued",requires_oven=requires_oven)
                 self.db.add(unit); self.db.flush()
-                self.db.add(ProductionAttempt(id=str(uuid.uuid4()),tenant_id=self.tenant_id,production_unit_id=unit.id,attempt_number=1,state="ready" if is_drink else "queued",completed_at=self._now() if is_drink else None))
+                self.db.add(ProductionAttempt(id=str(uuid.uuid4()),tenant_id=self.tenant_id,production_unit_id=unit.id,attempt_number=1,priority=1 if priority else 0,state="ready" if is_drink else "queued",completed_at=self._now() if is_drink else None))
         if commit: self.db.commit()
         else: self.db.flush()
         return self.queue(actor_id, station_id)
@@ -406,7 +416,7 @@ class KdsProductionService:
                 or (row.state in active_states and row.operator_id == actor_id)
             )
         ]
-        rows.sort(key=lambda row: row.created_at)
+        rows.sort(key=self._queue_sort_key)
         drink_item_ids = self._drink_item_ids([r.unit.order_item_id for r in rows])
         return [self._payload(r) for r in rows if r.unit.order_item_id not in drink_item_ids]
     def all_queued(self, station_id="pizza"):
@@ -420,12 +430,9 @@ class KdsProductionService:
             row for row in self._current_queue_attempts()
             if row.state in queued_states
             and row.unit.station_id in station_scope(station_id)
-            and not (
-                (station_id in PIZZA_STATION_IDS or station_id == "pizza")
-                and row.state in {"baking", "checking"}
-            )
+            and row.state not in {"baking", "checking"}
         ]
-        rows.sort(key=lambda row: row.created_at)
+        rows.sort(key=self._queue_sort_key)
         drink_item_ids = self._drink_item_ids([r.unit.order_item_id for r in rows])
         return [self._payload(r) for r in rows if r.unit.order_item_id not in drink_item_ids]
     def presence(self, actor_id, body):
@@ -438,6 +445,14 @@ class KdsProductionService:
         else:
             self._check(row,body.expected_version); row.requested_state=body.effective_state; row.version+=1
         self.db.commit(); return {"id":row.id,"state":row.requested_state,"station_id":row.station_id,"version":row.version,"last_heartbeat_at":row.last_heartbeat_at}
+
+    @staticmethod
+    def _queue_sort_key(row):
+        # Work already started always stays ahead of queued work.  Within the
+        # queue, a remake (attempt > 1) has priority over a normal attempt.
+        initiated = row.started_at is not None or row.state not in {"queued"}
+        priority = getattr(row, "priority", 0) or 0
+        return (0 if initiated else (1 if (priority or row.attempt_number > 1) else 2), row.created_at, row.id)
     def heartbeat(self, actor_id, body):
         station_id = self.normalize_station(getattr(body, "station_id", "pizza"))
         row=self.db.query(KdsOperatorState).filter_by(tenant_id=self.tenant_id,user_id=actor_id,station_id=station_id).with_for_update().first()
@@ -451,7 +466,7 @@ class KdsProductionService:
         self._lock_station()
         a=self._unit(task_id,True); self._check(a,body.expected_version); now=self._now()
         station_id = self.normalize_station(getattr(body, "station_id", "pizza"))
-        if a.unit.station_id != station_id:
+        if a.unit.station_id not in station_scope(station_id):
             raise DomainError("Tarefa pertence a outra estacao operacional.", code="KdsStationConflict")
         if self._operator_has_other_station(actor_id, station_id):
             raise DomainError("Operador conectado a outra estacao.", code="KdsOperatorStationConflict")
@@ -468,6 +483,7 @@ class KdsProductionService:
             # Compatibility for assemblies begun before the stock gate migration.
             result = self.consume_attempt(a.id, actor_id)
             a.stock_consumption_mode = result.get("mode", "attempts")
+        old_state = a.state
         a.state=new; a.version+=1
         if command=="start": a.operator_id=actor_id; a.started_at=now; a.assigned_at=a.assigned_at or now
         elif command=="finish-assembly": a.assembly_finished_at=now
@@ -475,18 +491,24 @@ class KdsProductionService:
         elif command=="complete-oven": a.oven_finished_at=now
         elif command=="check": a.checked_at=now; a.check_reason=body.reason; a.completed_at=now if body.approved else None
         a.unit.state=new; a.unit.version+=1
+        self._audit(a, actor_id, old_state, f"Transicao operacional: {command}.")
         self.db.commit(); self.db.refresh(a); return self._payload(a)
 
-    def consume_attempt(self, attempt_id: str, actor_id: str):
+    def consume_attempt(self, attempt_id: str, actor_id: str, *, require_stock: bool = False):
         """Consume the frozen CMV composition once for this physical unit."""
         attempt = self._unit(attempt_id, True)
-        # Shared gate for stock confirmation and pre-gate finish-assembly tasks.
-        if not self._production_stock_control_enabled():
-            return {"consumed": False, "reason": "disabled", "mode": "disabled", "lines": 0}
         existing = self.db.query(ProductionAttemptConsumption).filter_by(
             tenant_id=self.tenant_id, attempt_id=attempt.id).count()
         if existing:
-            return {"consumed": True, "reason": "already_consumed", "lines": existing}
+            return {"consumed": True, "reason": "already_consumed", "mode": attempt.stock_consumption_mode or "attempts", "lines": existing}
+        # Explicit losses and staff meals must retain physical cost even when
+        # automatic sale deduction is disabled. Ordinary KDS keeps its gate.
+        staff_meal = self.db.query(OrderItem.id).filter_by(
+            tenant_id=self.tenant_id, id=attempt.unit.order_item_id,
+            is_gift=True, gift_reason="staff_meal",
+        ).first()
+        if not require_stock and not staff_meal and not self._production_stock_control_enabled():
+            return {"consumed": False, "reason": "disabled", "mode": "disabled", "lines": 0}
         item_snapshot = self.db.query(OrderItemCmvSnapshot).filter_by(
             tenant_id=self.tenant_id, order_item_id=attempt.unit.order_item_id).first()
         if not item_snapshot or item_snapshot.missing_recipe:
@@ -519,8 +541,31 @@ class KdsProductionService:
         if legacy and attempt.attempt_number == 1:
             for item_id, required in requirements.items():
                 covered = sum((-Decimal(str(m.quantity_delta)) for m in legacy if m.item_id == item_id), Decimal("0"))
-                if covered < required:
+                attributed = self.db.query(ProductionAttemptConsumption.quantity).join(
+                    ProductionAttempt, ProductionAttempt.id == ProductionAttemptConsumption.attempt_id,
+                ).join(ProductionUnit, ProductionUnit.id == ProductionAttempt.production_unit_id).filter(
+                    ProductionAttemptConsumption.tenant_id == self.tenant_id,
+                    ProductionAttempt.tenant_id == self.tenant_id,
+                    ProductionUnit.tenant_id == self.tenant_id,
+                    ProductionUnit.order_id == attempt.unit.order_id,
+                    ProductionAttempt.attempt_number == 1,
+                    ProductionAttemptConsumption.inventory_item_id == item_id,
+                    ProductionAttemptConsumption.operation_id.is_(None),
+                ).all()
+                allocated = sum((row[0] for row in attributed), Decimal("0"))
+                if covered - allocated < required:
                     raise FoundationConflict("Cobertura legada incompleta; atendimento deve conciliar a baixa.", code="LegacyCoverageIncomplete")
+            # Attribute existing physical movements without debiting them again.
+            # The frozen item quantity distributes the order-level debit over
+            # its first physical attempts, including multi-quantity items.
+            for item_id, required in requirements.items():
+                self.db.add(ProductionAttemptConsumption(
+                    id=str(uuid.uuid4()), tenant_id=self.tenant_id, attempt_id=attempt.id,
+                    inventory_item_id=item_id, quantity=required,
+                    unit_cost=costs.get(item_id, Decimal("0")),
+                    movement_ids=[m.id for m in legacy if m.item_id == item_id],
+                ))
+            self.db.flush()
             return {"consumed": True, "reason": "legacy_covered", "mode": "legacy_covered", "lines": len(requirements)}
         foundation = InventoryFoundationService(self.db, self.tenant_id, actor_id)
         shortages = foundation.shortages(
@@ -562,13 +607,41 @@ class KdsProductionService:
         self.db.flush()
         return {"consumed": True, "reason": "ok", "lines": len(requirements)}
     def remake(self, task_id, actor_id, body):
-        a=self._unit(task_id,True); self._check(a,body.expected_version)
+        self._lock_station()
+        a=self._unit(task_id,True)
+        station_id = self.normalize_station(getattr(body, "station_id", "pizza"))
+        self._assert_attempt_station(a, station_id)
+        self._assert_operator_station(actor_id, station_id)
+        self._owner(a, actor_id)
+        self._check(a,body.expected_version)
         order=self.db.query(Order).filter(Order.tenant_id==self.tenant_id,Order.id==a.unit.order_id).with_for_update().first()
         if not order or str(getattr(order.status,"value",order.status))!="preparing": raise DomainError("Refazimento tardio nao permitido.",code="LateReworkNotSupported",)
         if not body.reason: raise DomainError("Motivo obrigatorio.",code="ReasonRequired")
+        if a.state == "cancelled":
+            raise DomainError("Tarefa cancelada nao pode ser refeita.", code="StateConflict")
+        if a.started_at is None:
+            raise DomainError("Somente tarefas iniciadas podem ser refeitas.", code="StateConflict")
+        if a.state not in {"assembling", "assembled", "baking", "checking", "ready"}:
+            raise DomainError("Estado atual nao permite refazimento.", code="StateConflict")
+        latest = self.db.query(ProductionAttempt).filter(
+            ProductionAttempt.tenant_id == self.tenant_id,
+            ProductionAttempt.production_unit_id == a.production_unit_id,
+            ProductionAttempt.attempt_number > a.attempt_number,
+        ).order_by(ProductionAttempt.attempt_number.desc()).with_for_update().first()
+        if latest is not None:
+            raise DomainError("Ja existe uma tentativa de refazimento ativa.", code="DuplicateRemake")
+        old_state = a.state
         a.state="cancelled"; a.version+=1; a.check_reason=body.reason
-        new=ProductionAttempt(id=str(uuid.uuid4()),tenant_id=self.tenant_id,production_unit_id=a.production_unit_id,attempt_number=a.attempt_number+1,state="queued",previous_attempt_id=a.id)
-        a.unit.state="queued"; a.unit.version+=1; self.db.add(new); self.db.commit(); self.db.refresh(new); return self._payload(new)
+        new=ProductionAttempt(
+            id=str(uuid.uuid4()), tenant_id=self.tenant_id,
+            production_unit_id=a.production_unit_id,
+            attempt_number=a.attempt_number + 1,
+            priority=1,
+            state="queued", previous_attempt_id=a.id,
+        )
+        a.unit.state="queued"; a.unit.version+=1
+        self._audit(a, actor_id, old_state, f"Refazimento solicitado: {body.reason}")
+        self.db.add(new); self.db.commit(); self.db.refresh(new); return self._payload(new)
     def redistribute(self, body, actor_id):
         target_operator_id = body.effective_target_operator_id
         target_station = self.normalize_station(getattr(body, "station_id", "pizza"))
@@ -584,7 +657,7 @@ class KdsProductionService:
         result=[]
         for task_id in body.task_ids:
             a=self._unit(task_id,True); self._check(a,body.effective_versions.get(task_id,-1))
-            if a.unit.station_id != target_station:
+            if a.unit.station_id not in station_scope(target_station):
                 raise DomainError("Tarefa pertence a outra estacao operacional.", code="KdsStationConflict")
             if a.state != "queued":
                 raise DomainError("Somente tarefas na fila podem ser redistribuidas.", code="StateConflict")

@@ -76,11 +76,20 @@ def _encrypt_legacy_values(bind, master_key: str) -> int:
 
 def upgrade() -> None:
     bind = op.get_bind()
-    # Production always requires the master key, including an empty table. In
-    # development, an empty table can be migrated before the key is provisioned.
+    # Require the key only when there is a legacy plaintext value to encrypt.
+    # Empty configurations and already-encrypted rows do not need a key just
+    # to widen the columns, while any plaintext secret still fails closed.
     settings = get_settings()
     master_key = (settings.PAYMENT_SECRET_ENCRYPTION_KEY or "").strip()
-    if not master_key and not settings.DEBUG:
+    plaintext_exists = bind.execute(sa.text(
+        "SELECT EXISTS (SELECT 1 FROM payment_gateway_config WHERE "
+        + " OR ".join(
+            f"{column} IS NOT NULL AND {column} <> '' AND {column} NOT LIKE :prefix_{column}"
+            for column in SECRET_COLUMNS
+        )
+        + ")"
+    ), {f"prefix_{column}": f"{PAYMENT_SECRET_PREFIX}%" for column in SECRET_COLUMNS}).scalar()
+    if plaintext_exists and not master_key:
         _master_key()
     if master_key:
         _encrypt_legacy_values(bind, master_key)

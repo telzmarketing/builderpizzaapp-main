@@ -140,6 +140,33 @@ class AsaasGateway:
             description=description,
         )
 
+    def create_incremental_pix_payment(
+        self,
+        *,
+        order: Order,
+        provider_customer_id: str,
+        amount: float,
+        external_reference: str,
+    ) -> dict[str, Any]:
+        """Create an isolated Pix charge without mutating the original Payment."""
+        existing = self._find_remote_payment(external_reference, billing_type="PIX")
+        payment = existing or self._client_or_default().create_payment(
+            self._build_pix_payment_payload(
+                provider_customer_id=provider_customer_id,
+                order=order,
+                amount=amount,
+                external_reference=external_reference,
+            )
+        )
+        provider_payment_id = str(payment.get("id") or "").strip()
+        if not provider_payment_id:
+            raise DomainError(
+                "ASAAS nao retornou identificador da cobranca incremental.",
+                code="AsaasPaymentInvalidResponse",
+            )
+        qr_code = self._client_or_default().get_pix_qr_code(provider_payment_id)
+        return {"payment": payment, "pixQrCode": qr_code}
+
     def ensure_customer(
         self,
         customer: Customer,

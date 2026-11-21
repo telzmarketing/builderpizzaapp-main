@@ -70,7 +70,12 @@ def test_kds_initialization_is_gated_by_approved_status_and_start_preparation():
     assert "OrderStatus.paid.value" in kds_source
     assert "OrderStatus.pago.value" in kds_source
     assert "KdsProductionService" in kds_source
-    assert "initialize_order(order_id, actor_id, commit=False)" in kds_source
+    # The selected pizza bench is part of the operational contract; the
+    # previous literal omitted it and became stale when station-aware KDS
+    # initialization was introduced.
+    assert "initialize_order(" in kds_source
+    assert "station_id=station_id" in kds_source
+    assert "commit=False" in kds_source
     assert "start_preparation" not in print_source
     assert "initialize_order" not in print_source
 

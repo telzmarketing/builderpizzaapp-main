@@ -1,6 +1,7 @@
 """Tenant-safe unit based KDS production state."""
 from datetime import datetime, timezone
 from sqlalchemy import Column, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, String, Text, Boolean, CheckConstraint, text, JSON, Numeric
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from backend.database import Base
 
@@ -48,6 +49,7 @@ class ProductionAttempt(Base):
     tenant_id = Column(String, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
     production_unit_id = Column(String, nullable=False)
     attempt_number = Column(Integer, nullable=False)
+    priority = Column(Integer, nullable=False, default=0, server_default="0")
     state = Column(String(24), nullable=False, default="queued", server_default="queued")
     version = Column(Integer, nullable=False, default=1, server_default="1")
     operator_id = Column(String, ForeignKey("admin_users.id", ondelete="RESTRICT"), nullable=True)
@@ -122,4 +124,71 @@ class ProductionAttemptConsumption(Base):
     unit_cost = Column(Numeric(24, 8), nullable=False, default=0)
     movement_ids = Column(JSON, nullable=False, default=list)
     operation_id = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class ProductionEffect(Base):
+    """Immutable tenant-scoped financial/stock effect audit record."""
+    __tablename__ = "production_effects"
+    __table_args__ = (
+        Index("uq_production_effects_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_production_effects_tenant_kind_business_key", "tenant_id", "kind", "business_key", unique=True),
+        Index("uq_production_effects_tenant_kind_idempotency_key", "tenant_id", "kind", "idempotency_key", unique=True),
+        ForeignKeyConstraint(
+            ["tenant_id", "order_id"],
+            ["orders.tenant_id", "orders.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "attempt_id"],
+            ["production_attempts.tenant_id", "production_attempts.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_effect_id"],
+            ["production_effects.tenant_id", "production_effects.id"],
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("kind IN ('loss','reproduction','bonification')", name="ck_production_effect_kind"),
+        CheckConstraint("length(request_hash) = 64", name="ck_production_effect_request_hash_length"),
+        CheckConstraint("cost_total >= 0", name="ck_production_effect_cost_total_nonnegative"),
+        CheckConstraint("discount_amount >= 0", name="ck_production_effect_discount_amount_nonnegative"),
+        CheckConstraint(
+            "length(trim(id)) > 0 AND length(trim(tenant_id)) > 0 "
+            "AND length(trim(business_key)) > 0 AND length(trim(idempotency_key)) > 0 "
+            "AND length(trim(order_id)) > 0 AND length(trim(actor_id)) > 0 "
+            "AND length(trim(reason)) > 0",
+            name="ck_production_effect_required_text_nonempty",
+        ),
+        CheckConstraint(
+            "(attempt_id IS NULL OR length(trim(attempt_id)) > 0) "
+            "AND (source_effect_id IS NULL OR length(trim(source_effect_id)) > 0)",
+            name="ck_production_effect_optional_ids_nonempty",
+        ),
+        CheckConstraint(
+            "(kind IN ('loss','reproduction') AND attempt_id IS NOT NULL) "
+            "OR (kind = 'bonification' AND attempt_id IS NULL)",
+            name="ck_production_effect_attempt_by_kind",
+        ),
+        CheckConstraint(
+            "(kind = 'reproduction' AND source_effect_id IS NOT NULL) "
+            "OR (kind IN ('loss','bonification') AND source_effect_id IS NULL)",
+            name="ck_production_effect_source_by_kind",
+        ),
+    )
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
+    kind = Column(String(24), nullable=False)
+    business_key = Column(String(200), nullable=False)
+    idempotency_key = Column(String(200), nullable=False)
+    request_hash = Column(String(64), nullable=False)
+    order_id = Column(String, nullable=False)
+    attempt_id = Column(String, nullable=True)
+    source_effect_id = Column(String, nullable=True)
+    actor_id = Column(String, nullable=False)
+    reason = Column(Text, nullable=False)
+    cost_total = Column(Numeric(24, 8), nullable=False, default=0, server_default="0")
+    discount_amount = Column(Numeric(20, 2), nullable=False, default=0, server_default="0")
+    snapshot_json = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)

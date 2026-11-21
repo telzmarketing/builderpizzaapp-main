@@ -63,6 +63,37 @@ describe("silent printing client bridge", () => {
     expect(detectSilentPrintTransport({ ...loadSilentPrintAgentConfig(), transport: "qz" })).toBe("qz");
   });
 
+  it("preserves the QZ connection failure and points to browser local access permission", async () => {
+    const connect = vi.fn().mockRejectedValue(new Error("Unable to establish connection with QZ Tray"));
+    vi.stubGlobal("window", { qz: { websocket: { isActive: () => false, connect } } });
+    saveSilentPrintAgentConfig({ transport: "qz" });
+    const result = enqueueSilentPrint(job("qz-lna"));
+    await expect(result).rejects.toMatchObject({
+      code: "AGENT_UNAVAILABLE",
+      message: expect.stringContaining("Unable to establish connection with QZ Tray"),
+    });
+    await expect(result).rejects.toThrow("Apps on this device");
+    expect(connect).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the QZ diagnostic when both automatic transports fail", async () => {
+    vi.stubGlobal("window", { qz: { websocket: { isActive: () => false, connect: vi.fn().mockRejectedValue(new Error("Unable to establish connection with QZ Tray")) } } });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("connection refused")));
+    saveSilentPrintAgentConfig({ transport: "auto" });
+    const result = enqueueSilentPrint(job("both-offline"));
+    await expect(result).rejects.toMatchObject({ code: "AGENT_UNAVAILABLE" });
+    await expect(result).rejects.toThrow("Local print agent unavailable");
+    await expect(result).rejects.toThrow("Apps on this device");
+    expect(getSilentPrintHistory()[0].message).toContain("Apps on this device");
+  });
+
+  it("uses the local agent when automatic QZ connection fails", async () => {
+    vi.stubGlobal("window", { qz: { websocket: { isActive: () => false, connect: vi.fn().mockRejectedValue(new Error("Unable to establish connection with QZ Tray")) } } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ job_id: "fallback-1", status: "confirmed" }), { status: 200 })));
+    saveSilentPrintAgentConfig({ transport: "auto" });
+    await expect(enqueueSilentPrint(job("fallback-1"))).resolves.toMatchObject({ jobId: "fallback-1", status: "confirmed", transport: "local_agent" });
+  });
+
   it("rejects an invalid job before contacting the agent", async () => {
     await expect(enqueueSilentPrint({ ...job(), content: { kind: "raw", data: "" } })).rejects.toBeInstanceOf(SilentPrintError);
   });

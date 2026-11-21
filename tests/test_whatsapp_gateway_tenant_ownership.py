@@ -2,6 +2,8 @@ from types import SimpleNamespace
 
 import backend.models.payment  # noqa: F401 - register the Customer relationship target
 import backend.models.product  # noqa: F401 - register the CustomerEvent relationship target
+import backend.models.product_promotion  # noqa: F401 - register ProductPromotion mapper target
+import backend.models.salao  # noqa: F401 - register RestaurantTable mapper target
 from backend.core.tenant_context import TenantContext, TenantSource, trusted_process_context
 from backend.routes import whatsapp_gateway as whatsapp_gateway_route
 from backend.schemas.whatsapp_gateway import WhatsAppGatewayInstanceCreate
@@ -39,6 +41,7 @@ class FakeRuntimeQuery:
 class FakeRuntimeDb:
     def __init__(self, instance):
         self.instance = instance
+        self.info = {}
         self.commits = 0
 
     def query(self, _model):
@@ -52,8 +55,9 @@ class FakeRuntimeDb:
 
 
 class FakeSelectionQuery:
-    def __init__(self, instance):
+    def __init__(self, instance, instances=None):
         self.instance = instance
+        self.instances = list(instances if instances is not None else ([instance] if instance else []))
 
     def filter(self, *_conditions):
         return self
@@ -64,13 +68,17 @@ class FakeSelectionQuery:
     def first(self):
         return self.instance
 
+    def all(self):
+        return self.instances
+
 
 class FakeSelectionDb:
-    def __init__(self, instance):
+    def __init__(self, instance, instances=None):
         self.instance = instance
+        self.instances = instances
 
     def query(self, _model):
-        return FakeSelectionQuery(self.instance)
+        return FakeSelectionQuery(self.instance, self.instances)
 
 
 def test_runtime_route_resolves_instance_owner_even_when_rollout_is_disabled(monkeypatch):
@@ -162,14 +170,39 @@ def test_runtime_event_propagates_persisted_instance_owner_to_agent(monkeypatch)
     assert captured["payload"]["_trusted_tenant_id"] == "tenant-a"
 
 
+def test_unknown_runtime_instance_is_rejected_even_when_rollout_is_disabled(monkeypatch):
+    service = object.__new__(whatsapp_gateway_service.WhatsAppGatewayService)
+    service._db = FakeRuntimeDb(None)
+    service._tenant_context = None
+    monkeypatch.setattr(service, "get_instance", lambda _instance_id: None)
+    monkeypatch.setattr(service, "add_log", lambda **_kwargs: None)
+
+    result = service.process_runtime_event({
+        "event_type": "message_received",
+        "instance_id": "unknown",
+        "message": {"id": "message-unknown", "phone": "5511999999999"},
+    })
+
+    assert result["ok"] is False
+    assert result["received"] == 0
+    assert result["ignored"] == 1
+
+
 def test_send_selection_falls_back_to_connected_owned_instance_after_replacement(monkeypatch):
-    stale = SimpleNamespace(id="old-instance", tenant_id="tenant-a", provider="baileys", status="disconnected")
-    replacement = SimpleNamespace(id="new-instance", tenant_id="tenant-a", provider="baileys", status="connected")
+    stale = SimpleNamespace(id="old-instance", tenant_id="tenant-a", provider="baileys", status="disconnected", qr_code=None)
+    replacement = SimpleNamespace(id="new-instance", tenant_id="tenant-a", provider="baileys", status="connected", qr_code=None)
     service = object.__new__(whatsapp_gateway_service.WhatsAppGatewayService)
     service._db = FakeSelectionDb(replacement)
     service._tenant_context = TenantContext(tenant_id="tenant-a", source=TenantSource.JOB)
     monkeypatch.setattr(service, "get_instance", lambda _instance_id: stale)
     monkeypatch.setattr(service, "_scope", lambda query, _model: query)
+    monkeypatch.setattr(service, "_provider", lambda _provider: SimpleNamespace(
+        get_status=lambda **kwargs: WhatsAppProviderResult(
+            ok=True, status="disconnected" if kwargs["instance_id"] == stale.id else "connected", message="status",
+            data={"status": "disconnected" if kwargs["instance_id"] == stale.id else "connected"}
+        )
+    ))
+    service._tenant_enabled = True
 
     selected = service._select_send_instance(stale.id)
 

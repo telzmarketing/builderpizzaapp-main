@@ -26,6 +26,8 @@ from backend.models.product import Product
 from backend.models.rbac import Role
 from backend.schemas.order import CheckoutIn, ManualOrderIn, OrderFulfillmentUpdate, OrderStatusUpdate, OrderWhatsAppNotificationSettingsIn, ConfirmedSimulationPurgeIn, TestOrderPurgeIn, TestOrderPurgeOut
 from backend.schemas.checkout_quote import CheckoutQuoteOut
+from backend.schemas.order import OrderAmendmentIn, OrderAmendmentOut
+from backend.schemas.payment import AmendmentSettlementRequest
 from backend.services.payment_service import PaymentService
 from backend.services.operational_payment import cash_change_amount
 from backend.services.order_service import OrderService
@@ -224,6 +226,7 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product], identific
         "has_drinks": bool(drinks),
         "created_at": order.created_at,
         "updated_at": order.updated_at,
+        "composition_revision": getattr(order, "composition_revision", 0) or 0,
         "paid_at": order.paid_at,
         "preparation_started_at": order.preparation_started_at,
         "ready_for_pickup_at": order.ready_for_pickup_at,
@@ -648,6 +651,61 @@ def patch_order_status(
     _entitlement=Depends(require_operational_entitlement("orders.write", write=True)),
 ):
     return update_order_status(order_id, body, request, db, admin, _entitlement)
+
+
+@router.post("/{order_id}/amendments")
+def amend_order(
+    order_id: str,
+    body: OrderAmendmentIn,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("pedidos", "edit")),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=200),
+    _entitlement=Depends(require_operational_entitlement("orders.write", write=True)),
+):
+    try:
+        amendment = OrderService(db, actor.tenant_context).amend_order(
+            order_id, body, actor=actor, idempotency_key=idempotency_key,
+        )
+        return ok(OrderAmendmentOut.model_validate(amendment), "Composicao do pedido alterada.")
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.get("/{order_id}/amendments")
+def order_amendment_history(
+    order_id: str,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("pedidos", "view")),
+):
+    try:
+        revision, rows = OrderService(db, actor.tenant_context).amendment_history(order_id, limit=limit, offset=offset)
+        return ok({"composition_revision": revision, "amendments": [OrderAmendmentOut.model_validate(row) for row in rows]})
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/{order_id}/amendments/{amendment_id}/settlement", response_model=None)
+def settle_order_amendment(
+    order_id: str,
+    amendment_id: str,
+    body: AmendmentSettlementRequest,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("pedidos", "edit")),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=200),
+    _entitlement=Depends(require_operational_entitlement("payments.write", write=True)),
+):
+    try:
+        settlement = PaymentService(db, tenant_id=actor.tenant_id).settle_amendment(
+            order_id,
+            amendment_id,
+            idempotency_key=idempotency_key,
+            reason=body.reason,
+        )
+        return ok(settlement, "Acerto financeiro da alteracao processado.")
+    except DomainError as exc:
+        return err(exc)
 
 
 @router.put("/{order_id}/fulfillment")

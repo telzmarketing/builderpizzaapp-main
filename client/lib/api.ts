@@ -1189,6 +1189,39 @@ export type OrderStatus =
   | "cancelled"
   | "refunded";
 
+export type ApiPaymentSettlementStatus = "processing" | "pending" | "succeeded" | "failed";
+
+export interface ApiPaymentSettlement {
+  id: string;
+  order_id: string;
+  amendment_id: string;
+  payment_id: string;
+  direction: "charge" | "refund";
+  status: ApiPaymentSettlementStatus;
+  amount: number;
+  provider: string;
+  provider_operation_id?: string | null;
+  provider_status?: string | null;
+  checkout_url?: string | null;
+  qr_code_text?: string | null;
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiOrderAmendment {
+  id: string;
+  order_id: string;
+  revision: number;
+  actor_id: string;
+  actor_name: string;
+  reason: string;
+  state: string;
+  before_snapshot: Record<string, unknown>;
+  after_snapshot: Record<string, unknown>;
+  created_at: string;
+}
+
 export type PartnerOrderOrigin = "own" | "partner_99" | "ifood" | "keeta";
 
 export interface PartnerIdentification {
@@ -1213,6 +1246,7 @@ export interface ApiOrder {
   drinks?: OperationalDrink[];
   has_drinks?: boolean;
   id: string;
+  composition_revision?: number;
   order_code: string | null;
   customer_id: string | null;
   delivery_name: string;
@@ -1399,6 +1433,8 @@ export interface KdsProductionUnit {
   unit_index: number;
   task_id: string | null;
   state: string;
+  station_id?: string;
+  operational_stage?: "pizza" | "esfiha" | "forno" | "expedicao" | null;
   version: number;
   dispatch_completed_at?: string | null;
   product_name?: string;
@@ -1585,6 +1621,8 @@ export interface KdsProductionTask {
   order_item_id: string;
   unit_index: number;
   state: string;
+  station_id?: string;
+  operational_stage?: "pizza" | "esfiha" | "forno" | "expedicao" | null;
   version: number;
   priority: number;
   created_at: string;
@@ -6239,6 +6277,29 @@ export const ordersApi = {
   get: (id: string) =>
     request<ApiOrder>("GET", `/orders/${id}`, undefined, orderAccessHeaders(id)),
 
+  amend: (id: string, body: {
+    expected_revision: number;
+    expected_total: number;
+    reason: string;
+    items: CheckoutItemIn[];
+  }, idempotencyKey: string) =>
+    request<{ id: string; order_id: string; revision: number; state: string }>(
+      "POST", `/orders/${encodeURIComponent(id)}/amendments`, body, { "Idempotency-Key": idempotencyKey },
+    ),
+
+  amendmentHistory: (id: string) =>
+    get<{ composition_revision: number; amendments: ApiOrderAmendment[] }>(
+      `/orders/${encodeURIComponent(id)}/amendments`,
+    ),
+
+  settleAmendment: (orderId: string, amendmentId: string, body: { reason?: string | null }, idempotencyKey: string) =>
+    request<ApiPaymentSettlement>(
+      "POST",
+      `/orders/${encodeURIComponent(orderId)}/amendments/${encodeURIComponent(amendmentId)}/settlement`,
+      body,
+      { "Idempotency-Key": idempotencyKey },
+    ),
+
   getDeliveryLocation: (id: string) =>
     request<ApiCustomerDeliveryLocation>("GET", `/delivery/order/${encodeURIComponent(id)}/location`, undefined, orderAccessHeaders(id)),
 
@@ -6269,6 +6330,29 @@ export const ordersApi = {
 
   updateWhatsappNotifications: (body: ApiOrderWhatsappNotificationSettings) =>
     put<ApiOrderWhatsappNotificationConfig>("/orders/new-order-whatsapp-notifications", body),
+};
+
+export interface ProductionEffect {
+  id: string;
+  kind: "loss" | "reproduction" | "bonification";
+  order_id: string;
+  attempt_id: string | null;
+  source_effect_id: string | null;
+  actor_id: string;
+  reason: string;
+  cost_total: number;
+  discount_amount: number;
+  snapshot_json: Record<string, unknown>;
+  created_at: string;
+}
+
+export const productionEffectsApi = {
+  bonify: (body: { order_id: string; reason: string; beneficiary: string }, idempotencyKey: string) =>
+    request<ProductionEffect>("POST", "/production-effects/bonification", body, { "Idempotency-Key": idempotencyKey }),
+  loss: (body: { attempt_id: string; expected_version: number; reason: string }, idempotencyKey: string) =>
+    request<ProductionEffect>("POST", "/production-effects/loss", body, { "Idempotency-Key": idempotencyKey }),
+  reproduction: (body: { loss_id: string; reason: string }, idempotencyKey: string) =>
+    request<ProductionEffect>("POST", "/production-effects/reproduction", body, { "Idempotency-Key": idempotencyKey }),
 };
 
 export const reviewsApi = {

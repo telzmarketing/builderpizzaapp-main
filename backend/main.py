@@ -82,6 +82,7 @@ from backend.routes import platform_errors as platform_errors_routes
 from backend.routes import platform_storage as platform_storage_routes
 from backend.routes import platform_backups as platform_backups_routes
 from backend.routes import kds as kds_routes
+from backend.routes import production_effects as production_effects_routes
 from backend.routes import kds_audit as kds_audit_routes
 from backend.routes import labels as labels_routes
 from backend.routes import order_board as order_board_routes
@@ -1489,6 +1490,7 @@ app.include_router(admin_users_routes.router, prefix="/api")
 app.include_router(crm_routes.router, prefix="/api")
 app.include_router(rbac_routes.router, prefix="/api")
 app.include_router(kds_routes.router, prefix="/api")
+app.include_router(production_effects_routes.router, prefix="/api")
 app.include_router(kds_audit_routes.router, prefix="/api")
 app.include_router(labels_routes.router, prefix="/api")
 app.include_router(order_board_routes.router, prefix="/api")

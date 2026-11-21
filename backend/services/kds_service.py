@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 from backend.core.events import DeliveryAssigned
 from backend.core.exceptions import DomainError, OrderNotFound
 from backend.core.state_machine import delivery_sm
+from backend.core.kds_stations import KDS_OPERATIONAL_ORDER, operational_stage, station_scope, PIZZA_STATION_IDS
 from backend.core.tenant_context import TenantContext, TenantSource
 from backend.models.delivery import (
     Delivery, DeliveryEvent, DeliveryPerson, DeliveryPersonStatus, DeliveryStatus,
@@ -416,7 +417,9 @@ class KdsService:
             )
         self._audit_order_transition(order, current, OrderStatus.preparing.value, actor_id)
         from backend.services.kds_production_service import KdsProductionService
-        KdsProductionService(self.db, self.tenant_context).initialize_order(order_id, actor_id, commit=False)
+        KdsProductionService(self.db, self.tenant_context).initialize_order(
+            order_id, actor_id, station_id=station_id, commit=False,
+        )
         order = OrderService(
             self.db, self.tenant_context
         ).change_status(order.id, OrderStatus.preparing.value, changed_by=f"kds:{actor_id}")
@@ -516,6 +519,8 @@ class KdsService:
         unit to packing.  Existing timestamps are retained for audit history.
         """
         order = self._load_order(order_id, lock=True)
+        if self._status(order) not in {OrderStatus.preparing.value, OrderStatus.ready_for_pickup.value}:
+            raise DomainError("Pedido nao esta elegivel para conferencia do forno.", code="DispatchOrderNotReady")
         unit = self.db.query(ProductionUnit).filter(
             ProductionUnit.tenant_id == self.tenant_id,
             ProductionUnit.order_id == order_id,
@@ -704,6 +709,7 @@ class KdsService:
             self.db.add(ProductionAttempt(
                 id=str(uuid.uuid4()), tenant_id=self.tenant_id,
                 production_unit_id=unit.id, attempt_number=latest.attempt_number + 1,
+                priority=1,
                 state="queued", previous_attempt_id=latest.id,
             ))
             self._audit_unit(order.id, unit.id, actor_id, "ready", f"queued: {reason}", "expedicao")
@@ -906,9 +912,19 @@ class KdsService:
                 visible_items = [item for item in serialized_items if not item["is_drink"] and item["product_type"] != "esfiha"]
                 visible_item_ids = {item["id"] for item in visible_items}
                 visible_units = [unit for unit in production_units.get(order.id, []) if unit.order_item_id in visible_item_ids]
+                if station_id in PIZZA_STATION_IDS:
+                    visible_units = [unit for unit in visible_units if unit.station_id in station_scope(station_id)]
+                    # Orders predating physical units keep the legacy projection.
+                    if production_units.get(order.id):
+                        visible_item_ids = {unit.order_item_id for unit in visible_units}
+                        visible_items = [item for item in visible_items if item["id"] in visible_item_ids]
             else:
                 visible_items = serialized_items
                 visible_units = production_units.get(order.id, [])
+            visible_units = sorted(visible_units, key=lambda unit: (
+                KDS_OPERATIONAL_ORDER.index(stage) if (stage := operational_stage(unit.station_id, unit.state)) in KDS_OPERATIONAL_ORDER else len(KDS_OPERATIONAL_ORDER),
+                unit.order_item_id, unit.unit_index,
+            ))
             visible_progress = production_progress.get(order.id, {
                 "total_units": 0, "ready_units": 0, "pending_units": 0,
                 "dispatch_completed_units": 0,
@@ -946,6 +962,8 @@ class KdsService:
                     "unit_index": unit.unit_index,
                     "task_id": latest_attempts.get(unit.id).id if latest_attempts.get(unit.id) else None,
                     "state": unit.state,
+                    "station_id": unit.station_id,
+                    "operational_stage": operational_stage(unit.station_id, unit.state),
                     "version": unit.version,
                     "dispatch_completed_at": unit.dispatch_completed_at,
                 } for unit in visible_units],

@@ -11,6 +11,7 @@
     "start": "node dist/server/node-build.mjs",
     "whatsapp-gateway:runtime": "node server/whatsapp-gateway-runtime.mjs",
     "whatsapp-gateway:health": "node scripts/whatsapp-gateway-health.mjs",
+    "whatsapp-gateway:e2e": "node scripts/whatsapp-gateway-e2e.mjs",
     "test": "vitest --run",
     "format.fix": "prettier --write .",
     "typecheck": "tsc"

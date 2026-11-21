@@ -27,3 +27,9 @@ def test_runtime_disconnect_preserves_auth_and_delete_is_the_explicit_session_re
 
 def test_runtime_rejects_instance_ids_that_could_escape_the_session_directory():
     assert 'if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(instanceId))' in RUNTIME
+
+
+def test_runtime_health_exposes_an_explicit_external_e2e_gate():
+    assert 'connected_authenticated_instances' in RUNTIME
+    assert 'external_e2e_ready' in RUNTIME
+    assert 'no_authenticated_connected_instance' in RUNTIME

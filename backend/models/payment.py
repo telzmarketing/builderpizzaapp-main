@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, String, Float, Enum, DateTime, ForeignKey, Text, Integer, Index, UniqueConstraint, text
+from sqlalchemy import Boolean, Column, String, Float, Enum, DateTime, ForeignKey, Text, Integer, Numeric, CheckConstraint, Index, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -95,6 +95,45 @@ class Payment(Base):
     refunded_at = Column(DateTime(timezone=True), nullable=True)
 
     order = relationship("Order", back_populates="payment")
+
+
+class PaymentSettlement(Base):
+    """Tenant-scoped gateway operation created for a post-amendment delta."""
+
+    __tablename__ = "payment_settlements"
+    __table_args__ = (
+        CheckConstraint("direction IN ('charge', 'refund')", name="ck_payment_settlements_direction"),
+        CheckConstraint("status IN ('processing', 'pending', 'succeeded', 'failed')", name="ck_payment_settlements_status"),
+        CheckConstraint("amount > 0", name="ck_payment_settlements_amount_positive"),
+        Index("uq_payment_settlements_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_payment_settlements_tenant_amendment_direction", "tenant_id", "amendment_id", "direction", unique=True),
+        Index("uq_payment_settlements_tenant_idempotency", "tenant_id", "idempotency_key", unique=True),
+        Index("ix_payment_settlements_tenant_payment_direction", "tenant_id", "payment_id", "direction"),
+    )
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_payment_settlements_tenant_id_tenants"), nullable=False)
+    order_id = Column(String, ForeignKey("orders.id", ondelete="RESTRICT"), nullable=False)
+    amendment_id = Column(String, ForeignKey("order_amendments.id", ondelete="RESTRICT"), nullable=False)
+    payment_id = Column(String, ForeignKey("payments.id", ondelete="RESTRICT"), nullable=False)
+    finance_transaction_id = Column(String, ForeignKey("finance_transactions.id", ondelete="SET NULL"), nullable=True)
+    direction = Column(String(16), nullable=False)
+    status = Column(String(20), nullable=False, default="processing")
+    amount = Column(Numeric(20, 2), nullable=False)
+    provider = Column(String(50), nullable=False)
+    provider_operation_id = Column(String(180), nullable=True)
+    provider_status = Column(String(80), nullable=True)
+    checkout_url = Column(String(1000), nullable=True)
+    qr_code_text = Column(Text, nullable=True)
+    idempotency_key = Column(String(200), nullable=False)
+    response_json = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    payment = relationship("Payment")
+    order = relationship("Order")
 
 
 class PaymentEvent(Base):

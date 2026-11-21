@@ -251,6 +251,73 @@
   .preparation-order-card button { min-height: 2.75rem; }
 }
 
+/* Cada lane/painel do KDS deve consumir a altura disponivel e rolar por conta
+ * propria. A largura minima continua permitindo rolagem horizontal quando as
+ * tres colunas nao couberem no viewport. */
+.kds-touch-page > [aria-label="KDS multioperador"],
+.kds-touch-page .kds-touch-workspace,
+.kds-touch-page .kds-touch-grid,
+.kds-touch-page .kds-touch-grid > section,
+.kds-touch-page .kds-touch-aside,
+.kds-touch-page .kds-touch-aside > section {
+  min-height: 0;
+}
+
+.kds-touch-page .kds-touch-grid > section,
+.kds-touch-page .kds-touch-aside > section {
+  overflow: hidden;
+}
+
+.kds-touch-page .kds-order-queue,
+.kds-touch-page .kds-preparation-panel,
+.kds-touch-page .kds-order-summary-content {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* O KDS precisa consumir a altura disponível do shell administrativo; caso
+ * contrário, o scroll fica preso no navegador e as lanes não recebem uma
+ * altura computável para rolar internamente. */
+.app-page-container:has(.kds-touch-page),
+.app-page-container:has(.kds-dispatch) {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.admin-layout-content:has(.kds-touch-page),
+.admin-layout-content:has(.kds-dispatch) {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.admin-layout-content:has(.kds-touch-page) > .kds-touch-page,
+.admin-layout-content:has(.kds-dispatch) > .kds-dispatch {
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+}
+
+.kds-touch-page:not(.fixed) {
+  overflow: hidden;
+}
+
+.kds-touch-page:not(.fixed) > [aria-label="KDS multioperador"] {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.kds-touch-page:not(.fixed) .kds-touch-workspace,
+.kds-touch-page:not(.fixed) .kds-touch-grid {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
 /* A preferência é escopada ao painel. A loja pública nunca recebe esta classe. */
 .admin-shell.admin-theme-light {
   color-scheme: light;

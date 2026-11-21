@@ -12,6 +12,9 @@ def test_pizzaiolo_queue_releases_oven_states_to_dispatch():
     service = KdsProductionService.__new__(KdsProductionService)
     service._current_queue_attempts = lambda: [
         SimpleNamespace(
+            id=f"task-{index}",
+            started_at=None,
+            attempt_number=1,
             state=state,
             operator_id="operator-1",
             created_at=index,
@@ -27,7 +30,7 @@ def test_pizzaiolo_queue_releases_oven_states_to_dispatch():
 
     tasks = service.queue("operator-1", "pizza")
 
-    assert [task["state"] for task in tasks] == ["queued", "assembling"]
+    assert [task["state"] for task in tasks] == ["assembling", "queued"]
 
 
 def test_dispatch_keeps_oven_states_and_expedição_pipeline_has_both_scroll_axes():

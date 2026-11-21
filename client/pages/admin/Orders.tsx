@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle, Bell, BellOff, CalendarDays, ChevronLeft, ChevronRight, Clock3, Loader2,
-  PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Trash2, Truck,
-  Undo2, UserCheck, Users, Utensils, Plus,
+  PackageCheck, Pencil, Printer, RefreshCw, Route, ShoppingBag, Trash2, Truck,
+  Undo2, UserCheck, Users, Utensils, Plus, WalletCards, ExternalLink, Copy,
 } from "lucide-react";
 import { useAdminHeaderActions } from "@/components/layout/AdminLayoutContext";
 import AdminTopActions from "@/components/admin/AdminTopActions";
@@ -13,10 +13,12 @@ import ManualOrderComposer from "@/components/admin/ManualOrderComposer";
 import PartnerOrderIdentity from "@/components/admin/PartnerOrderIdentity";
 import OperationsContactPanel from "@/components/admin/OperationsContactPanel";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { canCreateManualOrder } from "@/lib/manualOrder";
+import { canCreateManualOrder, simpleManualLine } from "@/lib/manualOrder";
 import {
-  ordersApi, paymentsApi, deliveryApi, marketingVisitorsApi, kdsApi,
-  type ApiEffectivePermissions, type ApiOrder, type OrderStatus, type DeliveryPerson,
+  ordersApi, paymentsApi, deliveryApi, marketingVisitorsApi, kdsApi, productsApi,
+  type CheckoutItemIn,
+  type ApiEffectivePermissions, type ApiOrder, type ApiProduct, type ApiOrderAmendment, type ApiPaymentSettlement,
+  type OrderStatus, type DeliveryPerson,
 } from "@/lib/api";
 import { loadPrinterSettings, printConfirmedOrder, printOrder, type PrintTemplate } from "@/lib/printing";
 import OrderTimer from "@/components/OrderTimer";
@@ -186,13 +188,25 @@ function rememberAutoPrintedConfirmedOrder(orderId: string) {
 }
 
 async function printConfirmedOrderOnce(order: ApiOrder) {
-  if (!CONFIRMED_PAYMENT_STATUSES.has(order.status)) return true;
+  if (!CONFIRMED_PAYMENT_STATUSES.has(order.status) && !(order.status === "preparing" && order.paid_at)) return true;
   if (!loadPrinterSettings().autoPrintConfirmedOrders) return true;
   if (loadAutoPrintedConfirmedOrderIds().has(order.id)) return true;
 
   const confirmed = await printConfirmedOrder(order);
   if (confirmed) rememberAutoPrintedConfirmedOrder(order.id);
   return confirmed;
+}
+
+export function newlyConfirmedOrders(orders: ApiOrder[], alertedIds: Set<string>, waitingIds: Set<string>, watchingSince: number | null) {
+  return orders.filter((order) => {
+    if (alertedIds.has(order.id)) return false;
+    const observedOrNew = waitingIds.has(order.id) ||
+      (watchingSince !== null && Date.parse(order.created_at) > watchingSince);
+    return observedOrNew && (
+      CONFIRMED_PAYMENT_STATUSES.has(order.status) ||
+      (order.status === "preparing" && Boolean(order.paid_at))
+    );
+  });
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -209,6 +223,129 @@ const statusColor = (status: string) => {
 
 const formatCurrency = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+type AmendmentLine = { productId: string; quantity: number };
+
+type AmendmentModalState = {
+  order: ApiOrder;
+  lines: Record<string, AmendmentLine>;
+  additions: Record<string, AmendmentLine>;
+  reason: string;
+  idempotencyKey: string;
+};
+
+type SettlementModalState = {
+  order: ApiOrder;
+  amendments: ApiOrderAmendment[];
+  loading: boolean;
+  error: string;
+};
+
+function newAmendmentIdempotencyKey(order: ApiOrder) {
+  return `order-amendment:${order.id}:${order.composition_revision ?? 0}:${crypto.randomUUID()}`;
+}
+
+function amendmentUnitPrice(item: ApiOrder["items"][number], productId: string, products: ApiProduct[]) {
+  if (productId === item.product_id) return item.final_price ?? item.unit_price;
+  const product = products.find((candidate) => candidate.id === productId);
+  return product?.current_price ?? product?.price ?? item.final_price ?? item.unit_price;
+}
+
+export function buildAmendmentItems(
+  order: ApiOrder,
+  lines: Record<string, AmendmentLine>,
+  products: ApiProduct[],
+  additions: Record<string, AmendmentLine> = {},
+): CheckoutItemIn[] {
+  const existing = order.items
+    .map((item) => {
+      const line = lines[item.id] ?? { productId: item.product_id, quantity: item.quantity };
+      const quantity = Math.max(0, Math.floor(line.quantity));
+      if (quantity === 0) return null;
+
+      const replacement = products.find((product) => product.id === line.productId);
+      if (replacement && replacement.id !== item.product_id) {
+        return {
+          ...simpleManualLine(replacement, item.id, quantity).item,
+          notes: item.notes,
+        };
+      }
+
+      return {
+        product_id: item.product_id,
+        quantity,
+        selected_size: item.selected_size,
+        selected_size_id: item.selected_size_id,
+        flavor_division: item.flavor_division,
+        flavors: item.flavors ?? [],
+        final_price: item.final_price ?? item.unit_price,
+        add_ons: item.add_ons ?? [],
+        selected_crust_type_id: item.selected_crust_type_id,
+        selected_crust_type_name: item.selected_crust_type,
+        selected_border_id: item.selected_border_id,
+        selected_border_name: item.selected_border_name,
+        selected_drink_variant_id: item.selected_drink_variant_id,
+        selected_drink_variant_name: item.selected_drink_variant,
+        notes: item.notes,
+      };
+    })
+    .filter((item) => item !== null) as CheckoutItemIn[];
+  const added = Object.values(additions).flatMap((line) => {
+    const product = products.find((candidate) => candidate.id === line.productId);
+    const quantity = Math.max(0, Math.floor(line.quantity));
+    if (!product || quantity === 0) return [];
+    return [simpleManualLine(product, `added-${product.id}`, quantity).item];
+  });
+  return [...existing, ...added];
+}
+
+export function amendmentPreviewTotal(
+  order: ApiOrder,
+  lines: Record<string, AmendmentLine>,
+  products: ApiProduct[],
+  additions: Record<string, AmendmentLine> = {},
+) {
+  const oldItemsTotal = order.items.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
+  const newItemsTotal = order.items.reduce((sum, item) => {
+    const line = lines[item.id] ?? { productId: item.product_id, quantity: item.quantity };
+    const quantity = Math.max(0, Math.floor(line.quantity));
+    return sum + amendmentUnitPrice(item, line.productId, products) * quantity;
+  }, 0);
+  const addedTotal = Object.values(additions).reduce((sum, line) => {
+    const product = products.find((candidate) => candidate.id === line.productId);
+    return sum + (product?.current_price ?? product?.price ?? 0) * Math.max(0, Math.floor(line.quantity));
+  }, 0);
+  return Number((order.total - oldItemsTotal + newItemsTotal + addedTotal).toFixed(2));
+}
+
+export type AmendmentFinancialAdjustment = {
+  delta: number;
+  amount: number;
+  direction: "charge" | "refund" | null;
+  previousTotal: number | null;
+  newTotal: number | null;
+};
+
+export function amendmentFinancialAdjustment(amendment: ApiOrderAmendment): AmendmentFinancialAdjustment {
+  const snapshot = amendment.after_snapshot?.financial_adjustment;
+  const adjustment = snapshot && typeof snapshot === "object" ? snapshot as Record<string, unknown> : {};
+  const rawDelta = Number(adjustment.delta ?? 0);
+  const delta = Number.isFinite(rawDelta) ? Number(rawDelta.toFixed(2)) : 0;
+  return {
+    delta,
+    amount: Math.abs(delta),
+    direction: delta > 0 ? "charge" : delta < 0 ? "refund" : null,
+    previousTotal: typeof adjustment.previous_total === "number" ? adjustment.previous_total : null,
+    newTotal: typeof adjustment.new_total === "number" ? adjustment.new_total : null,
+  };
+}
+
+function settlementStatusLabel(status: ApiPaymentSettlement["status"]) {
+  if (status === "processing") return "Processando";
+  if (status === "pending") return "Pendente";
+  if (status === "succeeded") return "Concluído";
+  return "Falhou";
+}
 
 const formatDateTime = (v: string) =>
   new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -300,6 +437,14 @@ export default function AdminOrders() {
   const [deleteModal, setDeleteModal] = useState<{ order: ApiOrder; confirmation: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [labelOrder, setLabelOrder] = useState<ApiOrder | null>(null);
+  const [amendmentModal, setAmendmentModal] = useState<AmendmentModalState | null>(null);
+  const [amendmentProducts, setAmendmentProducts] = useState<ApiProduct[]>([]);
+  const [loadingAmendmentProducts, setLoadingAmendmentProducts] = useState(false);
+  const [newAmendmentProductId, setNewAmendmentProductId] = useState("");
+  const [amendingId, setAmendingId] = useState<string | null>(null);
+  const [settlementModal, setSettlementModal] = useState<SettlementModalState | null>(null);
+  const [settlements, setSettlements] = useState<Record<string, ApiPaymentSettlement>>({});
+  const [settlingAmendmentId, setSettlingAmendmentId] = useState<string | null>(null);
   const adminPermissions = useMemo(() => loadStoredAdminPermissions(), []);
   const navigate = useNavigate();
   const [manualOrderOpen, setManualOrderOpen] = useState(false);
@@ -316,27 +461,36 @@ export default function AdminOrders() {
 
   // paidIds tracks orders already alerted — fires sound only once per order when it first becomes paid
   const paidIds = useRef<Set<string>>(new Set());
+  const waitingIds = useRef<Set<string>>(new Set());
+  const printingIds = useRef<Set<string>>(new Set());
   const isFirstFetch = useRef(true);
+  const lastFetchedDate = useRef<string | null>(null);
+  const watchingSince = useRef<number | null>(null);
+  const activeRefreshes = useRef(0);
 
   // Drag state — ref avoids triggering re-renders during drag
   const draggedId = useRef<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async (silent = false) => {
-    if (silent) setRefreshing(true);
+    const fetchStartedAt = Date.now();
+    if (silent) { activeRefreshes.current += 1; setRefreshing(true); }
     else setLoading(true);
     setError("");
     try {
       const data = await ordersApi.list({ ...dayRangeIso(selectedDate), limit: 500 });
       const sorted = [...data].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       const failedAutoPrintIds = new Set<string>();
+      const isBaseline = isFirstFetch.current || lastFetchedDate.current !== selectedDate;
 
-      if (!isFirstFetch.current && selectedDate === todayInputValue()) {
+      if (!isBaseline && selectedDate === todayInputValue()) {
         // Alert fires only when an order ENTERS paid/pago status for the first time
-        const newlyPaid = sorted.filter(
-          (o) => (o.status === "paid" || o.status === "pago") && !paidIds.current.has(o.id),
-        );
-        const printResults = await Promise.all(newlyPaid.map((order) => printConfirmedOrderOnce(order)));
+        const newlyPaid = newlyConfirmedOrders(sorted, paidIds.current, waitingIds.current, watchingSince.current)
+          .filter((order) => !printingIds.current.has(order.id));
+        newlyPaid.forEach((order) => printingIds.current.add(order.id));
+        const printResults = await Promise.all(newlyPaid.map((order) =>
+          printConfirmedOrderOnce(order).finally(() => printingIds.current.delete(order.id)),
+        ));
         const blockedPrint = printResults.some((printed) => !printed);
         newlyPaid.forEach((order, index) => { if (!printResults[index]) failedAutoPrintIds.add(order.id); });
         if (blockedPrint) {
@@ -349,11 +503,14 @@ export default function AdminOrders() {
         }
       }
       isFirstFetch.current = false;
+      lastFetchedDate.current = selectedDate;
+      if (isBaseline && selectedDate === todayInputValue()) watchingSince.current = fetchStartedAt;
       // Mark all currently-paid orders so subsequent polls don't re-alert
       sorted
-        .filter((o) => o.status === "paid" || o.status === "pago")
+        .filter((o) => CONFIRMED_PAYMENT_STATUSES.has(o.status) || (o.status === "preparing" && Boolean(o.paid_at)))
         .forEach((o) => paidIds.current.add(o.id));
       failedAutoPrintIds.forEach((id) => paidIds.current.delete(id));
+      sorted.filter((o) => WAITING_PAYMENT_STATUSES.has(o.status)).forEach((o) => waitingIds.current.add(o.id));
 
       setOrders(sorted);
       setLastUpdated(new Date());
@@ -361,7 +518,8 @@ export default function AdminOrders() {
       setError("Não foi possível carregar os pedidos.");
     } finally {
       setLoading(false);
-      setRefreshing(false);
+      if (silent) activeRefreshes.current -= 1;
+      if (activeRefreshes.current === 0) setRefreshing(false);
     }
   }, [selectedDate, soundEnabled]);
 
@@ -421,6 +579,117 @@ export default function AdminOrders() {
       setUpdatingId(null);
     }
   }, []);
+
+  const openAmendmentModal = useCallback(async (order: ApiOrder) => {
+    setAmendmentModal({
+      order,
+      lines: Object.fromEntries(order.items.map((item) => [item.id, {
+        productId: item.product_id,
+        quantity: item.quantity,
+      }])),
+      additions: {},
+      reason: "Ajuste solicitado pelo cliente",
+      idempotencyKey: newAmendmentIdempotencyKey(order),
+    });
+    setNewAmendmentProductId("");
+    setAmendmentProducts([]);
+    setLoadingAmendmentProducts(true);
+    try {
+      const channel = order.fulfillment_type === "dine_in"
+        ? "dine_in"
+        : order.sales_channel === "delivery"
+          ? "delivery"
+          : undefined;
+      setAmendmentProducts(await productsApi.list(true, undefined, channel));
+    } catch {
+      setStatusActionError("Nao foi possivel carregar o catalogo para substituir itens.");
+    } finally {
+      setLoadingAmendmentProducts(false);
+    }
+  }, []);
+
+  const handleAmendment = useCallback(async () => {
+    if (!amendmentModal) return;
+    const { order, lines, additions, reason, idempotencyKey } = amendmentModal;
+    const items = buildAmendmentItems(order, lines, amendmentProducts, additions);
+    if (!items.length) {
+      setStatusActionError("O pedido precisa manter pelo menos um item.");
+      return;
+    }
+    const expectedTotal = amendmentPreviewTotal(order, lines, amendmentProducts, additions);
+    setAmendingId(order.id);
+    try {
+      await ordersApi.amend(order.id, {
+        expected_revision: order.composition_revision ?? 0,
+        expected_total: expectedTotal,
+        reason: reason.trim() || "Ajuste solicitado pelo cliente",
+        items,
+      }, idempotencyKey);
+      const updated = await ordersApi.get(order.id);
+      setOrders((prev) => prev.map((current) => current.id === order.id ? updated : current));
+      setAmendmentModal(null);
+      setStatusActionError("Pedido alterado. O valor foi recalculado conforme a nova composição.");
+    } catch (caught) {
+      setStatusActionError(caught instanceof Error ? caught.message : "Não foi possível alterar o pedido.");
+    } finally {
+      setAmendingId(null);
+    }
+  }, [amendmentModal, amendmentProducts]);
+
+  const openSettlementModal = useCallback(async (order: ApiOrder) => {
+    setSettlementModal({ order, amendments: [], loading: true, error: "" });
+    try {
+      const history = await ordersApi.amendmentHistory(order.id);
+      setSettlementModal({ order, amendments: history.amendments, loading: false, error: "" });
+    } catch (caught) {
+      setSettlementModal({
+        order,
+        amendments: [],
+        loading: false,
+        error: caught instanceof Error ? caught.message : "Não foi possível carregar o histórico financeiro.",
+      });
+    }
+  }, []);
+
+  const handleAmendmentSettlement = useCallback(async (amendment: ApiOrderAmendment) => {
+    if (!settlementModal) return;
+    const adjustment = amendmentFinancialAdjustment(amendment);
+    if (!adjustment.direction || adjustment.amount <= 0) return;
+    const actionLabel = adjustment.direction === "charge" ? "cobrar a diferença" : "aplicar o abatimento";
+    if (!window.confirm(`Confirma ${actionLabel} de ${formatCurrency(adjustment.amount)} no pedido #${orderDisplayCode(settlementModal.order)}?`)) return;
+    setSettlingAmendmentId(amendment.id);
+    try {
+      const result = await ordersApi.settleAmendment(
+        settlementModal.order.id,
+        amendment.id,
+        { reason: `Acerto financeiro da alteração ${amendment.revision}` },
+        `order-amendment-settlement:${settlementModal.order.id}:${amendment.id}`,
+      );
+      setSettlements((current) => ({ ...current, [amendment.id]: result }));
+      setSettlementModal((current) => current ? { ...current, error: "" } : current);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Não foi possível processar o acerto financeiro.";
+      setSettlements((current) => ({
+        ...current,
+        [amendment.id]: {
+          id: `failed-${amendment.id}`,
+          order_id: settlementModal.order.id,
+          amendment_id: amendment.id,
+          payment_id: "",
+          direction: adjustment.direction!,
+          status: "failed",
+          amount: adjustment.amount,
+          provider: "",
+          error_message: message,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      }));
+      setSettlementModal((current) => current ? { ...current, error: message } : current);
+    } finally {
+      setSettlingAmendmentId(null);
+    }
+  }, [settlementModal]);
 
   const handleApprovePayment = useCallback(async (orderId: string) => {
     setUpdatingId(orderId);
@@ -783,6 +1052,10 @@ export default function AdminOrders() {
                                 canAssignMotoboy={canEditOrders}
                                 onFulfillmentChange={(fulfillmentType) => void handleFulfillmentChange(order.id, fulfillmentType)}
                                 canEditFulfillment={canEditOrders}
+                                onAmend={() => openAmendmentModal(order)}
+                                canAmend={canEditOrders && !["cancelled", "refunded", "delivered"].includes(order.status)}
+                                onFinancialSettlement={() => void openSettlementModal(order)}
+                                canFinancialSettlement={canEditOrders && !["cancelled", "refunded"].includes(order.status)}
                                 onPrint={(tpl) => printOrder(order, tpl)}
                                 onLabels={() => setLabelOrder(order)}
                                 canDelete={canDeleteOrders}
@@ -859,6 +1132,197 @@ export default function AdminOrders() {
                 Excluir
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {amendmentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-surface-03 bg-surface-02 p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-cream">Alterar pedido</h3>
+            <p className="mt-1 text-sm text-stone">Pedido #{orderDisplayCode(amendmentModal.order)} · altere produto e quantidade. A validação final considera a composição e o estágio da produção.</p>
+            <div className="mt-5 max-h-72 space-y-2 overflow-y-auto pr-1">
+              {amendmentModal.order.items.map((item) => (
+                <div key={item.id} className="flex items-center gap-3 rounded-xl border border-surface-03 bg-surface-03/40 p-3">
+                  <select
+                    value={amendmentModal.lines[item.id]?.productId ?? item.product_id}
+                    onChange={(event) => setAmendmentModal((current) => current ? ({
+                      ...current,
+                      lines: {
+                        ...current.lines,
+                        [item.id]: {
+                          ...(current.lines[item.id] ?? { quantity: item.quantity }),
+                          productId: event.target.value,
+                        },
+                      },
+                      idempotencyKey: newAmendmentIdempotencyKey(current.order),
+                    }) : current)}
+                    className="h-9 min-w-0 flex-1 rounded-lg border border-surface-03 bg-surface-00 px-2 text-sm text-cream"
+                    aria-label={`Produto do item ${item.product_name}`}
+                  >
+                    <option value={item.product_id}>{item.product_name} (atual)</option>
+                    {amendmentProducts
+                      .filter((product) => product.id !== item.product_id)
+                      .map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.name} · {formatCurrency(product.current_price ?? product.price)}
+                        </option>
+                      ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={0}
+                    max={99}
+                    value={amendmentModal.lines[item.id]?.quantity ?? item.quantity}
+                    onChange={(event) => setAmendmentModal((current) => current ? ({
+                      ...current,
+                      lines: {
+                        ...current.lines,
+                        [item.id]: {
+                          ...(current.lines[item.id] ?? { productId: item.product_id }),
+                          quantity: Number(event.target.value),
+                        },
+                      },
+                      idempotencyKey: newAmendmentIdempotencyKey(current.order),
+                    }) : current)}
+                    className="h-9 w-20 rounded-lg border border-surface-03 bg-surface-00 px-2 text-center text-sm font-bold text-cream"
+                  />
+                  <span className="w-24 text-right text-xs font-semibold text-stone">
+                    {formatCurrency(amendmentUnitPrice(item, amendmentModal.lines[item.id]?.productId ?? item.product_id, amendmentProducts) * (amendmentModal.lines[item.id]?.quantity ?? item.quantity))}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {Object.entries(amendmentModal.additions).map(([id, line]) => {
+              const product = amendmentProducts.find((candidate) => candidate.id === line.productId);
+              return (
+                <div key={id} className="mt-2 flex items-center gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3">
+                  <span className="min-w-0 flex-1 truncate text-sm text-emerald-100">{product?.name ?? "Novo item"}</span>
+                  <input type="number" min={0} max={99} value={line.quantity}
+                    onChange={(event) => setAmendmentModal((current) => current ? ({
+                      ...current,
+                      additions: { ...current.additions, [id]: { ...line, quantity: Number(event.target.value) } },
+                      idempotencyKey: newAmendmentIdempotencyKey(current.order),
+                    }) : current)}
+                    className="h-9 w-20 rounded-lg border border-surface-03 bg-surface-00 px-2 text-center text-sm font-bold text-cream"
+                    aria-label={`Quantidade de ${product?.name ?? "novo item"}`} />
+                  <button type="button" onClick={() => setAmendmentModal((current) => current ? ({
+                    ...current,
+                    additions: Object.fromEntries(Object.entries(current.additions).filter(([key]) => key !== id)),
+                  }) : current)} className="rounded-lg p-2 text-red-300 hover:bg-red-500/10" aria-label="Remover item adicionado">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              );
+            })}
+            <div className="mt-3 flex gap-2">
+              <select value={newAmendmentProductId} onChange={(event) => setNewAmendmentProductId(event.target.value)}
+                className="h-10 min-w-0 flex-1 rounded-lg border border-surface-03 bg-surface-00 px-3 text-sm text-cream" aria-label="Produto para adicionar">
+                <option value="">Adicionar produto...</option>
+                {amendmentProducts.map((product) => <option key={product.id} value={product.id}>{product.name} · {formatCurrency(product.current_price ?? product.price)}</option>)}
+              </select>
+              <button type="button" disabled={!newAmendmentProductId || loadingAmendmentProducts} onClick={() => {
+                const id = `added-${crypto.randomUUID()}`;
+                setAmendmentModal((current) => current ? ({
+                  ...current,
+                  additions: { ...current.additions, [id]: { productId: newAmendmentProductId, quantity: 1 } },
+                  idempotencyKey: newAmendmentIdempotencyKey(current.order),
+                }) : current);
+                setNewAmendmentProductId("");
+              }} className="h-10 rounded-lg bg-emerald-500/20 px-3 text-xs font-bold text-emerald-200 disabled:opacity-50">
+                Adicionar
+              </button>
+            </div>
+            <div className="mt-4 flex items-center justify-between rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-sm">
+              <span className="text-stone">Total previsto {loadingAmendmentProducts ? "(carregando catálogo...)" : ""}</span>
+              <span className="font-black text-gold">{formatCurrency(amendmentPreviewTotal(amendmentModal.order, amendmentModal.lines, amendmentProducts, amendmentModal.additions))}</span>
+            </div>
+            <label className="mt-4 flex flex-col gap-1.5">
+              <span className="text-xs font-bold uppercase tracking-widest text-stone">Motivo</span>
+              <input value={amendmentModal.reason} onChange={(event) => setAmendmentModal((current) => current ? ({ ...current, reason: event.target.value, idempotencyKey: newAmendmentIdempotencyKey(current.order) }) : current)} className="h-10 rounded-lg border border-surface-03 bg-surface-00 px-3 text-sm text-cream" />
+            </label>
+            <div className="mt-6 flex gap-3">
+              <button onClick={() => setAmendmentModal(null)} disabled={amendingId === amendmentModal.order.id} className="flex-1 rounded-xl border border-surface-03 py-2.5 text-sm text-stone hover:text-cream disabled:opacity-50">Cancelar</button>
+              <button onClick={() => void handleAmendment()} disabled={amendingId === amendmentModal.order.id || loadingAmendmentProducts} className="flex-1 rounded-xl bg-gold py-2.5 text-sm font-bold text-black disabled:opacity-50">{amendingId === amendmentModal.order.id ? "Salvando..." : "Salvar alteração"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {settlementModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-surface-03 bg-surface-02 p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-cream">Acerto financeiro</h3>
+                <p className="mt-1 text-sm text-stone">Histórico de alterações do pedido #{orderDisplayCode(settlementModal.order)}</p>
+              </div>
+              <button type="button" onClick={() => setSettlementModal(null)} className="rounded-lg px-2 py-1 text-stone hover:text-cream" aria-label="Fechar acerto financeiro">×</button>
+            </div>
+
+            {settlementModal.error && (
+              <div role="alert" className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{settlementModal.error}</div>
+            )}
+
+            {settlementModal.loading ? (
+              <div className="flex justify-center py-10"><Loader2 size={28} className="animate-spin text-gold" /></div>
+            ) : settlementModal.amendments.length === 0 ? (
+              <div className="mt-5 rounded-xl border border-dashed border-surface-03 p-6 text-center text-sm text-stone">Nenhuma alteração registrada para este pedido.</div>
+            ) : (
+              <div className="mt-5 max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+                {settlementModal.amendments.map((amendment) => {
+                  const adjustment = amendmentFinancialAdjustment(amendment);
+                  const settlement = settlements[amendment.id];
+                  const action = adjustment.direction === "charge" ? "Cobrar diferença" : adjustment.direction === "refund" ? "Aplicar abatimento" : "Sem acerto financeiro";
+                  const isSettling = settlingAmendmentId === amendment.id;
+                  return (
+                    <section key={amendment.id} className="rounded-xl border border-surface-03 bg-surface-03/45 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-cream">Alteração #{amendment.revision} · {action}</p>
+                          <p className="mt-1 text-xs text-stone">{formatDateTime(amendment.created_at)} · {amendment.actor_name} · {amendment.reason}</p>
+                        </div>
+                        <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${settlement?.status === "failed" ? "bg-red-500/15 text-red-300" : settlement?.status === "succeeded" ? "bg-emerald-500/15 text-emerald-300" : settlement ? "bg-amber-500/15 text-amber-200" : "bg-surface-00 text-stone"}`}>
+                          {settlement ? settlementStatusLabel(settlement.status) : adjustment.direction ? "Não liquidado" : "Sem diferença"}
+                        </span>
+                      </div>
+                      {adjustment.direction ? (
+                        <>
+                          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                            <div className="rounded-lg border border-surface-03 bg-surface-00 px-3 py-2"><span className="text-stone">Antes</span><strong className="ml-2 text-cream">{adjustment.previousTotal === null ? "—" : formatCurrency(adjustment.previousTotal)}</strong></div>
+                            <div className="rounded-lg border border-surface-03 bg-surface-00 px-3 py-2"><span className="text-stone">Depois</span><strong className="ml-2 text-cream">{adjustment.newTotal === null ? "—" : formatCurrency(adjustment.newTotal)}</strong></div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                            <p className={`text-sm font-black ${adjustment.direction === "charge" ? "text-amber-200" : "text-emerald-300"}`}>
+                              {adjustment.direction === "charge" ? "A cobrar" : "A abater"}: {formatCurrency(adjustment.amount)}
+                            </p>
+                            {(!settlement || settlement.status === "failed") && (
+                              <button type="button" onClick={() => void handleAmendmentSettlement(amendment)} disabled={isSettling} className="flex items-center gap-2 rounded-lg bg-gold px-3 py-2 text-xs font-black text-black disabled:opacity-50">
+                                {isSettling && <Loader2 size={13} className="animate-spin" />}
+                                {isSettling ? "Processando..." : settlement?.status === "failed" ? "Tentar novamente" : action}
+                              </button>
+                            )}
+                          </div>
+                          {settlement?.error_message && <p className="mt-2 text-xs text-red-300">{settlement.error_message}</p>}
+                          {settlement?.checkout_url && settlement.status !== "failed" && (
+                            <a href={settlement.checkout_url} target="_blank" rel="noreferrer" className="mt-3 flex items-center gap-2 text-xs font-bold text-blue-300 hover:text-blue-200"><ExternalLink size={13} /> Abrir link de pagamento</a>
+                          )}
+                          {settlement?.qr_code_text && settlement.status !== "failed" && (
+                            <div className="mt-3 rounded-lg border border-blue-500/20 bg-blue-500/10 p-3">
+                              <div className="flex items-center justify-between gap-2"><p className="text-[10px] font-bold uppercase tracking-widest text-blue-200">Pix copia e cola</p><button type="button" onClick={() => void navigator.clipboard?.writeText(settlement.qr_code_text ?? "")} className="flex items-center gap-1 text-[10px] font-bold text-blue-200"><Copy size={12} /> Copiar</button></div>
+                              <code className="mt-2 block max-h-20 overflow-auto break-all text-[10px] text-parchment">{settlement.qr_code_text}</code>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <p className="mt-3 text-xs text-stone">Esta alteração não gerou diferença de valor.</p>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+            )}
+            <div className="mt-5 flex justify-end"><button type="button" onClick={() => setSettlementModal(null)} className="rounded-xl border border-surface-03 px-4 py-2.5 text-sm text-stone hover:text-cream">Fechar</button></div>
           </div>
         </div>
       )}
@@ -961,6 +1425,10 @@ interface OrderCardProps {
   canAssignMotoboy?: boolean;
   onFulfillmentChange?: (fulfillmentType: "delivery" | "pickup") => void;
   canEditFulfillment?: boolean;
+  onAmend?: () => void;
+  canAmend?: boolean;
+  onFinancialSettlement?: () => void;
+  canFinancialSettlement?: boolean;
   onPrint: (template: PrintTemplate) => void;
   onLabels: () => void;
   canDelete: boolean;
@@ -980,6 +1448,10 @@ export function OrderCard({
   canAssignMotoboy = false,
   onFulfillmentChange,
   canEditFulfillment = false,
+  onAmend,
+  canAmend = false,
+  onFinancialSettlement,
+  canFinancialSettlement = false,
   onPrint,
   onLabels,
   canDelete,
@@ -1218,6 +1690,16 @@ export function OrderCard({
 
       {/* Action buttons */}
       <div className="mt-2 flex flex-wrap gap-1.5">
+        {canAmend && (
+          <button onClick={onAmend} disabled={updating} title="Alterar composição do pedido" className="flex items-center justify-center gap-1 rounded-lg bg-amber-500/15 px-2 py-2 text-[11px] font-bold text-amber-300 transition-colors hover:bg-amber-500/25 disabled:opacity-50">
+            <Pencil size={13} /> Alterar
+          </button>
+        )}
+        {canFinancialSettlement && (
+          <button onClick={onFinancialSettlement} disabled={updating} title="Acerto financeiro das alterações" className="flex items-center justify-center gap-1 rounded-lg bg-violet-500/15 px-2 py-2 text-[11px] font-bold text-violet-300 transition-colors hover:bg-violet-500/25 disabled:opacity-50">
+            <WalletCards size={13} /> Acerto
+          </button>
+        )}
         {/* Assign/reassign motoboy; existing deliveries may be corrected after completion. */}
         {canAssignMotoboy && (isReadyForPickup || Boolean(order.delivery)) && !["cancelled", "refunded"].includes(order.status) && order.sales_channel !== "dine_in" && order.fulfillment_type !== "pickup" && (
           <button

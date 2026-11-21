@@ -4,6 +4,7 @@ import path from "node:path";
 import process from "node:process";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { createPersistentCallbackQueue } from "./whatsapp-gateway-events.mjs";
 
 import makeWASocket, {
   Browsers,
@@ -13,6 +14,10 @@ import makeWASocket, {
   useMultiFileAuthState,
 } from "@whiskeysockets/baileys";
 import QRCode from "qrcode";
+
+let socketFactory = makeWASocket;
+let authStateFactory = useMultiFileAuthState;
+let versionFetcher = fetchLatestBaileysVersion;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = process.env.TELZ_PROJECT_ROOT
@@ -40,6 +45,8 @@ const dataDir = path.resolve(
 const registryPath = path.join(dataDir, "instances.json");
 const reconnectBaseDelayMs = 1500;
 const reconnectMaxDelayMs = 30000;
+const callbackQueueTimeoutMs = 10000;
+const callbackRetryDelayMs = 1000;
 
 const instances = new Map();
 
@@ -83,6 +90,8 @@ function baseState(instanceId) {
     generation: 0,
     reconnectTimer: null,
     manualStop: false,
+    connectPromise: null,
+    callbackQueue: null,
   };
 }
 
@@ -100,15 +109,24 @@ function assertSafeInstanceId(instanceId) {
   }
 }
 
-async function persistRegistry() {
+let registryWrite = Promise.resolve();
+
+async function persistRegistryNow() {
   const entries = [...instances.values()].map((state) => ({
     instance_id: state.instanceId,
     tenant_id: state.tenantId,
     name: state.displayName,
+    manual_stop: state.manualStop,
   }));
-  const temporaryPath = `${registryPath}.${process.pid}.tmp`;
+  const temporaryPath = `${registryPath}.${process.pid}.${randomUUID()}.tmp`;
   await fs.writeFile(temporaryPath, JSON.stringify(entries, null, 2), "utf8");
   await fs.rename(temporaryPath, registryPath);
+}
+
+function persistRegistry() {
+  const next = registryWrite.then(persistRegistryNow, persistRegistryNow);
+  registryWrite = next.catch(() => {});
+  return next;
 }
 
 function isCurrentSocket(state, generation, socket) {
@@ -198,6 +216,23 @@ function assertConnected(state) {
     return fail("not_connected", "Instancia Baileys nao esta conectada.", publicState(state));
   }
   return null;
+}
+
+function markSocketFailure(instanceId, state, socket, error) {
+  if (state.socket !== socket || state.status !== "connected") {
+    return;
+  }
+  state.lastError = error instanceof Error ? error.message : String(error);
+  state.status = "disconnected";
+  state.disconnectedAt = nowIso();
+  state.socket = null;
+  state.generation += 1;
+  logRuntime("instance_transport_error", {
+    instance_id: instanceId,
+    error: state.lastError,
+    should_reconnect: !state.manualStop,
+  });
+  if (!state.manualStop) scheduleReconnect(instanceId, state);
 }
 
 function jsonSafe(value) {
@@ -493,10 +528,27 @@ async function postBackendEvent(payload) {
     method: "POST",
     headers,
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(callbackQueueTimeoutMs - 1000),
   });
   if (!response.ok) {
     throw new Error(`Backend event HTTP ${response.status}`);
   }
+  const acknowledgement = await response.json();
+  if (acknowledgement?.ok !== true) throw new Error("Backend nao confirmou o recebimento do evento.");
+}
+
+function callbackQueueFor(instanceId, state) {
+  if (state.callbackQueue) return state.callbackQueue;
+  state.callbackQueue = createPersistentCallbackQueue({
+    filePath: path.join(dataDir, "callbacks", `${instanceId}.json`),
+    timeoutMs: callbackQueueTimeoutMs,
+    retryDelayMs: callbackRetryDelayMs,
+    deliver: postBackendEvent,
+  });
+  state.callbackQueue.start().catch((error) => {
+    state.lastError = error instanceof Error ? error.message : String(error);
+  });
+  return state.callbackQueue;
 }
 
 async function readBody(request) {
@@ -541,13 +593,44 @@ async function makeQrDataUrl(qr) {
 async function connectInstance(instanceId, body = {}) {
   assertSafeInstanceId(instanceId);
   const state = getState(instanceId);
+  const requestedTenantId = textValue(body.tenant_id);
+  if (state.tenantId && requestedTenantId && state.tenantId !== requestedTenantId) {
+    return fail("tenant_mismatch", "A instancia do WhatsApp ja pertence a outro tenant.", publicState(state));
+  }
   if (state.socket && ["connecting", "connected", "qr_required"].includes(state.status)) {
     return ok("Instancia Baileys ja esta em execucao.", publicState(state));
   }
+  if (state.connectPromise) return state.connectPromise;
+
+  state.connectPromise = connectInstanceInternal(instanceId, body);
+  try {
+    return await state.connectPromise;
+  } catch (error) {
+    if (state.connectPromise === null || !state.manualStop) {
+      state.status = "disconnected";
+      state.disconnectedAt = nowIso();
+      state.lastError = error instanceof Error ? error.message : String(error);
+      state.socket = null;
+      logRuntime("instance_connect_error", {
+        instance_id: instanceId,
+        error: state.lastError,
+        should_reconnect: !state.manualStop,
+      });
+      if (!state.manualStop) scheduleReconnect(instanceId, state);
+    }
+    return fail("connect_failed", "Nao foi possivel iniciar a conexao Baileys.", {
+      ...publicState(state),
+      error: state.lastError,
+    });
+  } finally {
+    state.connectPromise = null;
+  }
+}
+
+async function connectInstanceInternal(instanceId, body = {}) {
+  const state = getState(instanceId);
 
   const sessionDir = path.join(dataDir, "sessions", instanceId);
-  await fs.mkdir(sessionDir, { recursive: true });
-
   state.status = "connecting";
   state.manualStop = false;
   state.generation += 1;
@@ -555,21 +638,29 @@ async function connectInstance(instanceId, body = {}) {
   state.startedAt = nowIso();
   state.lastSeenAt = nowIso();
   state.lastError = null;
-  state.tenantId = textValue(body.tenant_id, state.tenantId);
+  const requestedTenantId = textValue(body.tenant_id);
+  if (state.tenantId && requestedTenantId && state.tenantId !== requestedTenantId) {
+    return fail("tenant_mismatch", "A instancia do WhatsApp ja pertence a outro tenant.", publicState(state));
+  }
+  state.tenantId = textValue(state.tenantId, requestedTenantId);
   state.displayName = textValue(body.name, state.displayName);
   state.qrCode = null;
   state.qrCodeDataUrl = null;
   if (!body.reconnect) state.reconnectAttempts = 0;
 
-  const { state: authState, saveCreds } = await useMultiFileAuthState(sessionDir);
-  const versionResult = await fetchLatestBaileysVersion().catch(() => ({ version: undefined }));
+  await fs.mkdir(sessionDir, { recursive: true });
+  if (state.manualStop || state.generation !== generation) return fail("connect_cancelled", "Conexao cancelada.", publicState(state));
+  const { state: authState, saveCreds } = await authStateFactory(sessionDir);
+  if (state.manualStop || state.generation !== generation) return fail("connect_cancelled", "Conexao cancelada.", publicState(state));
+  const versionResult = await versionFetcher().catch(() => ({ version: undefined }));
+  if (state.manualStop || state.generation !== generation) return fail("connect_cancelled", "Conexao cancelada.", publicState(state));
   logRuntime("instance_connect_start", {
     instance_id: instanceId,
     baileys_version: versionResult.version?.join?.(".") || null,
     reconnect: Boolean(body.reconnect),
     reconnect_attempts: state.reconnectAttempts,
   });
-  const socket = makeWASocket({
+  const socket = socketFactory({
     auth: authState,
     browser: Browsers.ubuntu("Chrome"),
     printQRInTerminal: false,
@@ -578,15 +669,18 @@ async function connectInstance(instanceId, body = {}) {
   });
 
   state.socket = socket;
-  await persistRegistry();
+  callbackQueueFor(instanceId, state);
 
-  socket.ev.on("creds.update", saveCreds);
+  socket.ev.on("creds.update", (...updates) => {
+    if (isCurrentSocket(state, generation, socket)) return saveCreds(...updates);
+  });
   socket.ev.on("messages.upsert", async ({ messages }) => {
     if (!isCurrentSocket(state, generation, socket)) return;
     for (const item of messages || []) {
       const inbound = await extractInboundMessage(item, state);
+      if (!isCurrentSocket(state, generation, socket)) return;
       if (!inbound) continue;
-      await postBackendEvent({
+      await callbackQueueFor(instanceId, state).enqueue({
         event_type: "message_received",
         provider: "baileys",
         instance_id: instanceId,
@@ -596,7 +690,7 @@ async function connectInstance(instanceId, body = {}) {
           instance_name: state.displayName,
         },
       }).catch((error) => {
-        state.lastError = error instanceof Error ? error.message : String(error);
+        if (isCurrentSocket(state, generation, socket)) state.lastError = error instanceof Error ? error.message : String(error);
       });
     }
   });
@@ -607,14 +701,16 @@ async function connectInstance(instanceId, body = {}) {
     if (update.qr) {
       state.status = "qr_required";
       state.qrCode = update.qr;
-      state.qrCodeDataUrl = await makeQrDataUrl(update.qr).catch((error) => {
-        state.lastError = error instanceof Error ? error.message : String(error);
+      const qrCodeDataUrl = await makeQrDataUrl(update.qr).catch((error) => {
+        if (isCurrentSocket(state, generation, socket)) state.lastError = error instanceof Error ? error.message : String(error);
         logRuntime("instance_qr_error", {
           instance_id: instanceId,
           error: state.lastError,
         });
         return null;
       });
+      if (!isCurrentSocket(state, generation, socket)) return;
+      state.qrCodeDataUrl = qrCodeDataUrl;
       logRuntime("instance_qr_ready", {
         instance_id: instanceId,
         has_qr_data_url: Boolean(state.qrCodeDataUrl),
@@ -655,6 +751,11 @@ async function connectInstance(instanceId, body = {}) {
     }
   });
 
+  await persistRegistry();
+  if (!isCurrentSocket(state, generation, socket)) {
+    socket.end?.(new Error("stale socket"));
+    return fail("connect_cancelled", "Conexao cancelada.", publicState(state));
+  }
   return ok("Conexao Baileys iniciada. Aguarde QR Code ou status conectado.", publicState(state));
 }
 
@@ -721,6 +822,7 @@ async function disconnectInstance(instanceId) {
   state.qrCode = null;
   state.qrCodeDataUrl = null;
   state.pairingCode = null;
+  await persistRegistry();
   return ok("Instancia Baileys desconectada.", publicState(state));
 }
 
@@ -728,6 +830,7 @@ async function deleteInstance(instanceId) {
   assertSafeInstanceId(instanceId);
   const state = getState(instanceId);
   state.manualStop = true;
+  state.callbackQueue?.stop();
   state.generation += 1;
   if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
   state.reconnectTimer = null;
@@ -763,7 +866,17 @@ async function sendTextMessage(instanceId, body = {}) {
     return fail("invalid_payload", "Telefone e texto sao obrigatorios.", publicState(state));
   }
 
-  const result = await state.socket.sendMessage(jid, { text });
+  const socket = state.socket;
+  let result;
+  try {
+    result = await socket.sendMessage(jid, { text });
+  } catch (error) {
+    markSocketFailure(instanceId, state, socket, error);
+    return fail("send_failed", "Falha ao enviar mensagem pela Baileys; a instancia foi marcada para reconexao.", {
+      ...publicState(state),
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   state.lastSeenAt = nowIso();
   logRuntime("message_text_sent", {
     instance_id: instanceId,
@@ -851,7 +964,17 @@ async function sendMediaMessage(instanceId, body = {}) {
           }
         : { image: media, caption };
 
-  const result = await state.socket.sendMessage(jid, payload);
+  const socket = state.socket;
+  let result;
+  try {
+    result = await socket.sendMessage(jid, payload);
+  } catch (error) {
+    markSocketFailure(instanceId, state, socket, error);
+    return fail("send_failed", "Falha ao enviar midia pela Baileys; a instancia foi marcada para reconexao.", {
+      ...publicState(state),
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   state.lastSeenAt = nowIso();
   logRuntime("message_media_sent", {
     instance_id: instanceId,
@@ -878,12 +1001,17 @@ async function route(request, response) {
   const parts = url.pathname.split("/").filter(Boolean);
 
   if (request.method === "GET" && url.pathname === "/health") {
+    const connectedInstances = [...instances.values()].filter((item) => item.status === "connected");
+    const activeInstances = [...instances.values()].filter((item) => item.socket);
     return sendJson(response, 200, ok("Runtime Baileys ativo.", {
       status: "online",
       host,
       port,
       data_dir: dataDir,
-      active_instances: [...instances.values()].filter((item) => item.socket).length,
+      active_instances: activeInstances.length,
+      connected_authenticated_instances: connectedInstances.length,
+      external_e2e_ready: connectedInstances.length > 0,
+      external_e2e_blockers: connectedInstances.length > 0 ? [] : ["no_authenticated_connected_instance"],
       backend_event_url: backendEventUrl,
     }));
   }
@@ -940,9 +1068,25 @@ async function route(request, response) {
   return sendJson(response, 404, fail("not_found", "Acao da instancia nao encontrada."));
 }
 
-await fs.mkdir(path.join(dataDir, "sessions"), { recursive: true });
+export const __runtimeTest = {
+  instances,
+  getState,
+  connectInstance,
+  disconnectInstance,
+  sendTextMessage,
+  persistRegistry,
+  setDependencies({ makeSocket, authState, fetchVersion } = {}) {
+    if (makeSocket) socketFactory = makeSocket;
+    if (authState) authStateFactory = authState;
+    if (fetchVersion) versionFetcher = fetchVersion;
+  },
+};
 
-try {
+const testMode = process.env.WHATSAPP_GATEWAY_RUNTIME_TEST === "1";
+
+if (!testMode) await fs.mkdir(path.join(dataDir, "sessions"), { recursive: true });
+
+if (!testMode) try {
   const persisted = JSON.parse(await fs.readFile(registryPath, "utf8"));
   for (const entry of Array.isArray(persisted) ? persisted : []) {
     if (!entry?.instance_id) continue;
@@ -950,6 +1094,9 @@ try {
       const state = getState(entry.instance_id);
       state.tenantId = textValue(entry.tenant_id);
       state.displayName = textValue(entry.name);
+      state.manualStop = entry.manual_stop === true;
+      callbackQueueFor(entry.instance_id, state);
+      if (state.manualStop) continue;
       connectInstance(entry.instance_id, { reconnect: true }).catch((error) => {
         state.lastError = error instanceof Error ? error.message : String(error);
         scheduleReconnect(entry.instance_id, state);
@@ -962,12 +1109,14 @@ try {
   if (error?.code !== "ENOENT") logRuntime("instance_restore_error", { error: error instanceof Error ? error.message : String(error) });
 }
 
-const server = http.createServer((request, response) => {
-  route(request, response).catch((error) => {
-    sendJson(response, 500, fail("runtime_error", error instanceof Error ? error.message : String(error)));
+const server = testMode ? null : http.createServer((request, response) => {
+    route(request, response).catch((error) => {
+      sendJson(response, 500, fail("runtime_error", error instanceof Error ? error.message : String(error)));
+    });
   });
-});
 
-server.listen(port, host, () => {
-  console.log(`WhatsApp Gateway Runtime listening on http://${host}:${port}`);
-});
+if (server) {
+  server.listen(port, host, () => {
+    console.log(`WhatsApp Gateway Runtime listening on http://${host}:${port}`);
+  });
+}

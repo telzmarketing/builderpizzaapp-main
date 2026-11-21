@@ -372,6 +372,28 @@ class WhatsAppGatewayService:
             instance.last_seen_at = now
             instance.updated_at = now
 
+        # A runtime callback is trusted only when it resolves to a persisted
+        # Gateway instance.  Without this guard, legacy/rollout-off paths
+        # could pass an unknown callback to the Agent with no tenant context.
+        if not instance:
+            self.add_log(
+                action="runtime_event_rejected",
+                status="warning",
+                message="Evento runtime sem instancia Baileys conhecida.",
+                instance_id=instance_id or None,
+                tenant_id="default",
+                company_id="default",
+                metadata={"event_type": event_type, "instance_id": instance_id},
+            )
+            self._db.flush()
+            return {
+                "ok": False,
+                "received": 0,
+                "duplicates": 0,
+                "ignored": 1,
+                "message": "Instancia do WhatsApp Gateway desconhecida.",
+            }
+
         if event_type != "message_received":
             self.add_log(
                 action="runtime_event_ignored",
@@ -388,7 +410,7 @@ class WhatsAppGatewayService:
         # The provider instance is the only trusted selector of a tenant for
         # an inbound runtime callback.  Do not let an unbound callback reach
         # driver/agent processing while background enforcement is active.
-        if get_settings().TENANT_BACKGROUND_CONTEXT_ENABLED and (not instance or not instance.tenant_id):
+        if get_settings().TENANT_BACKGROUND_CONTEXT_ENABLED and not instance.tenant_id:
             self.add_log(
                 action="runtime_event_rejected",
                 status="warning",
@@ -501,6 +523,82 @@ class WhatsAppGatewayService:
             "runtime_status": health.status if health else "package_missing",
             "production_auto_update_enabled": bool(scheduler.auto_update_production_enabled),
             "update_requires_confirmation": True,
+        }
+
+    def external_e2e_readiness(self) -> dict[str, Any]:
+        """Return a read-only, fail-closed gate for real WhatsApp E2E."""
+        checked_at = _now_utc()
+        installed_version = self.installed_baileys_version()
+        provider = self._provider("baileys")
+        health = provider.health_check() if installed_version else WhatsAppProviderResult(
+            ok=False,
+            status="package_missing",
+            message="Pacote Baileys nao instalado.",
+            data={},
+        )
+        health_data = dict(health.data or {})
+        blockers: list[dict[str, str]] = []
+        if not health.ok:
+            blockers.append({"code": "runtime_unavailable", "message": health.message})
+
+        live_instances: list[dict[str, Any]] = []
+        connected_count = 0
+        for instance in self.list_instances():
+            live_status = "unknown"
+            live_ok = False
+            live_message = "Status live nao consultado."
+            try:
+                status_result = provider.get_status(instance_id=instance.id)
+                status_data = dict(status_result.data or {})
+                live_status = str(status_data.get("status") or status_result.status or "unknown")
+                live_ok = bool(status_result.ok and live_status == "connected")
+                live_message = status_result.message
+            except Exception as exc:
+                live_message = f"Falha ao consultar runtime: {exc}"
+            if live_ok:
+                connected_count += 1
+            live_instances.append({
+                "instance_id": instance.id,
+                "name": instance.name,
+                "persisted_status": instance.status,
+                "live_status": live_status,
+                "authenticated_connected": live_ok,
+                "message": live_message,
+            })
+
+        if connected_count == 0:
+            blockers.append({
+                "code": "no_authenticated_connected_instance",
+                "message": "Nenhuma instancia Baileys autenticada e conectada neste tenant.",
+            })
+
+        ready = not blockers
+        return {
+            "status": "ready" if ready else "blocked",
+            "external_e2e_ready": ready,
+            "checked_at": checked_at,
+            "provider": "baileys",
+            "runtime": {
+                "reachable": bool(health.ok),
+                "status": health.status,
+                "message": health.message,
+                "installed_version": installed_version,
+                "data": health_data,
+            },
+            "instances": live_instances,
+            "connected_authenticated_instances": connected_count,
+            "blockers": blockers,
+            "external_test_requirements": [
+                "runtime Baileys acessivel",
+                "sessao autenticada conectada neste tenant",
+                "numero de destino real controlado para envio",
+                "resposta recebida e persistida em uma conversa",
+            ],
+            "message": (
+                "Pronto para iniciar E2E externo controlado; este diagnostico nao envia mensagens."
+                if ready
+                else "E2E externo bloqueado; corrija os bloqueios listados antes de testar."
+            ),
         }
 
     def update_status(self) -> dict[str, Any]:
@@ -804,34 +902,61 @@ class WhatsAppGatewayService:
         return instance
 
     def _select_send_instance(self, instance_id: str | None) -> WhatsAppGatewayInstance | None:
-        if instance_id:
-            instance = self.get_instance(instance_id)
-            if instance and instance.provider == "baileys" and instance.status == "connected":
-                return instance
+        selected = self.get_instance(instance_id) if instance_id else None
+        tenant_id = getattr(self._tenant_context, "tenant_id", None) or LEGACY_TENANT_ID
+        tenant_isolation_enabled = True
 
-            # Channel settings intentionally retain the selected instance id
-            # across disconnects and replacement.  Do not make a stale
-            # selection stop the tenant's outbound queue when another owned
-            # Baileys instance is already connected.
-            return (
-                self._scope(self._db.query(WhatsAppGatewayInstance), WhatsAppGatewayInstance)
+        if instance_id and selected and tenant_isolation_enabled and selected.tenant_id != tenant_id:
+            # A caller must never turn an explicitly foreign id into an
+            # implicit send through another instance in its own tenant.
+            return None
+
+        if instance_id and selected is None and tenant_isolation_enabled:
+            # get_instance is tenant-scoped, so distinguish "not found" from
+            # an id hidden by that scope without granting access to the row.
+            foreign = (
+                self._db.query(WhatsAppGatewayInstance)
                 .filter(
-                    WhatsAppGatewayInstance.provider == "baileys",
-                    WhatsAppGatewayInstance.status == "connected",
+                    WhatsAppGatewayInstance.id == instance_id,
+                    WhatsAppGatewayInstance.tenant_id != tenant_id,
                 )
-                .order_by(WhatsAppGatewayInstance.last_seen_at.desc().nullslast(), WhatsAppGatewayInstance.created_at.asc())
                 .first()
             )
+            if foreign is not None and getattr(foreign, "tenant_id", None) != tenant_id:
+                return None
 
-        return (
+        query = (
             self._scope(self._db.query(WhatsAppGatewayInstance), WhatsAppGatewayInstance)
             .filter(
                 WhatsAppGatewayInstance.provider == "baileys",
-                WhatsAppGatewayInstance.status == "connected",
+                WhatsAppGatewayInstance.tenant_id == tenant_id,
             )
-            .order_by(WhatsAppGatewayInstance.last_seen_at.desc().nullslast(), WhatsAppGatewayInstance.created_at.asc())
-            .first()
+            .order_by(
+                WhatsAppGatewayInstance.last_seen_at.desc().nullslast(),
+                WhatsAppGatewayInstance.created_at.asc(),
+            )
         )
+        candidates = list(query.all())
+        if selected is not None:
+            candidates = [selected] + [candidate for candidate in candidates if candidate.id != selected.id]
+
+        # SQL status is only a cache.  Refresh every candidate from the live
+        # runtime before selecting it, and never retry a send when this probe
+        # is uncertain or reports a non-connected state.
+        for candidate in candidates:
+            if candidate.provider != "baileys":
+                continue
+            if tenant_isolation_enabled and candidate.tenant_id != tenant_id:
+                continue
+            try:
+                result = self._provider(candidate.provider).get_status(instance_id=candidate.id)
+            except Exception:
+                continue
+            self._apply_runtime_result(candidate, result, fallback_status=candidate.status)
+            if result.ok and candidate.status == "connected":
+                return candidate
+
+        return None
 
     def _apply_runtime_result(
         self,

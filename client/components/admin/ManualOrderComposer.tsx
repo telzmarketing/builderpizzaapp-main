@@ -29,6 +29,7 @@ import {
   manualOrdersApi,
   ordersApi,
   paymentsApi,
+  productionEffectsApi,
   productsApi,
   isAssetUrl,
   resolveOptimizedAssetUrl,
@@ -77,6 +78,7 @@ type Draft = {
   coupon: string;
   discountType: "percentage" | "fixed" | "";
   discountValue: string;
+  staffBonus: boolean;
   submission?: ManualOrderIn;
 };
 const input =
@@ -118,6 +120,7 @@ function emptyDraft(): Draft {
     coupon: "",
     discountType: "",
     discountValue: "",
+    staffBonus: false,
   };
 }
 
@@ -193,6 +196,7 @@ export default function ManualOrderComposer({
   } | null>(null);
   const [quoteError, setQuoteError] = useState("");
   const [created, setCreated] = useState<ApiOrder | null>(null);
+  const [bonificationApplied, setBonificationApplied] = useState(false);
   const [printed, setPrinted] = useState(false);
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [paymentError, setPaymentError] = useState("");
@@ -487,13 +491,29 @@ export default function ManualOrderComposer({
     }
     try {
       const order = await manualOrdersApi.create(body, draft.key);
-      setCreated(order);
+      let finalizedOrder = order;
+      if (draft.staffBonus) {
+        await productionEffectsApi.bonify(
+          {
+            order_id: order.id,
+            beneficiary: "Equipe de trabalho",
+            reason: "Bonificação da equipe no checkout",
+          },
+          `bonification:${order.id}`,
+        );
+        finalizedOrder = await ordersApi.get(order.id);
+        setBonificationApplied(true);
+      }
+      setCreated(finalizedOrder);
       try {
         sessionStorage.removeItem(storageKey);
       } catch {
         /* The confirmed order remains visible. */
       }
-      onCreated?.(order);
+      // Consumers must receive the canonical post-checkout representation.
+      // For staff bonification that means the zeroed sale and its recorded
+      // production effect, not the pre-bonification order response.
+      onCreated?.(finalizedOrder);
     } catch (caught) {
       setError(errorText(caught));
       if (
@@ -549,6 +569,11 @@ export default function ManualOrderComposer({
         <p>
           {created.delivery_name} - {money(created.total)}
         </p>
+        {bonificationApplied && (
+          <p className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4 font-bold text-emerald-200">
+            Bonificação da equipe aplicada. Venda zerada; o consumo de estoque permanece registrado.
+          </p>
+        )}
         <p>
           Situação do pedido:{" "}
           <strong>
@@ -593,7 +618,7 @@ export default function ManualOrderComposer({
             <Printer size={18} />{" "}
             {printed ? "Imprimir novamente" : "Imprimir pedido"}
           </button>
-          {!payOnDelivery && (
+          {!payOnDelivery && !bonificationApplied && (
             <button
               type="button"
               className={button}
@@ -616,6 +641,7 @@ export default function ManualOrderComposer({
             onClick={() => {
               setDraft(emptyDraft());
               setCreated(null);
+              setBonificationApplied(false);
               setPrinted(false);
               setPaymentError("");
               setStep(0);
@@ -1085,6 +1111,18 @@ export default function ManualOrderComposer({
                     ))}
                   </select>
                 </label>
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gold/50 bg-gold/10 p-4 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-5 w-5 accent-gold"
+                    checked={draft.staffBonus}
+                    onChange={(event) => patch({ staffBonus: event.target.checked })}
+                  />
+                  <span>
+                    <strong className="block text-cream">Bonificação da equipe</strong>
+                    <span className="text-stone">Zera a venda no checkout e mantém o consumo dos insumos.</span>
+                  </span>
+                </label>
                 <div className="space-y-2 rounded-xl border border-surface-03 bg-surface-02/40 p-3">
                   <p className="text-xs font-bold uppercase tracking-wide text-stone">Desconto manual do PDV</p>
                   <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
@@ -1126,7 +1164,7 @@ export default function ManualOrderComposer({
                 <div className="mb-4 flex items-center justify-between">
                   <span className="text-sm text-stone">Total do pedido</span>
                   <strong className="text-2xl font-black text-gold">
-                    {currentQuote ? money(currentQuote.total) : "—"}
+                    {draft.staffBonus ? money(0) : currentQuote ? money(currentQuote.total) : "—"}
                   </strong>
                 </div>
                 <button
@@ -1576,6 +1614,18 @@ export default function ManualOrderComposer({
                     </option>
                   ))}
                 </select>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gold/50 bg-gold/10 p-4 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-5 w-5 accent-gold"
+                  checked={draft.staffBonus}
+                  onChange={(event) => patch({ staffBonus: event.target.checked })}
+                />
+                <span>
+                  <strong className="block text-cream">Bonificação da equipe</strong>
+                  <span className="text-stone">Finaliza com valor de venda zerado e mantém o consumo dos insumos.</span>
+                </span>
               </label>
               {draft.method === "pay_on_delivery" && (
                 <label className="block text-sm">

@@ -1,5 +1,5 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, String, Float, Integer, Enum, DateTime, ForeignKey, ForeignKeyConstraint, Index, JSON, Numeric, Text, text
-from sqlalchemy.orm import relationship
+from sqlalchemy import Boolean, CheckConstraint, Column, String, Float, Integer, Enum, DateTime, ForeignKey, ForeignKeyConstraint, Index, JSON, Numeric, Text, text, and_
+from sqlalchemy.orm import relationship, foreign
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime, timezone
 import enum
@@ -40,6 +40,7 @@ class Order(Base):
             "order_origin IN ('own','partner_99','ifood','keeta')",
             name="ck_orders_order_origin",
         ),
+        CheckConstraint("composition_revision >= 0", name="ck_orders_composition_revision"),
     )
 
     id = Column(String, primary_key=True)
@@ -56,6 +57,7 @@ class Order(Base):
     delivery_complement = Column(String(100))
 
     status = Column(Enum(OrderStatus), default=OrderStatus.pending)
+    composition_revision = Column(Integer, nullable=False, default=0, server_default="0")
     order_code = Column(String(10), nullable=True)
     external_reference = Column(String(120), nullable=True)
     # Business origin is intentionally separate from external_reference, which
@@ -135,7 +137,21 @@ class Order(Base):
 
     customer = relationship("Customer", back_populates="orders")
     address = relationship("Address", back_populates="orders")
-    items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
+    # Live commercial composition only. Superseded rows remain addressable by
+    # production/CMV records so a loss can retain its original composition.
+    items = relationship(
+        "OrderItem",
+        primaryjoin=lambda: and_(Order.id == foreign(OrderItem.order_id), OrderItem.superseded_at.is_(None)),
+        back_populates="order",
+        cascade="all, delete-orphan",
+        overlaps="all_items",
+    )
+    all_items = relationship(
+        "OrderItem",
+        primaryjoin=lambda: Order.id == foreign(OrderItem.order_id),
+        viewonly=True,
+        overlaps="items,order",
+    )
     payment = relationship("Payment", back_populates="order", uselist=False)
     coupon = relationship("Coupon", back_populates="orders")
     delivery = relationship("Delivery", back_populates="order", uselist=False)
@@ -187,8 +203,14 @@ class OrderItem(Base):
     promotion_discount = Column(Float, default=0.0)
     promotion_blocked = Column(Boolean, default=False)
     promotion_block_reason = Column(String(300), nullable=True)
+    superseded_at = Column(DateTime(timezone=True), nullable=True, index=True)
 
-    order = relationship("Order", back_populates="items")
+    order = relationship(
+        "Order",
+        primaryjoin=lambda: and_(Order.id == foreign(OrderItem.order_id), OrderItem.superseded_at.is_(None)),
+        back_populates="items",
+        overlaps="all_items",
+    )
     flavors = relationship("OrderItemFlavor", back_populates="order_item", cascade="all, delete-orphan")
 
 
@@ -206,3 +228,31 @@ class OrderItemFlavor(Base):
 
     order_item = relationship("OrderItem", back_populates="flavors")
     product = relationship("Product", back_populates="order_item_flavors")
+
+
+class OrderAmendment(Base):
+    """Append-only commercial composition history, independent of live items."""
+
+    __tablename__ = "order_amendments"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "order_id"], ["orders.tenant_id", "orders.id"],
+            name="fk_order_amendments_tenant_order", ondelete="RESTRICT",
+        ),
+        Index("uq_order_amendments_revision", "tenant_id", "order_id", "revision", unique=True),
+        Index("uq_order_amendments_claim", "idempotency_key_id", unique=True),
+        CheckConstraint("revision > 0", name="ck_order_amendments_revision"),
+    )
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False)
+    order_id = Column(String, nullable=False)
+    revision = Column(Integer, nullable=False)
+    idempotency_key_id = Column(String, ForeignKey("idempotency_keys.id", ondelete="RESTRICT"), nullable=False)
+    actor_id = Column(String(100), nullable=False)
+    actor_name = Column(String(200), nullable=False)
+    reason = Column(String(500), nullable=False)
+    state = Column(String(30), nullable=False)
+    before_snapshot = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    after_snapshot = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))

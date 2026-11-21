@@ -53,6 +53,8 @@ class KdsTaskOut(BaseModel):
     task_id: str; production_unit_id: str; order_id: str; order_item_id: str; station_id: str
     unit_index: int; attempt_id: str; attempt_number: int; state: str
     version: int; operator_id: str | None = None; requires_oven: bool
+    operational_stage: Literal["pizza", "esfiha", "forno", "expedicao"] | None = None
+    priority: int = 0
     assigned_at: datetime | None = None; started_at: datetime | None = None
     assembly_finished_at: datetime | None = None; completed_at: datetime | None = None
     id: str | None = None

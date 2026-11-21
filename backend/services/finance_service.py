@@ -1076,6 +1076,49 @@ class FinanceService:
             "status": "complete" if rows and pending_count == 0 else "pending" if rows else "not_available",
         }
 
+    def production_effects_summary(self, order_id: str) -> dict:
+        """Non-cash cost classification; never creates a payable/settlement.
+
+        Loss is a reclassification of already consumed cost. Only subsequent
+        attempts increase physical cost beyond the original CMV composition.
+        The categories below are disjoint (loss, then staff meal, then remake).
+        """
+        from backend.models.kds_production import (
+            ProductionAttempt, ProductionAttemptConsumption, ProductionEffect, ProductionUnit,
+        )
+        if not self._db.query(Order.id).filter_by(tenant_id=self._tenant_id, id=order_id).first():
+            raise FinanceNotFound("Pedido")
+        effects = self._db.query(ProductionEffect).filter_by(tenant_id=self._tenant_id, order_id=order_id).all()
+        losses = {effect.attempt_id for effect in effects if effect.kind == "loss"}
+        remakes = {effect.attempt_id for effect in effects if effect.kind == "reproduction"}
+        bonuses = [effect for effect in effects if effect.kind == "bonification"]
+        rows = self._db.query(ProductionAttemptConsumption, ProductionAttempt).join(
+            ProductionAttempt, ProductionAttempt.id == ProductionAttemptConsumption.attempt_id,
+        ).join(ProductionUnit, ProductionUnit.id == ProductionAttempt.production_unit_id).filter(
+            ProductionAttemptConsumption.tenant_id == self._tenant_id,
+            ProductionAttempt.tenant_id == self._tenant_id,
+            ProductionUnit.tenant_id == self._tenant_id, ProductionUnit.order_id == order_id,
+        ).all()
+        totals = {name: Decimal(0) for name in (
+            "loss_cost", "reproduction_cost", "bonification_cost", "physical_cost", "incremental_cost",
+        )}
+        for consumption, attempt in rows:
+            cost = consumption.quantity * consumption.unit_cost
+            totals["physical_cost"] += cost
+            if attempt.attempt_number > 1:
+                totals["incremental_cost"] += cost
+            category = ("loss_cost" if attempt.id in losses else "bonification_cost" if bonuses
+                        else "reproduction_cost" if attempt.id in remakes else None)
+            if category:
+                totals[category] += cost
+        totals["waived_sale"] = sum((effect.discount_amount for effect in bonuses), Decimal(0))
+        return {
+            "order_id": order_id, "loss_count": len(losses), "reproduction_count": len(remakes),
+            "bonification_count": len(bonuses),
+            **{name: format(amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f") for name, amount in totals.items()},
+            "cash_effect": "0.00",
+        }
+
     def create_transaction(self, payload: FinanceTransactionIn, admin_id: str | None = None) -> dict:
         data = self._transaction_data(payload)
         data["created_by_admin_id"] = admin_id

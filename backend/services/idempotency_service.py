@@ -65,12 +65,13 @@ class IdempotencyService:
         self.db.refresh(record)
         return IdempotencyClaim(record=record)
 
-    def complete(self, record: IdempotencyKey, resource_id: str) -> None:
+    def complete(self, record: IdempotencyKey, resource_id: str, *, commit: bool = True) -> None:
         record.status = "completed"
         record.resource_id = resource_id
         record.updated_at = datetime.now(timezone.utc)
         self.db.add(record)
-        self.db.commit()
+        if commit:
+            self.db.commit()
 
     def abandon(self, record: IdempotencyKey) -> None:
         """Release a claim when the business operation did not commit."""

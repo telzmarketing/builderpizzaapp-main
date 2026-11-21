@@ -167,6 +167,7 @@ class OrderItemOut(BaseModel):
 
 class OrderOut(BaseModel):
     id: str
+    composition_revision: int = 0
     order_code: Optional[str] = None
     customer_id: Optional[str]
     delivery_name: Optional[str]
@@ -240,6 +241,32 @@ class OrderStatusUpdate(BaseModel):
 
 class OrderFulfillmentUpdate(BaseModel):
     fulfillment_type: Literal["delivery", "pickup"]
+
+
+class OrderAmendmentIn(BaseModel):
+    """Replace the composition only; identity, delivery and payment method stay fixed."""
+
+    model_config = {"extra": "forbid", "str_strip_whitespace": True, "allow_inf_nan": False}
+
+    expected_revision: int = Field(ge=0)
+    expected_total: float = Field(ge=0, allow_inf_nan=False)
+    reason: str = Field(min_length=3, max_length=500)
+    items: list[CartItemIn] = Field(min_length=1, max_length=100)
+
+
+class OrderAmendmentOut(BaseModel):
+    id: str
+    order_id: str
+    revision: int
+    actor_id: str
+    actor_name: str
+    reason: str
+    state: str
+    before_snapshot: dict
+    after_snapshot: dict
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class TestOrderPurgeIn(BaseModel):

@@ -162,7 +162,9 @@ class AgenteWhatsAppOutboxService:
                     session_id=session.id,
                     customer_id=message.customer_id or session.customer_id,
                     phone=phone,
-                    provider=_normalize_provider(session.provider),
+                    # Preserve the message's transport if a newer inbound
+                    # event has since updated the session provider.
+                    provider=_normalize_provider(message.provider or session.provider),
                     status="pending",
                     attempts=0,
                     max_attempts=3,

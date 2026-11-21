@@ -67,6 +67,17 @@ type CampaignAudience = "manual" | "customers" | "leads";
 type StoryMediaType = "image" | "video";
 type ModuleTab = "dashboard" | "conversations" | "settings" | "order_notifications";
 
+/** Keeps optional guardrails out of the critical session/messages path. */
+export async function loadWhatsAppDetailSession<TSession, TGuardrails>(
+  loadSession: () => Promise<TSession>,
+  loadGuardrails: () => Promise<TGuardrails>,
+  onGuardrails: (guardrails: TGuardrails | null) => void,
+): Promise<TSession> {
+  const session = await loadSession();
+  void loadGuardrails().then(onGuardrails).catch(() => onGuardrails(null));
+  return session;
+}
+
 const statusLabels: Record<ApiAgenteWhatsAppConversation["status"], string> = {
   open: "Aberta",
   waiting_human: "Fila",
@@ -399,6 +410,7 @@ export default function CrmAgenteWhatsApp() {
     const revision = controlRevision.current;
     setError("");
     setLoading(true);
+    void loadAuxiliaryData(revision);
     try {
       const conversationRequest = agenteWhatsAppApi.listConversations({
         status: filter === "all" ? undefined : filter,
@@ -408,49 +420,12 @@ export default function CrmAgenteWhatsApp() {
         date_to: periodTo || undefined,
         limit: 120,
       });
-      const [dashboardResult, conversationResult] = await Promise.allSettled([
-        agenteWhatsAppApi.dashboard(),
-        conversationRequest,
-      ]);
-      if (conversationResult.status === "rejected") {
-        throw conversationResult.reason;
-      }
-      const rows = conversationResult.value;
-      const [liveMetrics, audioMetricsPayload, aiSettingsPayload, audioSettingsPayload, rolloutPayload, aiStatusPayload, channelPayload, gatewayPayload, internalAlertsPayload] = await Promise.all([
-        agenteWhatsAppApi.operationalMetrics().catch(() => null),
-        agenteWhatsAppApi.audioMetrics(7)
-          .then((payload) => {
-            setAudioMetricsError("");
-            return payload;
-          })
-          .catch((err) => {
-            setAudioMetricsError(err instanceof Error ? err.message : "Falha ao carregar metricas de audio.");
-            return null;
-          }),
-        agenteWhatsAppApi.getAISettings().catch(() => null),
-        agenteWhatsAppApi.getAudioSettings().catch(() => null),
-        agenteWhatsAppApi.getAudioRolloutSettings().catch(() => null),
-        agenteWhatsAppApi.aiProviderStatus().catch(() => null),
-        agenteWhatsAppApi.getChannelSettings().catch(() => null),
-        whatsappGatewayApi.listInstances().catch(() => []),
-        agenteWhatsAppApi.listInternalAlerts({ status: "active", limit: 30 }).catch(() => []),
-      ]);
+      const rows = await conversationRequest;
       if (revision !== controlRevision.current) return;
-      if (dashboardResult.status === "fulfilled") {
-        setDashboard(dashboardResult.value);
-      } else {
+      if (revision !== controlRevision.current) {
         setError("Conversas carregadas. O painel de métricas está temporariamente indisponível.");
       }
       setSessions(rows);
-      setOperationalMetrics(liveMetrics);
-      setAudioMetrics(audioMetricsPayload);
-      setAiSettings(aiSettingsPayload);
-      setAudioSettings(audioSettingsPayload);
-      setRolloutSettings(rolloutPayload);
-      setAiProviderStatus(aiStatusPayload);
-      setChannelSettings(channelPayload);
-      setGatewayInstances(gatewayPayload);
-      setInternalAlerts(internalAlertsPayload);
       const nextId = preferredId ?? selectedIdRef.current ?? rows[0]?.id ?? null;
       selectedIdRef.current = nextId;
       setSelectedId(nextId);
@@ -466,19 +441,49 @@ export default function CrmAgenteWhatsApp() {
     }
   }
 
+  async function loadAuxiliaryData(revision: number) {
+    const load = async <T,>(request: Promise<T>, apply: (value: T) => void, onError?: () => void) => {
+      try {
+        const value = await request;
+        if (revision === controlRevision.current) apply(value);
+      } catch {
+        if (revision === controlRevision.current) onError?.();
+      }
+    };
+    await Promise.all([
+      load(agenteWhatsAppApi.dashboard(), setDashboard),
+      load(agenteWhatsAppApi.operationalMetrics(), setOperationalMetrics),
+      load(agenteWhatsAppApi.audioMetrics(7), (value) => {
+        setAudioMetrics(value);
+        setAudioMetricsError("");
+      }, () => setAudioMetricsError("Falha ao carregar metricas de audio.")),
+      load(agenteWhatsAppApi.getAISettings(), setAiSettings),
+      load(agenteWhatsAppApi.getAudioSettings(), setAudioSettings),
+      load(agenteWhatsAppApi.getAudioRolloutSettings(), setRolloutSettings),
+      load(agenteWhatsAppApi.aiProviderStatus(), setAiProviderStatus),
+      load(agenteWhatsAppApi.getChannelSettings(), setChannelSettings),
+      load(whatsappGatewayApi.listInstances(), setGatewayInstances),
+      load(agenteWhatsAppApi.listInternalAlerts({ status: "active", limit: 30 }), setInternalAlerts),
+    ]);
+  }
+
   async function loadDetail(sessionId: string) {
     const request = ++detailRequest.current;
     const revision = controlRevision.current;
     setDetailLoading(true);
     try {
-      const [detail, guardrails] = await Promise.all([
-        agenteWhatsAppApi.getSession(sessionId),
-        agenteWhatsAppApi.aiGuardrails(sessionId).catch(() => null),
-      ]);
+      const detail = await loadWhatsAppDetailSession(
+        () => agenteWhatsAppApi.getSession(sessionId),
+        () => agenteWhatsAppApi.aiGuardrails(sessionId),
+        (guardrails) => {
+          if (request === detailRequest.current && revision === controlRevision.current && selectedIdRef.current === sessionId) {
+            setAiGuardrails(guardrails);
+          }
+        },
+      );
       if (request !== detailRequest.current || revision !== controlRevision.current || selectedIdRef.current !== sessionId) return;
       setMessages(detail.messages);
       setDetailSessionId(detail.session.id);
-      setAiGuardrails(guardrails);
       setSessions((current) => current.map((session) => (
         session.id === detail.session.id
           ? {

@@ -414,7 +414,7 @@ export default function KdsMultiOperatorBoard({
         }
       `}</style>
       <section
-        className="space-y-4 rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft"
+        className="flex min-h-0 flex-1 flex-col space-y-4 rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft"
         aria-label="KDS multioperador"
       >
         <header className="flex flex-col gap-3 border-b border-surface-03 pb-4 lg:flex-row lg:items-center lg:justify-between">

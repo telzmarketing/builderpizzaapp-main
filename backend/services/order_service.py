@@ -11,16 +11,20 @@ import random
 import string
 import unicodedata
 import uuid
+import hashlib
+import json
+from copy import deepcopy
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import inspect
 
 from backend.core.exceptions import (
     CartEmpty, OrderNotFound, OrderCancelled,
     ProductNotFound, PriceConflict,
     FlavorDivisionMismatch, MaxFlavorsExceeded,
     FixedFlavorCombinationNotAllowed,
-    DomainError,
+    DomainError, OrderAmendmentBlocked,
 )
 from backend.core.state_machine import order_sm, payment_sm
 from backend.core.tenant_context import TenantContext, TenantSource
@@ -34,13 +38,13 @@ from backend.core.tenant_ownership import (
 from backend.core.events import (
     bus, OrderCreated, OrderStatusChanged, OrderCancelled as EvOrderCancelled, PaymentConfirmed,
 )
-from backend.models.order import Order, OrderItem, OrderItemFlavor, OrderStatus
+from backend.models.order import Order, OrderItem, OrderItemFlavor, OrderStatus, OrderAmendment
 from backend.models.payment import Payment, PaymentMethod, PaymentStatus
 from backend.models.payment_config import PaymentGatewayConfig
 from backend.models.paid_traffic import CampaignLink, TrafficCampaign
 from backend.models.product import Product, MultiFlavorsConfig, PricingRule, ProductCrustType, ProductDrinkVariant, ProductSize
 from backend.models.customer import Address, Customer as CustomerModel
-from backend.schemas.order import CheckoutIn, CartItemIn, FlavorIn, OrderStatusUpdate
+from backend.schemas.order import CheckoutIn, CartItemIn, FlavorIn, OrderStatusUpdate, OrderAmendmentIn
 from backend.services.customer_metrics_service import sync_customer_order_metrics
 from backend.services.product_pricing_service import ProductPriceResult, ProductPricingService, normalize_crust_price_addition
 from backend.services.product_category_service import effective_capabilities
@@ -657,6 +661,568 @@ class OrderService:
             "payment_method": payload.payment_method,
             "cash_change_amount": cash_change_amount,
         }
+
+    def _amendment_snapshot(self, order: Order) -> dict:
+        """Copy every item/option/flavor so later catalog edits cannot rewrite history."""
+        products = {
+            row.id: row for row in self._tenant_query(Product, catalog=True).filter(
+                Product.id.in_([item.product_id for item in order.items]),
+            ).all()
+        }
+
+        items = []
+        for item in sorted(order.items, key=lambda row: (row.position, row.id)):
+            values = {column.name: deepcopy(getattr(item, column.name)) for column in OrderItem.__table__.columns}
+            product = products.get(item.product_id)
+            values["product_name"] = product.name if product else None
+            values["flavors"] = [
+                {column.name: getattr(flavor, column.name) for column in OrderItemFlavor.__table__.columns}
+                for flavor in sorted(item.flavors, key=lambda row: (row.position, row.id))
+            ]
+            items.append(values)
+        return {
+            "composition_revision": order.composition_revision,
+            "state": order.status.value,
+            "sales_channel": order.sales_channel,
+            "fulfillment_type": order.fulfillment_type,
+            "subtotal": order.subtotal,
+            "shipping_fee": order.shipping_fee,
+            "discount": order.discount,
+            "manual_discount_type": order.manual_discount_type,
+            "manual_discount_value": order.manual_discount_value,
+            "total": order.total,
+            "items": items,
+        }
+
+    def _amendment_production_state(self, order: Order) -> tuple[list[object], list[object], bool]:
+        """Return physical units, latest attempts and whether production started."""
+        from backend.models.kds_production import ProductionUnit, ProductionAttempt
+
+        units = self._operation_query(ProductionUnit).filter(
+            ProductionUnit.order_id == order.id,
+        ).with_for_update().all()
+        if not units:
+            return [], [], False
+        attempts = self._operation_query(ProductionAttempt).filter(
+            ProductionAttempt.production_unit_id.in_([unit.id for unit in units]),
+        ).order_by(ProductionAttempt.production_unit_id, ProductionAttempt.attempt_number).with_for_update().all()
+        latest_by_unit = {}
+        for attempt in attempts:
+            latest_by_unit[attempt.production_unit_id] = attempt
+        latest = [latest_by_unit[unit.id] for unit in units if unit.id in latest_by_unit]
+        unit_by_id = {unit.id: unit for unit in units}
+        started = any(
+            attempt.started_at or attempt.assembly_finished_at or attempt.oven_started_at
+            or attempt.stock_consumption_mode
+            or attempt.state in {"assembling", "assembled", "baking", "checking", "ready"}
+            or unit_by_id.get(attempt.production_unit_id).dispatch_completed_at
+            for attempt in latest
+        )
+        return units, latest, started
+
+    def _record_amendment_loss_and_reproduction(
+        self, order: Order, attempts: list[object], *, actor_id: str, reason: str, idempotency_key: str,
+    ) -> list[dict]:
+        """Close every started original attempt as a stock-consuming loss.
+
+        The caller creates the replacement units after the new commercial
+        composition exists. Keeping those operations separate is important:
+        the new attempt must point at the new OrderItem/CMV snapshot and must
+        never accidentally consume the old recipe.
+        """
+        from backend.models.kds_production import (
+            KdsAssignment, ProductionAttempt, ProductionAttemptConsumption, ProductionEffect,
+        )
+        from backend.models.rbac import AdminAuditLog
+        from backend.services.kds_production_service import KdsProductionService
+
+        production = KdsProductionService(self._db, self._resource_context(True))
+        if not inspect(self._db.bind).has_table("production_effects"):
+            raise OrderAmendmentBlocked(
+                "A migracao de efeitos de producao ainda nao foi aplicada.",
+                code="OrderAmendmentProductionEffectsUnavailable",
+            )
+        results = []
+        for attempt in attempts:
+            if attempt.state == "cancelled":
+                raise OrderAmendmentBlocked("A tentativa ja foi encerrada.", code="OrderAmendmentProductionAttemptConflict")
+            business_key = f"order-amendment:{idempotency_key}:{attempt.id}"
+            if self._operation_query(ProductionEffect).filter(
+                ProductionEffect.kind == "loss", ProductionEffect.business_key == business_key,
+            ).first():
+                raise OrderAmendmentBlocked("A perda desta tentativa ja foi registrada.", code="OrderAmendmentProductionAttemptConflict")
+
+            before = {"state": attempt.state, "version": attempt.version, "unit_state": attempt.unit.state}
+            production.consume_attempt(attempt.id, actor_id, require_stock=True)
+            lines = self._operation_query(ProductionAttemptConsumption).filter(
+                ProductionAttemptConsumption.attempt_id == attempt.id,
+            ).order_by(ProductionAttemptConsumption.inventory_item_id).all()
+            if not lines:
+                raise OrderAmendmentBlocked("A perda exige consumo comprovado dos insumos.", code="ProductionConsumptionRequired")
+            cost_total = sum((Decimal(str(line.quantity)) * Decimal(str(line.unit_cost)) for line in lines), Decimal("0"))
+            loss = ProductionEffect(
+                id=str(uuid.uuid4()), tenant_id=order.tenant_id, kind="loss", business_key=business_key,
+                idempotency_key=f"{idempotency_key}:loss:{attempt.id}", request_hash=hashlib.sha256(
+                    json.dumps({"order_id": order.id, "attempt_id": attempt.id, "reason": reason}, sort_keys=True).encode()
+                ).hexdigest(),
+                order_id=order.id, attempt_id=attempt.id, actor_id=actor_id, reason=reason,
+                cost_total=cost_total, discount_amount=Decimal("0"), snapshot_json={
+                    "before": before, "order_item_id": attempt.unit.order_item_id,
+                    "consumption_mode": attempt.stock_consumption_mode or "attempts",
+                    "consumptions": [{"inventory_item_id": line.inventory_item_id, "quantity": str(line.quantity),
+                                      "unit_cost": str(line.unit_cost), "movement_ids": line.movement_ids,
+                                      "operation_id": line.operation_id} for line in lines],
+                    "financial_effect": "non_cash_cost_reclassification",
+                },
+            )
+            self._db.add(loss)
+            self._db.flush()
+            attempt.state = "cancelled"
+            attempt.version += 1
+            attempt.check_reason = reason
+            attempt.unit.state = "queued"
+            attempt.unit.version += 1
+            for assignment in self._operation_query(KdsAssignment).filter(
+                KdsAssignment.attempt_id == attempt.id, KdsAssignment.active.is_(True),
+            ).all():
+                assignment.active = False
+                assignment.released_at = datetime.now(timezone.utc)
+                assignment.reason = reason
+            self._db.add(AdminAuditLog(
+                id=str(uuid.uuid4()), tenant_id=order.tenant_id, user_id=actor_id, action="production_loss",
+                module_key="pedidos", entity_type="production_effect", entity_id=loss.id,
+                old_value=json.dumps(before, ensure_ascii=True), new_value=json.dumps({"loss_id": loss.id}, ensure_ascii=True),
+            ))
+            results.append({"loss_id": loss.id, "old_attempt_id": attempt.id, "old_order_item_id": attempt.unit.order_item_id})
+        return results
+
+    def _record_amendment_reproductions(
+        self, order: Order, losses: list[dict], *, actor_id: str, reason: str, idempotency_key: str,
+    ) -> None:
+        """Create one auditable priority effect for each newly queued unit."""
+        from backend.models.kds_production import ProductionEffect, ProductionAttempt, ProductionUnit
+
+        if not losses:
+            raise OrderAmendmentBlocked("A alteracao pos-producao exige ao menos uma perda registrada.", code="ProductionLossRequired")
+        loss_ids = [row["loss_id"] for row in losses]
+        attempts = self._operation_query(ProductionAttempt).join(
+            ProductionUnit, ProductionUnit.id == ProductionAttempt.production_unit_id,
+        ).filter(
+            ProductionUnit.order_id == order.id,
+            ProductionAttempt.state == "queued",
+            ProductionAttempt.priority > 0,
+        ).all()
+        for position, attempt in enumerate(attempts):
+            business_key = f"order-amendment:{idempotency_key}:reproduction:{attempt.id}"
+            if self._operation_query(ProductionEffect).filter(
+                ProductionEffect.kind == "reproduction", ProductionEffect.business_key == business_key,
+            ).first():
+                continue
+            source = loss_ids[min(position, len(loss_ids) - 1)]
+            self._db.add(ProductionEffect(
+                id=str(uuid.uuid4()), tenant_id=order.tenant_id, kind="reproduction",
+                business_key=business_key, idempotency_key=f"{idempotency_key}:reproduction:{attempt.id}",
+                request_hash=hashlib.sha256(json.dumps({"order_id": order.id, "attempt_id": attempt.id, "reason": reason}, sort_keys=True).encode()).hexdigest(),
+                order_id=order.id, attempt_id=attempt.id, source_effect_id=source,
+                actor_id=actor_id, reason=reason, cost_total=Decimal("0"), discount_amount=Decimal("0"),
+                snapshot_json={"order_item_id": attempt.unit.order_item_id, "priority": True,
+                               "source_loss_id": source, "consumption": "on_attempt_start",
+                               "financial_effect": "no_additional_sale"},
+            ))
+
+    def _ensure_amendment_cmv_snapshots(self, order: Order) -> None:
+        """Attach technical snapshots to newly created live lines.
+
+        The order-level CMV snapshot is intentionally retained. New item
+        snapshots are appended under that immutable order snapshot so the old
+        loss can still resolve its original recipe while the replacement uses
+        the amended recipe.
+        """
+        from backend.models.cmv import OrderCmvSnapshot, OrderItemCmvSnapshot
+        from backend.services.cmv_snapshot_service import CmvOrderItemContext, OrderCmvSnapshotService
+
+        cmv = OrderCmvSnapshotService(self._db, tenant_context=self._resource_context(True))
+        parent = self._operation_query(OrderCmvSnapshot).filter(OrderCmvSnapshot.order_id == order.id).first()
+        if parent is None:
+            parent = cmv.create_for_order(order)
+            if parent is None:
+                raise OrderAmendmentBlocked(
+                    "A nova composicao precisa de snapshot tecnico para consumo de insumos.",
+                    code="RecipeSnapshotRequired",
+                )
+            return
+        existing = {
+            row.order_item_id for row in self._operation_query(OrderItemCmvSnapshot).filter(
+                OrderItemCmvSnapshot.snapshot_id == parent.id,
+            ).all()
+        }
+        missing = [item for item in order.items if item.id not in existing]
+        if not missing:
+            return
+        contexts = [CmvOrderItemContext(order_item=item) for item in missing]
+        product_ids = cmv._product_ids(contexts)
+        products = cmv._product_map(product_ids)
+        recipes = cmv._recipe_map(product_ids)
+        unit_costs = cmv._unit_cost_map()
+        for context in contexts:
+            item_snapshot, ingredients = cmv._build_item_snapshot(parent, context, products, recipes, unit_costs)
+            self._db.add(item_snapshot)
+            self._db.flush()
+            for ingredient in ingredients:
+                ingredient.item_snapshot_id = item_snapshot.id
+                self._db.add(ingredient)
+        self._db.flush()
+        created = self._operation_query(OrderItemCmvSnapshot).filter(
+            OrderItemCmvSnapshot.snapshot_id == parent.id,
+            OrderItemCmvSnapshot.order_item_id.in_([item.id for item in missing]),
+        ).all()
+        if len(created) != len(missing) or any(row.missing_recipe for row in created):
+            raise OrderAmendmentBlocked(
+                "A nova composicao nao possui ficha tecnica consumivel.",
+                code="RecipeSnapshotRequired",
+            )
+
+    def _assert_amendment_allowed(self, order: Order) -> Payment | None:
+        """Fail closed where an amendment would require stock/settlement reconciliation."""
+        from backend.models.kds_production import KdsAssignment, ProductionUnit, ProductionAttempt
+        from backend.models.cmv import OrderCmvSnapshot
+        from backend.models.inventory import InventoryStockMovement
+        from backend.models.inventory_foundation import InventoryReservation
+        from backend.models.finance import FinanceTransaction
+        from backend.models.delivery import Delivery
+        from sqlalchemy import or_
+
+        if order.status not in {
+            OrderStatus.pending, OrderStatus.aguardando_pagamento, OrderStatus.waiting_payment,
+            OrderStatus.pagamento_recusado, OrderStatus.pagamento_expirado,
+            OrderStatus.paid, OrderStatus.pago, OrderStatus.preparing,
+            OrderStatus.ready_for_pickup,
+        } or any((order.out_for_delivery_at, order.delivered_at)):
+            raise OrderAmendmentBlocked(
+                "Pedido encerrado ou em entrega nao permite alterar a composicao.",
+                code="OrderProductionAlreadyStarted",
+            )
+        if order.order_origin != "own" or order.table_id or order.table_session_id or order.sales_channel == "dine_in":
+            raise OrderAmendmentBlocked("Esta origem de pedido exige um fluxo proprio de alteracao.")
+        if order.coupon_id or order.loyalty_points_earned or any(item.is_gift or item.coupon_id for item in order.items):
+            raise OrderAmendmentBlocked("Pedido com cupom, brinde ou pontos exige conciliacao dos beneficios.")
+        if any(item.tenant_id != order.tenant_id for item in order.items):
+            raise OrderAmendmentBlocked("Composicao inconsistente com o estabelecimento do pedido.")
+
+        _, _, started = self._amendment_production_state(order)
+
+        # The checkout always creates a payment placeholder. It may be updated
+        # only while untouched; an issued PIX/link or a settlement is immutable here.
+        payment = self._tenant_query(Payment).filter(Payment.order_id == order.id).populate_existing().with_for_update().first()
+        if order.payment is not None and (payment is None or order.payment.tenant_id != order.tenant_id):
+            raise OrderAmendmentBlocked("Pagamento inconsistente com o estabelecimento do pedido.")
+        if not started and payment is not None and (
+            payment.status != PaymentStatus.pending
+            or any(getattr(payment, name) for name in (
+                "transaction_id", "provider_payment_id", "mercado_pago_payment_id", "provider_status",
+                "qr_code", "qr_code_text", "pix_payload", "pix_qr_code", "payment_url", "client_secret",
+                "raw_response", "webhook_data",
+            ))
+            or (payment.paid_at and not payment.pay_on_delivery)
+        ):
+            raise OrderAmendmentBlocked("Pagamento ja iniciado ou liquidado exige conciliacao antes de alterar.", code="OrderAmendmentPaymentLocked")
+        source_ids = [order.id] + [item.id for item in order.items]
+        dependencies = [
+            (OrderCmvSnapshot, OrderCmvSnapshot.order_id == order.id),
+            (InventoryStockMovement, InventoryStockMovement.source_id.in_(source_ids)),
+            (InventoryReservation, InventoryReservation.source_id.in_(source_ids)),
+            (FinanceTransaction, or_(FinanceTransaction.order_id == order.id,
+                                     FinanceTransaction.origin_id == order.id,
+                                     FinanceTransaction.payment_id == payment.id if payment else False)),
+            (Delivery, Delivery.order_id == order.id),
+        ]
+        for model, condition in dependencies:
+            # A post-production amendment explicitly reconciles the physical
+            # cost/queue in this transaction; an existing delivery row is not
+            # a reason to reject the customer-facing composition change until
+            # the order has actually left the store.
+            if started and model is Delivery:
+                continue
+            if started and model in {OrderCmvSnapshot, InventoryStockMovement, InventoryReservation, FinanceTransaction}:
+                continue
+            if self._operation_query(model).filter(condition).first() is not None:
+                raise OrderAmendmentBlocked(
+                    "Pedido possui registros de custo, estoque, financeiro ou entrega que exigem reconciliacao.",
+                    code="OrderAmendmentDependentRecords",
+                )
+        return payment
+
+    def amend_order(self, order_id: str, payload: OrderAmendmentIn, *, actor, idempotency_key: str) -> OrderAmendment:
+        """Amend the current checkout, history and idempotency result in one transaction."""
+        from backend.services.idempotency_service import IdempotencyService
+
+        context = self._resource_context(True)
+        context.assert_tenant(actor.tenant_id)
+        if not actor.user_id or (context.actor_id and actor.user_id != context.actor_id):
+            raise OrderAmendmentBlocked("Ator invalido para alterar o pedido.")
+        idempotency = IdempotencyService(self._db, context.tenant_id)
+        claim = idempotency.claim(idempotency_key, "orders.amend", {
+            "order_id": order_id, "actor_id": actor.user_id, **payload.model_dump(mode="json"),
+        })
+        try:
+            if claim.replay_resource_id:
+                amendment = self._tenant_query(OrderAmendment).filter(
+                    OrderAmendment.id == claim.replay_resource_id, OrderAmendment.order_id == order_id,
+                ).first()
+                if amendment is None:
+                    raise OrderAmendmentBlocked("Historico da alteracao nao encontrado.")
+                return amendment
+
+            order = self._tenant_query(Order).filter(
+                Order.id == order_id, Order.archived_at.is_(None),
+            ).populate_existing().with_for_update(of=Order).first()
+            if order is None:
+                raise OrderNotFound(order_id)
+            if order.composition_revision != payload.expected_revision:
+                raise OrderAmendmentBlocked("O pedido foi alterado. Recarregue antes de confirmar.", code="OrderAmendmentVersionConflict")
+            payment = self._assert_amendment_allowed(order)
+            units, latest_attempts, started = self._amendment_production_state(order)
+            had_queued_units = bool(units and not started)
+            started_attempts = [attempt for attempt in latest_attempts if (
+                attempt.started_at or attempt.assembly_finished_at or attempt.oven_started_at
+                or attempt.stock_consumption_mode
+                or attempt.state in {"assembling", "assembled", "baking", "checking", "ready"}
+                or next((unit.dispatch_completed_at for unit in units if unit.id == attempt.production_unit_id), None)
+            )]
+            if started and not started_attempts:
+                raise OrderAmendmentBlocked(
+                    "Nao foi possivel identificar a tentativa fisica iniciada.",
+                    code="OrderAmendmentProductionAttemptConflict",
+                )
+            # Unstarted units are retired below. They are not a blocker: the
+            # amended composition is the source for a complete new queue.
+            order_status_value = getattr(order.status, "value", order.status)
+            if not started and (order.preparation_started_at or order_status_value in {"preparing", "ready_for_pickup"}):
+                raise OrderAmendmentBlocked(
+                    "O pedido indica producao iniciada, mas nao possui uma tentativa fisica reconciliavel.",
+                    code="OrderProductionAlreadyStarted",
+                )
+            before = self._amendment_snapshot(order)
+            # Work on a copy because canonical option validation normalizes labels.
+            items = deepcopy(payload.items)
+            config = self._get_config()
+            channel = "dine_in" if order.sales_channel == "dine_in" else "delivery"
+            validated = [self._validate_item(item, config, channel=channel) for item in items]
+            if any(pricing.free_shipping or pricing.gift_enabled for _, _, pricing, _, _ in validated):
+                raise OrderAmendmentBlocked("Promocao com frete gratis ou brinde exige conciliacao dos beneficios.")
+            subtotal = sum((_money_decimal(price, "Preco") * item.quantity for item, (price, *_) in zip(items, validated)), Decimal("0"))
+            discount_payload = CheckoutIn.model_construct(
+                discount_type=order.manual_discount_type, discount_value=order.manual_discount_value,
+            )
+            discount, _, _ = self._resolve_manual_discount(discount_payload, subtotal, Decimal("0"), allowed=True)
+            if not order.manual_discount_type and _money_decimal(order.discount, "Desconto") != 0:
+                raise OrderAmendmentBlocked("Desconto sem origem definida exige conciliacao antes de alterar.")
+            total = (subtotal + _money_decimal(order.shipping_fee, "Frete") - discount).quantize(_CENT, rounding=ROUND_HALF_UP)
+            self._validate_expected_total(payload.expected_total, float(total))
+            if payment and payment.cash_needs_change and (
+                payment.cash_change_for is None or _money_decimal(payment.cash_change_for, "Troco") <= total
+            ):
+                raise OrderAmendmentBlocked("O valor de troco nao atende ao novo total.", code="InvalidCashChange")
+
+            loss_results = self._record_amendment_loss_and_reproduction(
+                order, started_attempts, actor_id=actor.user_id, reason=payload.reason,
+                idempotency_key=idempotency_key,
+            ) if started else []
+            if started:
+                from backend.models.kds_production import KdsAssignment
+                from backend.models.rbac import AdminAuditLog
+                if order.status == OrderStatus.ready_for_pickup:
+                    old_status = order.status.value
+                    order.status = OrderStatus.preparing
+                    self._db.add(AdminAuditLog(
+                        id=str(uuid.uuid4()), tenant_id=order.tenant_id, user_id=actor.user_id,
+                        action="status_change", module_key="pedidos", entity_type="order",
+                        entity_id=order.id, old_value=old_status,
+                        new_value=f"preparing: {payload.reason}",
+                    ))
+                for attempt in latest_attempts:
+                    if attempt in started_attempts or attempt.state == "cancelled":
+                        continue
+                    old_state = attempt.state
+                    attempt.state = "cancelled"
+                    attempt.version += 1
+                    attempt.check_reason = payload.reason
+                    attempt.unit.state = "cancelled"
+                    attempt.unit.version += 1
+                    for assignment in self._operation_query(KdsAssignment).filter(
+                        KdsAssignment.attempt_id == attempt.id, KdsAssignment.active.is_(True),
+                    ).all():
+                        assignment.active = False
+                        assignment.released_at = datetime.now(timezone.utc)
+                        assignment.reason = payload.reason
+                    self._db.add(AdminAuditLog(
+                        id=str(uuid.uuid4()), tenant_id=order.tenant_id, user_id=actor.user_id,
+                        action="status_change", module_key="pedidos", entity_type="production_attempt",
+                        entity_id=attempt.id, old_value=old_state, new_value=f"cancelled: {payload.reason}",
+                    ))
+
+            if had_queued_units:
+                from backend.models.kds_production import KdsAssignment
+                for attempt in latest_attempts:
+                    for assignment in self._operation_query(KdsAssignment).filter(
+                        KdsAssignment.attempt_id == attempt.id,
+                    ).all():
+                        self._db.delete(assignment)
+                    self._db.delete(attempt)
+                for unit in units:
+                    self._db.delete(unit)
+                self._db.flush()
+                units = []
+
+            replacements = []
+            reuse_existing = bool(units) and not started
+            for position, (item, (price, flavors, pricing, size, crust)) in enumerate(zip(items, validated)):
+                row = order.items[position] if reuse_existing else self._own(OrderItem(
+                    id=str(uuid.uuid4()), order_id=order.id, product_id=item.product_id, position=position,
+                    quantity=item.quantity, selected_size=_clip_text(item.selected_size, 50),
+                    selected_size_id=size.id if size else item.selected_size_id,
+                    flavor_division=item.flavor_division, flavor_count=item.flavor_division,
+                    selected_crust_type_id=crust.id if crust else item.selected_crust_type_id,
+                    selected_crust_type=_clip_text(item.selected_crust_type_name, 100),
+                    selected_border_id=item.selected_border_id, selected_border_name=_clip_text(item.selected_border_name, 100),
+                    selected_drink_variant_id=item.selected_drink_variant_id,
+                    selected_drink_variant=_clip_text(item.selected_drink_variant_name, 100),
+                    notes=item.notes, add_ons=list(item.add_ons), option_selections=list(item.option_selections),
+                    unit_price=price, total_price=float(_money_decimal(price, "Preco") * item.quantity),
+                    standard_unit_price=pricing.standard_price, applied_unit_price=pricing.final_price,
+                    original_price=pricing.standard_price, is_gift=False, promotion_id=pricing.promotion_id,
+                    promotion_name=pricing.promotion_name, promotion_discount=pricing.discount_amount,
+                    promotion_blocked=pricing.promotion_blocked, promotion_block_reason=pricing.promotion_block_reason,
+                ))
+                if reuse_existing:
+                    for field, value in {
+                        "product_id": item.product_id, "position": position, "quantity": item.quantity,
+                        "selected_size": _clip_text(item.selected_size, 50),
+                        "selected_size_id": size.id if size else item.selected_size_id,
+                        "flavor_division": item.flavor_division, "flavor_count": item.flavor_division,
+                        "selected_crust_type_id": crust.id if crust else item.selected_crust_type_id,
+                        "selected_crust_type": _clip_text(item.selected_crust_type_name, 100),
+                        "selected_border_id": item.selected_border_id,
+                        "selected_border_name": _clip_text(item.selected_border_name, 100),
+                        "selected_drink_variant_id": item.selected_drink_variant_id,
+                        "selected_drink_variant": _clip_text(item.selected_drink_variant_name, 100),
+                        "notes": item.notes, "add_ons": list(item.add_ons),
+                        "option_selections": list(item.option_selections), "unit_price": price,
+                        "total_price": float(_money_decimal(price, "Preco") * item.quantity),
+                        "standard_unit_price": pricing.standard_price, "applied_unit_price": pricing.final_price,
+                        "original_price": pricing.standard_price, "is_gift": False,
+                        "promotion_id": pricing.promotion_id, "promotion_name": pricing.promotion_name,
+                        "promotion_discount": pricing.discount_amount, "promotion_blocked": pricing.promotion_blocked,
+                        "promotion_block_reason": pricing.promotion_block_reason,
+                    }.items():
+                        setattr(row, field, value)
+                row.flavors = [self._own(OrderItemFlavor(
+                    id=str(uuid.uuid4()), product_id=product.id, flavor_name=product.name,
+                    flavor_price=product.price, position=index,
+                )) for index, product in enumerate(flavors)]
+                replacements.append(row)
+            if started:
+                # Keep the original rows linked to their physical attempts;
+                # they are historical loss lines, not the new live sale.
+                amended_at = datetime.now(timezone.utc)
+                for old_item in list(order.items):
+                    old_item.superseded_at = amended_at
+                self._db.flush()
+                # Do not clear a delete-orphan relationship here: the old
+                # rows are deliberately retained for the loss/CMV foreign
+                # keys. Insert the new live rows directly and expire the
+                # relationship so its predicate reloads only active lines.
+                for replacement in replacements:
+                    self._db.add(replacement)
+                self._db.flush()
+                self._db.expire(order, ["items"])
+            else:
+                order.items = replacements
+            if had_queued_units:
+                from backend.services.kds_production_service import KdsProductionService
+                KdsProductionService(self._db, context).initialize_order(
+                    order.id, actor.user_id, commit=False,
+                )
+            order.subtotal, order.discount, order.total = float(subtotal), float(discount), float(total)
+            order.composition_revision += 1
+            order.updated_at = datetime.now(timezone.utc)
+            if payment and (not started or payment.pay_on_delivery):
+                payment.amount = order.total
+            if started:
+                self._ensure_amendment_cmv_snapshots(order)
+                from backend.services.kds_production_service import KdsProductionService
+                KdsProductionService(self._db, context).initialize_order(
+                    order.id, actor.user_id, priority=True, commit=False,
+                )
+                self._db.flush()
+                self._record_amendment_reproductions(
+                    order, loss_results, actor_id=actor.user_id, reason=payload.reason,
+                    idempotency_key=idempotency_key,
+                )
+            self._db.flush()
+            after = self._amendment_snapshot(order)
+            old_total = Decimal(str(before["total"] or 0)).quantize(_CENT)
+            new_total = Decimal(str(after["total"] or 0)).quantize(_CENT)
+            delta = (new_total - old_total).quantize(_CENT)
+            after["financial_adjustment"] = {
+                "previous_total": str(old_total), "new_total": str(new_total),
+                "delta": str(delta),
+                "action": "charge" if delta > 0 else ("abatement" if delta < 0 else "none"),
+                "payment_reconciled": bool(payment and (not started or payment.pay_on_delivery)),
+            }
+            amendment = OrderAmendment(
+                id=str(uuid.uuid4()), tenant_id=order.tenant_id, order_id=order.id,
+                revision=order.composition_revision, idempotency_key_id=claim.record.id,
+                actor_id=actor.user_id, actor_name=actor.user_name, reason=payload.reason,
+                state=order.status.value, before_snapshot=before, after_snapshot=after,
+                created_at=order.updated_at,
+            )
+            self._db.add(amendment)
+            # A post-production delta cannot silently change a settled
+            # gateway payment. Persist a tenant-scoped pending finance title
+            # so the cashier has an explicit charge/abatement to reconcile.
+            # The amendment itself remains the immutable source of truth.
+            if delta != 0 and started and payment and not payment.pay_on_delivery:
+                from backend.models.finance import FinanceTransaction
+                self._db.add(FinanceTransaction(
+                    id=f"fin-amend-{amendment.id}",
+                    tenant_id=order.tenant_id,
+                    entry_type="income" if delta > 0 else "expense",
+                    status="pending",
+                    description=("Cobranca adicional de alteracao do pedido"
+                                 if delta > 0 else "Abatimento de alteracao do pedido"),
+                    amount=float(abs(delta)),
+                    paid_amount=0.0,
+                    net_amount=float(abs(delta)),
+                    order_id=order.id,
+                    payment_id=payment.id,
+                    origin_type="order_amendment_adjustment",
+                    origin_id=amendment.id,
+                    payment_reference=f"order:{order.id}:amendment:{amendment.id}",
+                    notes=json.dumps({
+                        "amendment_id": amendment.id,
+                        "previous_total": str(old_total),
+                        "new_total": str(new_total),
+                        "delta": str(delta),
+                        "action": after["financial_adjustment"]["action"],
+                    }, ensure_ascii=True),
+                ))
+            sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
+            idempotency.complete(claim.record, amendment.id, commit=False)
+            self._db.commit()
+            self._db.refresh(amendment)
+            return amendment
+        except Exception:
+            if not claim.replay_resource_id:
+                idempotency.abandon(claim.record)
+            raise
+
+    def amendment_history(self, order_id: str, *, limit: int = 50, offset: int = 0) -> tuple[int, list[OrderAmendment]]:
+        order = self._get_order(order_id, include_archived=True)
+        rows = self._tenant_query(OrderAmendment).filter(OrderAmendment.order_id == order.id).order_by(
+            OrderAmendment.revision.desc(),
+        ).limit(max(1, min(limit, 100))).offset(max(0, offset)).all()
+        return order.composition_revision, rows
 
     def create_from_checkout(
         self,

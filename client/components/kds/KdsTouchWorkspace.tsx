@@ -380,7 +380,7 @@ export default function KdsTouchWorkspace(props: Props) {
   };
 
   return (
-    <div className="kds-touch-workspace flex w-full min-w-0 max-w-full flex-col space-y-3 overflow-hidden p-3 sm:p-4">
+    <div className="kds-touch-workspace flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col space-y-3 overflow-hidden p-3 sm:p-4">
       {props.error && (
         <div
           role="alert"
@@ -445,7 +445,7 @@ export default function KdsTouchWorkspace(props: Props) {
           </button>
         </div>
       </div>
-      <div className="kds-touch-grid grid min-h-0 min-w-0 w-full grid-cols-1 items-stretch gap-3 lg:h-[calc(100dvh-15rem)] lg:grid-cols-[minmax(220px,24fr)_minmax(440px,52fr)_minmax(220px,24fr)]">
+      <div className="kds-touch-grid grid min-h-0 min-w-0 w-full flex-1 grid-cols-1 items-stretch gap-3 lg:h-[calc(100dvh-15rem)] lg:grid-cols-[minmax(220px,24fr)_minmax(440px,52fr)_minmax(220px,24fr)]">
         <section
           className={`${panel} flex min-h-0 flex-col lg:h-full`}
           aria-label="Fila de pedidos"

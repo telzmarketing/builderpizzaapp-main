@@ -19,6 +19,7 @@ import random
 import time
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -40,13 +41,14 @@ from backend.core.exceptions import (
 )
 from backend.core.state_machine import order_sm, payment_sm
 from backend.core.tenant_context import TenantSource, trusted_process_context
-from backend.models.order import Order, OrderStatus
-from backend.models.payment import Payment, PaymentEvent, PaymentMethod, PaymentStatus
+from backend.models.order import Order, OrderAmendment, OrderStatus
+from backend.models.payment import Payment, PaymentEvent, PaymentMethod, PaymentSettlement, PaymentStatus
 from backend.models.payment_config import PaymentGatewayConfig
 from backend.schemas.payment import (
     AsaasCreditCardPaymentCreate,
     PaymentCreate,
     PaymentOut,
+    PaymentSettlementOut,
     PayOnDeliverySwitch,
     WebhookPayload,
 )
@@ -220,6 +222,10 @@ def _mp_status_to_payment(mp_status: str, status_detail: str | None = None) -> P
 def _asaas_status_to_payment(asaas_status: str | None, event_type: str | None = None) -> PaymentStatus:
     status = (asaas_status or "").strip().upper()
     event = (event_type or "").strip().upper()
+    if status == "PARTIALLY_REFUNDED" or event == "PAYMENT_PARTIALLY_REFUNDED":
+        # A partial amendment abatement must not turn the original payment
+        # into a full refund; its separate settlement carries the delta.
+        return PaymentStatus.approved
     if status in {"RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"} or event in {"PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"}:
         return PaymentStatus.approved
     if status == "REFUNDED" or event in {"PAYMENT_REFUNDED", "PAYMENT_PARTIALLY_REFUNDED"}:
@@ -348,7 +354,8 @@ class PaymentService:
         query = self._db.query(Order).filter(Order.id == order_id)
         if self._tenant_id:
             query = query.filter(Order.tenant_id == self._tenant_id)
-        order = query.first()
+        # Serialize gateway creation against checkout composition amendments.
+        order = query.populate_existing().with_for_update(of=Order).first()
         if not order:
             raise OrderNotFound(order_id)
         if (
@@ -1178,6 +1185,16 @@ class PaymentService:
         response = _mp_request("GET", f"/v1/payments/{mp_payment_id}", mp_token)
         external_reference = response.get("external_reference")
         event.external_reference = external_reference
+        amendment_settlement = self._reconcile_amendment_settlement_webhook(
+            provider=PROVIDER_MERCADO_PAGO, operation_id=mp_payment_id,
+            external_reference=external_reference, provider_status=response.get("status"),
+            provider_amount=response.get("transaction_amount"),
+        )
+        if amendment_settlement:
+            event.processed_at = datetime.now(timezone.utc)
+            event.processing_status = "processed_settlement"
+            self._db.commit()
+            return amendment_settlement
 
         payment = (
             self._db.query(Payment).filter(Payment.mercado_pago_payment_id == mp_payment_id, *self._tenant_payment_filter()).first()
@@ -1293,6 +1310,27 @@ class PaymentService:
         response = AsaasGateway(self._db, client=asaas_client).retrieve_payment(provider_payment_id)
         external_reference = response.get("externalReference") or payment_payload.get("externalReference")
         event.external_reference = external_reference
+        amendment_refund = self._reconcile_amendment_refund_webhook(
+            provider=PROVIDER_ASAAS,
+            operation_id=provider_payment_id,
+            provider_status=response.get("status"),
+            event_type=event_type,
+        )
+        if amendment_refund:
+            event.processed_at = datetime.now(timezone.utc)
+            event.processing_status = "processed_settlement"
+            self._db.commit()
+            return amendment_refund
+        amendment_settlement = self._reconcile_amendment_settlement_webhook(
+            provider=PROVIDER_ASAAS, operation_id=provider_payment_id,
+            external_reference=external_reference, provider_status=response.get("status"),
+            provider_amount=response.get("value"),
+        )
+        if amendment_settlement:
+            event.processed_at = datetime.now(timezone.utc)
+            event.processing_status = "processed_settlement"
+            self._db.commit()
+            return amendment_settlement
 
         payment = (
             self._db.query(Payment)
@@ -1389,12 +1427,24 @@ class PaymentService:
             self._db.commit()
             return {"status": "ignored", "reason": "no pagarme order id"}
         response = PagarmeGateway(cfg).retrieve(provider_order_id)
+        external_reference = str(response.get("code") or "").strip()
+        charge = first_charge(response)
+        amendment_settlement = self._reconcile_amendment_settlement_webhook(
+            provider=PROVIDER_PAGARME, operation_id=provider_order_id,
+            external_reference=external_reference, provider_status=charge.get("status") or response.get("status"),
+            provider_amount=(float(response["amount"]) / 100 if response.get("amount") is not None else None),
+        )
+        if amendment_settlement:
+            event.external_reference = external_reference or None
+            event.processing_status = "processed_settlement"
+            event.processed_at = datetime.now(timezone.utc)
+            self._db.commit()
+            return amendment_settlement
         payment = self._db.query(Payment).filter(
             Payment.provider == PROVIDER_PAGARME,
             Payment.provider_payment_id == provider_order_id,
             *self._tenant_payment_filter(),
         ).first()
-        external_reference = str(response.get("code") or "").strip()
         if not payment and external_reference:
             order = self._db.query(Order).filter(Order.id == external_reference, *self._tenant_order_filter()).first()
             payment = order.payment if order else None
@@ -1424,6 +1474,119 @@ class PaymentService:
 
     def _tenant_order_filter(self) -> tuple:
         return (Order.tenant_id == self._tenant_id,) if self._tenant_id else ()
+
+    def _reconcile_amendment_settlement_webhook(
+        self,
+        *,
+        provider: str,
+        operation_id: str,
+        external_reference: str | None,
+        provider_status: str | None,
+        provider_amount: float | None = None,
+    ) -> dict[str, Any] | None:
+        """Apply a provider callback to the isolated amendment charge.
+
+        Amendment charges deliberately do not mutate the original Payment row.
+        They are identified by their provider operation id or by the explicit
+        ``order:...:amendment:...:charge`` reference.
+        """
+        if not self._tenant_id:
+            return None
+        from backend.models.finance import FinanceTransaction
+
+        query = self._db.query(PaymentSettlement).filter(
+            PaymentSettlement.provider == provider,
+            PaymentSettlement.tenant_id == self._tenant_id,
+            PaymentSettlement.direction == "charge",
+            PaymentSettlement.status.in_(("processing", "pending")),
+        )
+        settlement = query.filter(PaymentSettlement.provider_operation_id == str(operation_id)).with_for_update().first()
+        if settlement is None and external_reference and external_reference.startswith("order:"):
+            parts = external_reference.split(":")
+            if len(parts) >= 5 and parts[2] == "amendment":
+                settlement = query.join(OrderAmendment, OrderAmendment.id == PaymentSettlement.amendment_id).filter(
+                    OrderAmendment.order_id == parts[1],
+                    OrderAmendment.id == parts[3],
+                    PaymentSettlement.direction == "charge",
+                ).with_for_update().first()
+        if settlement is None:
+            return None
+        normalized = str(provider_status or "").upper()
+        succeeded = normalized in {"APPROVED", "PAID", "RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH", "CAPTURED", "SUCCEEDED"}
+        failed = normalized in {"REJECTED", "CANCELLED", "CANCELED", "EXPIRED", "OVERDUE", "FAILED", "CHARGEBACK"}
+        if provider_amount is not None and abs(float(provider_amount) - float(settlement.amount)) > 0.01:
+            settlement.status = "failed"
+            settlement.error_message = "Valor do webhook nao corresponde ao delta registrado."
+            self._db.commit()
+            return {"status": "rejected", "reason": "settlement_amount_mismatch", "settlement_id": settlement.id}
+        settlement.status = "succeeded" if succeeded else ("failed" if failed else "pending")
+        settlement.provider_status = str(provider_status or "")[:80] or settlement.provider_status
+        if succeeded:
+            finance = self._db.query(FinanceTransaction).filter(
+                FinanceTransaction.id == settlement.finance_transaction_id,
+                FinanceTransaction.tenant_id == settlement.tenant_id,
+            ).with_for_update().first()
+            payment = self._db.query(Payment).filter(
+                Payment.id == settlement.payment_id,
+                Payment.tenant_id == settlement.tenant_id,
+            ).first()
+            if finance is None or payment is None:
+                settlement.status = "failed"
+                settlement.error_message = "Conciliacao financeira da cobranca incremental nao encontrada."
+            else:
+                self._record_amendment_finance_settlement(finance, settlement, payment, {
+                    "status": "succeeded", "provider": provider, "operation_id": operation_id,
+                })
+        self._db.commit()
+        return {"status": "ok", "settlement_id": settlement.id, "settlement_status": settlement.status}
+
+    def _reconcile_amendment_refund_webhook(
+        self,
+        *,
+        provider: str,
+        operation_id: str,
+        provider_status: str | None,
+        event_type: str | None,
+    ) -> dict[str, Any] | None:
+        """Finish a pending partial refund without changing the original payment."""
+        if not self._tenant_id:
+            return None
+        from backend.models.finance import FinanceTransaction
+
+        settlement = self._db.query(PaymentSettlement).filter(
+            PaymentSettlement.provider == provider,
+            PaymentSettlement.tenant_id == self._tenant_id,
+            PaymentSettlement.direction == "refund",
+            PaymentSettlement.provider_operation_id == str(operation_id),
+            PaymentSettlement.status.in_(("processing", "pending")),
+        ).with_for_update().first()
+        if settlement is None:
+            return None
+
+        normalized_status = str(provider_status or "").upper()
+        normalized_event = str(event_type or "").upper()
+        succeeded = normalized_event == "PAYMENT_PARTIALLY_REFUNDED" or normalized_status == "PARTIALLY_REFUNDED"
+        failed = normalized_status in {"CANCELLED", "CANCELED", "FAILED", "REJECTED"}
+        settlement.status = "succeeded" if succeeded else ("failed" if failed else "pending")
+        settlement.provider_status = str(provider_status or "")[:80] or settlement.provider_status
+        if succeeded:
+            finance = self._db.query(FinanceTransaction).filter(
+                FinanceTransaction.id == settlement.finance_transaction_id,
+                FinanceTransaction.tenant_id == settlement.tenant_id,
+            ).with_for_update().first()
+            payment = self._db.query(Payment).filter(
+                Payment.id == settlement.payment_id,
+                Payment.tenant_id == settlement.tenant_id,
+            ).first()
+            if finance is None or payment is None:
+                settlement.status = "failed"
+                settlement.error_message = "Conciliacao financeira do abatimento nao encontrada."
+            else:
+                self._record_amendment_finance_settlement(finance, settlement, payment, {
+                    "status": "succeeded", "provider": provider, "operation_id": operation_id,
+                })
+        self._db.commit()
+        return {"status": "ok", "settlement_id": settlement.id, "settlement_status": settlement.status}
 
     def _verify_asaas_access_token(self, access_token: str | None, config: PaymentGatewayConfig) -> bool:
         expected = ((config.asaas_webhook_token if self._tenant_id else settings.ASAAS_WEBHOOK_TOKEN or config.asaas_webhook_token) or "").strip()
@@ -1781,6 +1944,317 @@ class PaymentService:
         self._apply_status(payment, status, source="admin_refund")
         self._db.refresh(payment)
         return PaymentOut.model_validate(payment)
+
+    @staticmethod
+    def _settlement_money(value: Any) -> Decimal:
+        try:
+            amount = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise DomainError("Valor financeiro da alteracao invalido.", code="PaymentSettlementInvalidAmount") from exc
+        if not amount.is_finite() or amount <= 0:
+            raise DomainError("Valor financeiro da alteracao invalido.", code="PaymentSettlementInvalidAmount")
+        return amount
+
+    def _amendment_settlement_context(self, order_id: str, amendment_id: str) -> tuple[Order, OrderAmendment, Payment, Any, Decimal, str]:
+        if not self._tenant_id:
+            raise DomainError("Contexto de tenant obrigatorio para liquidar alteracao.", code="TenantContextRequired")
+
+        order = self._get_order(order_id)
+        amendment = self._db.query(OrderAmendment).filter(
+            OrderAmendment.tenant_id == self._tenant_id,
+            OrderAmendment.id == amendment_id,
+            OrderAmendment.order_id == order.id,
+        ).with_for_update().first()
+        if amendment is None:
+            raise DomainError("Historico da alteracao nao encontrado.", code="OrderAmendmentNotFound")
+
+        adjustment = (amendment.after_snapshot or {}).get("financial_adjustment") or {}
+        try:
+            delta = Decimal(str(adjustment.get("delta"))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise DomainError("A alteracao nao possui delta financeiro conciliavel.", code="PaymentSettlementInvalidDelta") from exc
+        if not delta.is_finite() or delta == 0:
+            raise DomainError("A alteracao nao possui delta financeiro para liquidar.", code="PaymentSettlementNotRequired")
+
+        from backend.models.finance import FinanceTransaction
+
+        payment = self._db.query(Payment).filter(
+            Payment.tenant_id == self._tenant_id,
+            Payment.order_id == order.id,
+        ).with_for_update().first()
+        if payment is None:
+            raise PaymentNotFound(order.id)
+        finance = self._db.query(FinanceTransaction).filter(
+            FinanceTransaction.tenant_id == self._tenant_id,
+            FinanceTransaction.order_id == order.id,
+            FinanceTransaction.origin_type == "order_amendment_adjustment",
+            FinanceTransaction.origin_id == amendment.id,
+        ).with_for_update().first()
+        if finance is None:
+            raise DomainError("Conciliacao financeira da alteracao nao encontrada.", code="PaymentSettlementNotFound")
+        if abs(Decimal(str(finance.amount or 0)).quantize(Decimal("0.01")) - abs(delta)) > Decimal("0.01"):
+            raise DomainError("O lancamento financeiro nao corresponde ao delta da alteracao.", code="PaymentSettlementAmountMismatch")
+
+        direction = "charge" if delta > 0 else "refund"
+        return order, amendment, payment, finance, abs(delta), direction
+
+    @staticmethod
+    def _settlement_provider_status(value: Any) -> str | None:
+        text = str(value or "").strip()
+        return text[:80] if text else None
+
+    def _amendment_charge(self, order: Order, amendment: OrderAmendment, payment: Payment, amount: Decimal, provider_key: str) -> dict[str, Any]:
+        if getattr(payment, "method", None) != PaymentMethod.pix:
+            raise DomainError(
+                "Cobranca adicional exige um novo pagamento PIX autorizado pelo cliente.",
+                code="PaymentSettlementCustomerActionRequired",
+            )
+        reference = f"order:{order.id}:amendment:{amendment.id}:charge"
+        provider = self._payment_provider(payment)
+        response: dict[str, Any]
+        operation_id: str
+        provider_status: str | None
+        checkout_url: str | None = None
+        qr_code_text: str | None = None
+        if provider == PROVIDER_ASAAS:
+            if not payment.provider_customer_id:
+                raise DomainError("A cobranca incremental ASAAS nao possui cliente remoto vinculado.", code="PaymentSettlementCustomerRequired")
+            result = AsaasGateway(self._db, config=self._cfg()).create_incremental_pix_payment(
+                order=order, provider_customer_id=payment.provider_customer_id,
+                amount=float(amount), external_reference=reference,
+            )
+            response = result.get("payment") or {}
+            pix = result.get("pixQrCode") or {}
+            operation_id = str(response.get("id") or "").strip()
+            qr_code_text = str(pix.get("payload") or pix.get("encodedImage") or "").strip() or None
+            checkout_url = str(response.get("invoiceUrl") or response.get("bankSlipUrl") or "").strip() or None
+            provider_status = self._settlement_provider_status(response.get("status"))
+        elif provider == PROVIDER_PAGARME:
+            response = PagarmeGateway(self._cfg()).create_incremental_pix_charge(
+                order, amount=float(amount), reference=reference, idempotency_key=provider_key,
+            )
+            charge = first_charge(response)
+            operation_id = str(charge.get("id") or response.get("id") or "").strip()
+            transaction = (charge.get("last_transaction") or charge.get("transactions") or [{}])
+            transaction = transaction[0] if isinstance(transaction, list) and transaction else transaction
+            qr_code_text = str((transaction or {}).get("qr_code") or "").strip() or None
+            checkout_url = str((transaction or {}).get("qr_code_url") or "").strip() or None
+            provider_status = self._settlement_provider_status(charge.get("status") or response.get("status"))
+        elif provider == PROVIDER_MERCADO_PAGO:
+            payer_email = (order.customer.email if order.customer else None) or f"cliente.{order.id[:8].lower()}@delivery.moschettieri.com.br"
+            response = _mp_request(
+                "POST", "/v1/payments", _mp_token(self._cfg(), tenant_scoped=True),
+                {"transaction_amount": float(amount), "description": f"Cobranca adicional do pedido #{order.id}",
+                 "payment_method_id": "pix", "payer": {"email": payer_email},
+                 "external_reference": reference, "metadata": {"tenant_id": self._tenant_id, "order_id": order.id, "amendment_id": amendment.id},
+                 "notification_url": self._webhook_notification_url(PROVIDER_MERCADO_PAGO)},
+                idempotency_key=provider_key,
+            )
+            operation_id = str(response.get("id") or "").strip()
+            tx = ((response.get("point_of_interaction") or {}).get("transaction_data") or {})
+            qr_code_text = str(tx.get("qr_code") or "").strip() or None
+            checkout_url = str(tx.get("ticket_url") or "").strip() or None
+            provider_status = self._settlement_provider_status(response.get("status"))
+        else:
+            raise DomainError("Provedor nao suporta cobranca incremental PIX.", code="PaymentOperationUnsupported")
+        if not operation_id:
+            raise DomainError("Gateway nao retornou identificador da cobranca incremental.", code="PaymentSettlementProviderResponseInvalid")
+        return {"provider": provider, "operation_id": operation_id, "provider_status": provider_status,
+                "status": "pending", "checkout_url": checkout_url, "qr_code_text": qr_code_text, "response": response}
+
+    @staticmethod
+    def _validate_amendment_refund_amount(payment_amount: Any, amount: Decimal) -> None:
+        original = PaymentService._settlement_money(payment_amount)
+        if amount >= original:
+            raise DomainError(
+                "O abatimento nao pode estornar todo o pagamento por este fluxo; use o estorno total dedicado.",
+                code="PaymentSettlementFullRefundUnsupported",
+            )
+
+    def _amendment_refund(self, payment: Payment, amount: Decimal, reason: str | None, provider_key: str) -> dict[str, Any]:
+        provider = self._payment_provider(payment)
+        provider_payment_id = payment.provider_payment_id or payment.mercado_pago_payment_id or payment.transaction_id
+        if provider not in {PROVIDER_MERCADO_PAGO, PROVIDER_ASAAS, PROVIDER_PAGARME} or not provider_payment_id:
+            raise DomainError("Pagamento nao possui cobranca remota estornavel.", code="PaymentOperationUnsupported")
+
+        if provider == PROVIDER_MERCADO_PAGO:
+            response = _mp_request(
+                "POST",
+                f"/v1/payments/{provider_payment_id}/refunds",
+                _mp_token(self._cfg(), tenant_scoped=True),
+                {"amount": float(amount)},
+                idempotency_key=provider_key,
+            )
+            operation_id = str(response.get("id") or provider_payment_id).strip()
+            return {
+                "provider": provider,
+                "operation_id": operation_id,
+                "provider_status": self._settlement_provider_status(response.get("status") or "accepted"),
+                "status": "succeeded",
+                "response": response,
+            }
+
+        if provider == PROVIDER_ASAAS:
+            response = AsaasGateway(self._db, config=self._cfg()).refund_payment(
+                str(provider_payment_id), value=float(amount), description=reason or "Abatimento por alteracao do pedido",
+            )
+            provider_status = self._settlement_provider_status(response.get("status") or "PENDING")
+            return {
+                "provider": provider,
+                "operation_id": str(response.get("id") or provider_payment_id),
+                "provider_status": provider_status,
+                "status": "succeeded" if provider_status.upper() in {"DONE", "REFUNDED", "RECEIVED"} else "pending",
+                "response": sanitize_asaas_payload(response),
+            }
+
+        response = PagarmeGateway(self._cfg()).cancel_or_refund(str(payment.transaction_id or provider_payment_id), amount=float(amount))
+        return {
+            "provider": provider,
+            "operation_id": str(response.get("id") or payment.transaction_id or provider_payment_id),
+            "provider_status": self._settlement_provider_status(response.get("status") or "refunded"),
+            "status": "succeeded",
+            "response": sanitize_pagarme_payload(response),
+        }
+
+    def _record_amendment_finance_settlement(self, finance, settlement: PaymentSettlement, payment: Payment, result: dict[str, Any]) -> None:
+        if result["status"] != "succeeded":
+            return
+        from backend.models.finance import FinanceSettlement
+
+        idempotency_key = f"payment-amendment:{settlement.id}"
+        if any(row.idempotency_key == idempotency_key for row in finance.settlements):
+            return
+        now = datetime.now(timezone.utc)
+        amount = float(settlement.amount)
+        finance.status = "paid"
+        finance.paid_amount = amount
+        finance.net_amount = amount
+        finance.paid_at = now
+        finance.payment_reference = result.get("operation_id")
+        finance.payment_method = payment.method.value if hasattr(payment.method, "value") else str(payment.method)
+        self._db.add(FinanceSettlement(
+            id=f"fin-set-{uuid.uuid4().hex[:12]}",
+            tenant_id=self._tenant_id,
+            transaction_id=finance.id,
+            principal_amount=amount,
+            net_amount=amount,
+            payment_method=finance.payment_method,
+            payment_reference=result.get("operation_id"),
+            origin_type="order_amendment_settlement",
+            origin_id=settlement.id,
+            idempotency_key=idempotency_key,
+            settled_at=now,
+            notes=f"Liquidacao de delta pos-alteracao via {result.get('provider')}.",
+        ))
+
+    def settle_amendment(self, order_id: str, amendment_id: str, *, idempotency_key: str, reason: str | None = None) -> PaymentSettlementOut:
+        order, amendment, payment, finance, amount, direction = self._amendment_settlement_context(order_id, amendment_id)
+        from backend.services.idempotency_service import IdempotencyService
+
+        idempotency = IdempotencyService(self._db, self._tenant_id)
+        claim = idempotency.claim(idempotency_key, "payments.amendment_settlement", {
+            "order_id": order.id,
+            "amendment_id": amendment.id,
+            "direction": direction,
+            "amount": str(amount),
+            "reason": reason or "",
+        })
+        settlement = None
+        try:
+            if claim.replay_resource_id:
+                settlement = self._db.query(PaymentSettlement).filter(
+                    PaymentSettlement.tenant_id == self._tenant_id,
+                    PaymentSettlement.id == claim.replay_resource_id,
+                ).first()
+                if settlement is None:
+                    raise DomainError("Liquidacao da alteracao nao encontrada.", code="PaymentSettlementNotFound")
+                return PaymentSettlementOut.model_validate(settlement)
+
+            order, amendment, payment, finance, amount, direction = self._amendment_settlement_context(order_id, amendment_id)
+            settlement = self._db.query(PaymentSettlement).filter(
+                PaymentSettlement.tenant_id == self._tenant_id,
+                PaymentSettlement.amendment_id == amendment.id,
+                PaymentSettlement.direction == direction,
+            ).with_for_update().first()
+            if settlement is not None and settlement.status in {"pending", "succeeded"}:
+                idempotency.complete(claim.record, settlement.id)
+                return PaymentSettlementOut.model_validate(settlement)
+            if settlement is not None and settlement.status == "processing":
+                raise DomainError("A liquidacao desta alteracao ja esta em processamento.", code="PaymentSettlementInProgress")
+
+            if finance.status != "pending":
+                raise DomainError("O lancamento financeiro da alteracao nao esta pendente.", code="PaymentSettlementStateConflict")
+            if payment.status not in {PaymentStatus.approved, PaymentStatus.paid}:
+                raise DomainError("Somente pagamentos aprovados podem liquidar delta de alteracao.", code="PaymentSettlementPaymentNotApproved")
+
+            if direction == "refund":
+                self._validate_amendment_refund_amount(payment.amount, amount)
+                prior_refunds = self._db.query(PaymentSettlement).filter(
+                    PaymentSettlement.tenant_id == self._tenant_id,
+                    PaymentSettlement.payment_id == payment.id,
+                    PaymentSettlement.direction == "refund",
+                    PaymentSettlement.status.in_(("processing", "pending", "succeeded")),
+                ).all()
+                refunded = sum((Decimal(str(row.amount)) for row in prior_refunds if not settlement or row.id != settlement.id), Decimal("0.00"))
+                if refunded + amount > self._settlement_money(payment.amount):
+                    raise DomainError("O delta excede o saldo disponivel para estorno da cobranca.", code="PaymentSettlementRefundExceedsPayment")
+
+            if settlement is None:
+                settlement = PaymentSettlement(
+                    id=str(uuid.uuid4()), tenant_id=self._tenant_id, order_id=order.id,
+                    amendment_id=amendment.id, payment_id=payment.id, finance_transaction_id=finance.id,
+                    direction=direction, status="processing", amount=amount, provider=self._payment_provider(payment),
+                    idempotency_key=idempotency_key,
+                )
+                self._db.add(settlement)
+            else:
+                settlement.status = "processing"
+                settlement.amount = amount
+                settlement.idempotency_key = idempotency_key
+                settlement.error_message = None
+            self._db.flush()
+            self._db.commit()
+
+            provider_key = hashlib.sha256(
+                f"amendment-settlement:{self._tenant_id}:{amendment.id}:{direction}:{amount:.2f}".encode()
+            ).hexdigest()
+            result = (
+                self._amendment_charge(order, amendment, payment, amount, provider_key)
+                if direction == "charge"
+                else self._amendment_refund(payment, amount, reason, provider_key)
+            )
+            settlement = self._db.query(PaymentSettlement).filter(
+                PaymentSettlement.tenant_id == self._tenant_id,
+                PaymentSettlement.id == settlement.id,
+            ).with_for_update().one()
+            settlement.status = result["status"]
+            settlement.provider = result["provider"]
+            settlement.provider_operation_id = result.get("operation_id")
+            settlement.provider_status = result.get("provider_status")
+            settlement.checkout_url = result.get("checkout_url")
+            settlement.qr_code_text = result.get("qr_code_text")
+            settlement.response_json = json.dumps(result.get("response") or {}, ensure_ascii=False, default=str)
+            if result["status"] == "succeeded":
+                self._record_amendment_finance_settlement(finance, settlement, payment, result)
+            idempotency.complete(claim.record, settlement.id, commit=False)
+            self._db.commit()
+            self._db.refresh(settlement)
+            return PaymentSettlementOut.model_validate(settlement)
+        except Exception as exc:
+            if settlement is None:
+                idempotency.abandon(claim.record)
+            else:
+                self._db.rollback()
+                failed = self._db.query(PaymentSettlement).filter(
+                    PaymentSettlement.tenant_id == self._tenant_id,
+                    PaymentSettlement.id == settlement.id,
+                ).first()
+                if failed is not None:
+                    failed.status = "failed"
+                    failed.error_message = str(exc)[:1000]
+                    self._db.commit()
+                    idempotency.complete(claim.record, failed.id)
+            raise
 
     def confirm_pay_on_delivery(self, order_id: str, *, source: str = "pay_on_delivery") -> PaymentOut:
         order = self._get_order(order_id)

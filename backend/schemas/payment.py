@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional, Any
+from typing import Optional, Any, Literal
 from datetime import datetime
 from backend.models.payment import PaymentMethod, PaymentStatus
 
@@ -135,6 +135,30 @@ class PayOnDeliverySwitch(BaseModel):
 class PaymentOperationRequest(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=240)
     value: Optional[float] = Field(default=None, gt=0)
+
+
+class AmendmentSettlementRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, max_length=240)
+
+
+class PaymentSettlementOut(BaseModel):
+    id: str
+    order_id: str
+    amendment_id: str
+    payment_id: str
+    direction: Literal["charge", "refund"]
+    status: Literal["processing", "pending", "succeeded", "failed"]
+    amount: float
+    provider: str
+    provider_operation_id: Optional[str] = None
+    provider_status: Optional[str] = None
+    checkout_url: Optional[str] = None
+    qr_code_text: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class PaymentOut(BaseModel):
