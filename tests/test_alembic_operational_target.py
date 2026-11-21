@@ -2,6 +2,9 @@ import ast
 import re
 from pathlib import Path
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_TARGET_FILES = {
@@ -16,6 +19,7 @@ EXPECTED_TARGET_FILES = {
 }
 REVISION_PATTERN = re.compile(r"202\d{5}_[a-z0-9_]+")
 EXPECTED_OPERATIONAL_HEAD = "20261117_combo_landing"
+EXPECTED_REPOSITORY_HEAD = "20261121_payment_amendment_settlement"
 
 
 def _migration_heads() -> set[str]:
@@ -72,16 +76,31 @@ def test_every_operational_alembic_target_matches_the_single_repository_head():
     targets = _operational_targets()
 
     assert len(heads) == 1, f"esperado um unico head Alembic, encontrados: {sorted(heads)}"
-    assert heads == {EXPECTED_OPERATIONAL_HEAD}, (
-        f"head operacional inesperado: esperado={EXPECTED_OPERATIONAL_HEAD} "
+    assert heads == {EXPECTED_REPOSITORY_HEAD}, (
+        f"head do repositorio inesperado: esperado={EXPECTED_REPOSITORY_HEAD} "
         f"encontrado={sorted(heads)}"
     )
     assert set(targets) == EXPECTED_TARGET_FILES
     for relative_path, values in targets.items():
-        assert values == heads, (
-            f"target Alembic de {relative_path} diverge do head do repositorio: "
-            f"target={sorted(values)} head={sorted(heads)}"
+        assert values == {EXPECTED_OPERATIONAL_HEAD}, (
+            f"target Alembic de {relative_path} diverge do target operacional aprovado: "
+            f"target={sorted(values)} esperado={EXPECTED_OPERATIONAL_HEAD}"
         )
+
+    script = ScriptDirectory.from_config(Config(str(ROOT / "backend" / "alembic.ini")))
+    pending = [script.get_revision(EXPECTED_REPOSITORY_HEAD)]
+    ancestors = set()
+    while pending:
+        current = pending.pop()
+        if not current or not current.down_revision:
+            continue
+        parents = current.down_revision if isinstance(current.down_revision, tuple) else (current.down_revision,)
+        for parent in parents:
+            assert isinstance(parent, str), "revision Alembic invalida"
+            if parent not in ancestors:
+                ancestors.add(parent)
+                pending.append(script.get_revision(parent))
+    assert EXPECTED_OPERATIONAL_HEAD in ancestors
 
 
 def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
@@ -124,6 +143,7 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20261115_delivery_daily_allowances:20261114_product_landing_pages",
         "20261114_upsell_subcategory_triggers:20261115_delivery_daily_allowances",
         "20261115_delivery_daily_allowances:20261114_upsell_subcategory_triggers",
+        "20261117_combo_landing:20261121_payment_amendment_settlement",
     }
 
     sources = {
@@ -209,6 +229,8 @@ def test_schema_predicates_allow_reviewed_recovery_and_reject_unknown_pairs():
             ("20261115_delivery_daily_allowances", "20261114_product_landing_pages", 0),
             ("20261114_upsell_subcategory_triggers", "20261115_delivery_daily_allowances", 0),
             ("20261115_delivery_daily_allowances", "20261114_upsell_subcategory_triggers", 0),
+            ("20261117_combo_landing", "20261121_payment_amendment_settlement", 0),
+            ("20261121_payment_amendment_settlement", "20261117_combo_landing", 1),
             ("unknown", "20261017_runtime_schema", 1),
         )
         for code, database, expected in cases:

@@ -106,9 +106,9 @@ def test_new_objective_migrations_form_one_chain_to_current_head():
         "20261120_production_effects": "20261120_order_amendments",
         "20261121_post_production_amendment": "20261120_production_effects",
         "20261121_post_production_priority": "20261121_post_production_amendment",
+        "20261121_payment_amendment_settlement": "20261121_post_production_priority",
     }
     for revision, down_revision in expected.items():
         assert script.get_revision(revision).down_revision == down_revision
 
-    assert script.get_revision("20261121_payment_amendment_settlement").down_revision == "20261121_post_production_priority"
     assert script.get_heads() == ["20261121_payment_amendment_settlement"]
