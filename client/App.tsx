@@ -464,6 +464,7 @@ const AdminAparencia = lazy(() => import("./pages/admin/Aparencia"));
 const AdminHomeConfig = lazy(() => import("./pages/admin/HomeConfig"));
 const AdminLgpd = lazy(() => import("./pages/admin/AdminLgpd"));
 const AdminConfiguracoes = lazy(() => import("./pages/admin/AdminConfiguracoes"));
+const PrintServer = lazy(() => import("./pages/admin/PrintServer"));
 const AdminClientes = lazy(() => import("./pages/admin/AdminClientes"));
 const ClienteDetalhe = lazy(() => import("./pages/admin/ClienteDetalhe"));
 const AdminExitPopup = lazy(() => import("./pages/admin/AdminExitPopup"));
@@ -707,6 +708,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/som" element={<AdminConfiguracoes />} />
                 <Route path="/painel/identificacao-parceiros" element={<AdminConfiguracoes />} />
                 <Route path="/painel/configuracoes/ia-central" element={<AdminConfiguracoes />} />
+                <Route path="/painel/configuracoes/print-server" element={<PrintServer />} />
                 <Route path="/painel/apps" element={<AdminApps />} />
                 <Route path="/painel/configuracoes" element={<AdminConfiguracoes />} />
                 <Route path="/painel/cupons" element={<MarketingCupons />} />

@@ -90,6 +90,7 @@ from backend.routes import gestor as gestor_routes
 from backend.routes import partner_identification as partner_identification_routes
 from backend.routes import production_vision as production_vision_routes
 from backend.routes import catalog_global as catalog_global_routes
+from backend.routes import print_center as print_center_routes
 
 settings = get_settings()
 
@@ -1443,6 +1444,7 @@ app.include_router(app_finance_routes.router)
 app.include_router(fiscal_routes.router)
 app.include_router(partner_identification_routes.router)
 app.include_router(partner_identification_routes.compat_router)
+app.include_router(print_center_routes.router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")
@@ -1526,6 +1528,7 @@ app.include_router(app_finance_routes.router, prefix="/api")
 app.include_router(fiscal_routes.router, prefix="/api")
 app.include_router(partner_identification_routes.router, prefix="/api")
 app.include_router(partner_identification_routes.compat_router, prefix="/api")
+app.include_router(print_center_routes.router, prefix="/api")
 app.include_router(production_vision_routes.router, prefix="/api")
 app.include_router(platform_tenants_routes.router, prefix="/api")
 app.include_router(platform_tenants_routes.master_router, prefix="/api")

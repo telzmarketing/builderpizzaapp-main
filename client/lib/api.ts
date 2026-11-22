@@ -10107,3 +10107,44 @@ export const printOrderApi = {
 };
 
 export const printPedidoApi = printOrderApi;
+
+// Tenant-scoped Print Server control-plane contract. The backend can expose
+// each resource independently so the UI can refresh a single operational area.
+export type PrintServerStationStatus = "online" | "offline" | "degraded" | "unknown";
+export type PrintServerPrinterStatus = "ready" | "offline" | "error" | "unknown";
+export type PrintServerJobStatus = "pending" | "received" | "queued" | "processing" | "spooled" | "printed" | "error" | "cancelled" | "uncertain";
+
+export interface ApiPrintServerStation { id: string; name: string; hostname?: string | null; status: PrintServerStationStatus; last_seen_at?: string | null; active: boolean; printer_count?: number; }
+export interface ApiPrintServerPrinter { id: string; name: string; station_id: string; station_name?: string | null; connection_type?: string | null; driver?: string | null; status: PrintServerPrinterStatus; print_type?: "thermal" | "label" | "document" | "unknown" | null; last_printed_at?: string | null; queued_jobs?: number; }
+export interface ApiPrintServerRule { id: string; name: string; event: string; sector: string; printer_ids: string[]; copies: number; active: boolean; }
+export interface ApiPrintServerJob { id: string; external_id?: string | null; station_name?: string | null; printer_name?: string | null; sector?: string | null; document_type?: string | null; status: PrintServerJobStatus; attempts: number; created_at: string; updated_at?: string | null; error_message?: string | null; }
+export interface ApiPrintServerSummary { stations_online: number; stations_total: number; printers_ready: number; printers_total: number; pending_jobs: number; failed_jobs: number; }
+export interface ApiPrintServerOverview { summary: ApiPrintServerSummary; stations: ApiPrintServerStation[]; printers: ApiPrintServerPrinter[]; rules: ApiPrintServerRule[]; queue: ApiPrintServerJob[]; }
+
+export const printServerApi = {
+  overview: async () => {
+    const raw = await get<{ stations: number; printers: number; pending_jobs: number; processed_jobs: number; failed_jobs: number }>("/admin/print-center/overview");
+    const [stations, printers, rules, jobs] = await Promise.all([
+      get<Array<Record<string, unknown>>>("/admin/print-center/stations"),
+      get<Array<Record<string, unknown>>>("/admin/print-center/printers"),
+      get<Array<Record<string, unknown>>>("/admin/print-center/rules"),
+      get<Array<Record<string, unknown>>>("/admin/print-center/jobs"),
+    ]);
+    const printerById = new Map(printers.map((printer) => [String(printer.id), printer]));
+    const stationById = new Map(stations.map((station) => [String(station.id), station]));
+    return {
+      summary: { stations_online: stations.filter((station) => station.connected).length, stations_total: stations.length, printers_ready: printers.filter((printer) => printer.status === "ready").length, printers_total: printers.length, pending_jobs: raw.pending_jobs, failed_jobs: raw.failed_jobs },
+      stations: stations.map((station) => ({ id: String(station.id), name: String(station.name), hostname: station.hostname as string | null, status: station.connected ? "online" : "offline", last_seen_at: station.last_seen_at as string | null, active: Boolean(station.active), printer_count: printers.filter((printer) => printer.station_id === station.id).length })),
+      printers: printers.map((printer) => ({ id: String(printer.id), name: String(printer.name), station_id: String(printer.station_id), station_name: String(stationById.get(String(printer.station_id))?.name ?? printer.station_id), connection_type: printer.connection_type as string, driver: printer.driver_name as string | null, status: printer.status as ApiPrintServerPrinterStatus, print_type: printer.printer_type as ApiPrintServerPrinter["print_type"], last_printed_at: printer.last_seen_at as string | null, queued_jobs: jobs.filter((job) => job.printer_id === printer.id && ["pending", "received", "queued", "processing", "uncertain"].includes(String(job.status))).length })),
+      rules: rules.map((rule) => ({ id: String(rule.id), name: `${rule.sector} / ${rule.document_type}`, event: String(rule.document_type), sector: String(rule.sector), printer_ids: [String(rule.printer_id)], copies: Number(rule.copies), active: Boolean(rule.enabled) })),
+      queue: jobs.map((job) => ({ id: String(job.id), external_id: job.external_job_id as string, station_name: String(stationById.get(String(job.station_id))?.name ?? job.station_id ?? ""), printer_name: String(printerById.get(String(job.printer_id))?.name ?? job.printer_id), sector: job.sector as string, document_type: job.document_type as string, status: job.status as ApiPrintServerJobStatus, attempts: Number(job.attempts ?? 0), created_at: String(job.created_at), updated_at: job.updated_at as string | null, error_message: job.last_error as string | null })),
+    } satisfies ApiPrintServerOverview;
+  },
+  listStations: () => get<ApiPrintServerStation[]>("/admin/print-center/stations"),
+  listPrinters: () => get<ApiPrintServerPrinter[]>("/admin/print-center/printers"),
+  listRules: () => get<ApiPrintServerRule[]>("/admin/print-center/rules"),
+  listQueue: () => get<ApiPrintServerJob[]>("/admin/print-center/jobs"),
+  setStationActive: (stationId: string, active: boolean) => patch<ApiPrintServerStation>(`/admin/print-center/stations/${encodeURIComponent(stationId)}`, { active }),
+  testPrinter: (printerId: string) => post<{ accepted: boolean; job_id?: string }>(`/admin/print-center/printers/${encodeURIComponent(printerId)}/test`, {}),
+  retryJob: (jobId: string) => post<ApiPrintServerJob>(`/admin/print-center/jobs/${encodeURIComponent(jobId)}/retry`, {}),
+};

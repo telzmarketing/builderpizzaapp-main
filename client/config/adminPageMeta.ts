@@ -96,6 +96,7 @@ export const adminPageMeta: Record<string, PageMeta> = {
   "/painel/usuarios": { eyebrow: "Configuracoes", title: "Usuarios do Sistema", subtitle: "Acessos administrativos" },
   "/painel/lgpd": { eyebrow: "Configuracoes", title: "LGPD & Privacidade", subtitle: "Politicas, consentimentos e privacidade" },
   "/painel/configuracoes": { eyebrow: "Configuracoes", title: "Configuracoes", subtitle: "Preferencias do sistema" },
+  "/painel/configuracoes/print-server": { eyebrow: "Configuracoes", title: "Central de Impressao", subtitle: "Estacoes, impressoras, regras e fila do Print Server" },
   "/painel/apps": { eyebrow: "Configuracoes", title: "Apps", subtitle: "Links dos aplicativos instalaveis por rota" },
   "/painel/configuracoes/ia-central": { eyebrow: "Configuracoes", title: "IA central", subtitle: "Credencial compartilhada pelos módulos de IA da empresa" },
   "/painel/comprovantes-pedidos": { eyebrow: "Configuracoes", title: "Comprovantes de pedidos", subtitle: "Notas, comandas e comprovantes de pedidos" },

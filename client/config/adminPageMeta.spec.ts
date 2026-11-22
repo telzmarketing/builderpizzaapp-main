@@ -14,4 +14,11 @@ describe("AdminConfiguracoes route metadata", () => {
   ])("keeps dedicated metadata for %s", (pathname, title) => {
     expect(getAdminPageMeta(pathname)).toMatchObject({ eyebrow: "Configuracoes", title });
   });
+
+  it("exposes the Print Server configuration submodule", () => {
+    expect(getAdminPageMeta("/painel/configuracoes/print-server")).toMatchObject({
+      eyebrow: "Configuracoes",
+      title: "Central de Impressao",
+    });
+  });
 });

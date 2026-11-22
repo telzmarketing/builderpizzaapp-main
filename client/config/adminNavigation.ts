@@ -168,6 +168,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
       { path: "/painel/usuarios", icon: Users, label: "Usuarios do Sistema", permissions: ["usuarios"] },
       { path: "/painel/lgpd", icon: Shield, label: "LGPD & Privacidade", permissions: ["configuracoes"] },
       { path: "/painel/configuracoes/ia-central", icon: Brain, label: "IA central", permissions: ["configuracoes"] },
+      { path: "/painel/configuracoes/print-server", icon: Printer, label: "Central de impressao", permissions: ["configuracoes"] },
       { path: "/painel/apps", icon: Copy, label: "Apps", permissions: ["configuracoes"] },
       { path: "/painel/comprovantes-pedidos", icon: Printer, label: "Comprovantes de pedidos", permissions: ["configuracoes"] },
       { path: "/painel/etiquetas-expedicao", icon: Tag, label: "Etiquetas de expedição", permissions: ["configuracoes"] },

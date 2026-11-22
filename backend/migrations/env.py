@@ -75,6 +75,7 @@ from backend.models import (  # noqa: F401
     production_vision,
     inventory_portion,
     print_order,
+    print_center,
 )
 
 config = context.config
