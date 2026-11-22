@@ -146,6 +146,7 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20261117_combo_landing:20261121_payment_amendment_settlement",
         "20261121_print_center:20261121_payment_amendment_settlement",
         "20261121_payment_amendment_settlement:20261121_print_center",
+        "20261121_print_center:20261122_print_agent_protocol",
     }
 
     sources = {
@@ -235,6 +236,8 @@ def test_schema_predicates_allow_reviewed_recovery_and_reject_unknown_pairs():
             ("20261121_payment_amendment_settlement", "20261117_combo_landing", 1),
             ("20261121_print_center", "20261121_payment_amendment_settlement", 0),
             ("20261121_payment_amendment_settlement", "20261121_print_center", 0),
+            ("20261121_print_center", "20261122_print_agent_protocol", 0),
+            ("20261122_print_agent_protocol", "20261121_print_center", 1),
             ("unknown", "20261017_runtime_schema", 1),
         )
         for code, database, expected in cases:

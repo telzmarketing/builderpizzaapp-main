@@ -663,7 +663,8 @@ schema_is_rollback_compatible() {
     "20261115_delivery_daily_allowances:20261114_upsell_subcategory_triggers" | \
     "20261117_combo_landing:20261121_payment_amendment_settlement" | \
     "20261121_print_center:20261121_payment_amendment_settlement" | \
-    "20261121_payment_amendment_settlement:20261121_print_center")
+    "20261121_payment_amendment_settlement:20261121_print_center" | \
+    "20261121_print_center:20261122_print_agent_protocol")
       return 0
       ;;
     *)
