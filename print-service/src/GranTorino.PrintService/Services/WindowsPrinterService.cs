@@ -42,7 +42,7 @@ public sealed class WindowsPrinterService : IPrinterService
             using var document = new PrintDocument { PrinterSettings = { PrinterName = printer } };
             if (!document.PrinterSettings.IsValid) throw new InvalidOperationException($"Impressora inválida: {printer}");
             var text = await File.ReadAllTextAsync(file, Encoding.UTF8, cancellationToken);
-            document.PrintPage += (_, e) => e.Graphics.DrawString(text, new Font("Consolas", 9), Brushes.Black, e.MarginBounds);
+            document.PrintPage += (_, e) => e.Graphics!.DrawString(text, new Font("Consolas", 9), Brushes.Black, e.MarginBounds);
             document.Print();
         }
     }
