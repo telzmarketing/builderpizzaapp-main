@@ -22,6 +22,19 @@ def upgrade():
     op.create_index("ix_print_job_events_tenant_job_created", "print_job_events", ["tenant_id", "job_id", "created_at"])
 
 def downgrade():
+    if not op.get_context().as_sql:
+        has_history = op.get_bind().execute(
+            sa.text(
+                "SELECT EXISTS (SELECT 1 FROM print_stations) "
+                "OR EXISTS (SELECT 1 FROM print_printers) "
+                "OR EXISTS (SELECT 1 FROM print_routing_rules) "
+                "OR EXISTS (SELECT 1 FROM print_jobs) "
+                "OR EXISTS (SELECT 1 FROM print_job_events)"
+            )
+        ).scalar()
+        if has_history:
+            raise RuntimeError("Refusing to downgrade print_center because print history exists")
+
     op.drop_index("ix_print_job_events_tenant_job_created", table_name="print_job_events"); op.drop_table("print_job_events")
     op.drop_index("ix_print_jobs_tenant_status_priority", table_name="print_jobs"); op.drop_table("print_jobs")
     op.drop_index("ix_print_routing_rules_tenant_sector", table_name="print_routing_rules"); op.drop_table("print_routing_rules")

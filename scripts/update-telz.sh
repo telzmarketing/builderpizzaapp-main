@@ -661,7 +661,9 @@ schema_is_rollback_compatible() {
     "20261115_delivery_daily_allowances:20261114_product_landing_pages" | \
     "20261114_upsell_subcategory_triggers:20261115_delivery_daily_allowances" | \
     "20261115_delivery_daily_allowances:20261114_upsell_subcategory_triggers" | \
-    "20261117_combo_landing:20261121_payment_amendment_settlement")
+    "20261117_combo_landing:20261121_payment_amendment_settlement" | \
+    "20261121_print_center:20261121_payment_amendment_settlement" | \
+    "20261121_payment_amendment_settlement:20261121_print_center")
       return 0
       ;;
     *)

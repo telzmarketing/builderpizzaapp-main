@@ -19,7 +19,7 @@ EXPECTED_TARGET_FILES = {
 }
 REVISION_PATTERN = re.compile(r"202\d{5}_[a-z0-9_]+")
 EXPECTED_OPERATIONAL_HEAD = "20261117_combo_landing"
-EXPECTED_REPOSITORY_HEAD = "20261121_payment_amendment_settlement"
+EXPECTED_REPOSITORY_HEAD = "20261121_print_center"
 
 
 def _migration_heads() -> set[str]:
@@ -144,6 +144,8 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20261114_upsell_subcategory_triggers:20261115_delivery_daily_allowances",
         "20261115_delivery_daily_allowances:20261114_upsell_subcategory_triggers",
         "20261117_combo_landing:20261121_payment_amendment_settlement",
+        "20261121_print_center:20261121_payment_amendment_settlement",
+        "20261121_payment_amendment_settlement:20261121_print_center",
     }
 
     sources = {
@@ -231,6 +233,8 @@ def test_schema_predicates_allow_reviewed_recovery_and_reject_unknown_pairs():
             ("20261115_delivery_daily_allowances", "20261114_upsell_subcategory_triggers", 0),
             ("20261117_combo_landing", "20261121_payment_amendment_settlement", 0),
             ("20261121_payment_amendment_settlement", "20261117_combo_landing", 1),
+            ("20261121_print_center", "20261121_payment_amendment_settlement", 0),
+            ("20261121_payment_amendment_settlement", "20261121_print_center", 0),
             ("unknown", "20261017_runtime_schema", 1),
         )
         for code, database, expected in cases:
