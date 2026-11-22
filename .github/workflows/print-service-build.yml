@@ -16,13 +16,38 @@ jobs:
           dotnet-version: 8.x
       - name: Install Inno Setup
         shell: powershell
-        run: choco install innosetup --no-progress -y
+        run: choco install innosetup --no-progress -y --force
+      - name: Locate Inno Setup compiler
+        shell: powershell
+        run: |
+          $candidates = @(
+            (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source,
+            "$env:ChocolateyInstall\bin\ISCC.exe",
+            "$env:ChocolateyInstall\lib\innosetup\tools\ISCC.exe",
+            'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
+            'C:\Program Files\Inno Setup 6\ISCC.exe'
+          ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+          $iscc = $candidates | Select-Object -First 1
+          if (-not $iscc) {
+            Write-Host 'PATH:'
+            $env:Path -split ';' | Where-Object { $_ } | ForEach-Object { Write-Host "  $_" }
+            Write-Host 'Chocolatey Inno Setup candidates:'
+            Get-ChildItem "$env:ChocolateyInstall\lib\innosetup" -Filter ISCC.exe -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName)" }
+            throw 'ISCC.exe nao encontrado apos instalar o Inno Setup.'
+          }
+          "ISCC_PATH=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "ISCC_PATH=$iscc"
       - name: Publish and package
         shell: powershell
         run: ./scripts/build.ps1
       - name: Generate checksums
         shell: powershell
-        run: Get-ChildItem artifacts -File | Get-FileHash -Algorithm SHA256 | ConvertTo-Json | Out-File artifacts/SHA256SUMS.json
+        run: |
+          if (-not (Test-Path artifacts -PathType Container)) { throw 'artifacts nao foi criado pelo empacotamento.' }
+          $files = Get-ChildItem artifacts -File | Where-Object Name -ne 'SHA256SUMS.json'
+          if (-not $files) { throw 'Nenhum artefato encontrado para gerar checksums.' }
+          $files | Get-FileHash -Algorithm SHA256 | ConvertTo-Json | Out-File artifacts/SHA256SUMS.json -Encoding utf8
+          Get-ChildItem artifacts -File | Select-Object FullName, Length
       - uses: actions/upload-artifact@v4
         with:
           name: GranTorinoPrintService-win-x64
