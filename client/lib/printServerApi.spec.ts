@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { printServerApi } from "./api";
 
 describe("printServerApi", () => {
-  const storage = { getItem: () => null } as Storage;
+  const storage: Storage = {
+    clear: () => undefined,
+    getItem: () => null,
+    key: () => null,
+    length: 0,
+    removeItem: () => undefined,
+    setItem: () => undefined,
+  };
 
   beforeEach(() => {
     vi.stubGlobal("localStorage", storage);
