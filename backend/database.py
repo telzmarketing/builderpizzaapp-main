@@ -56,6 +56,8 @@ MASTER_CENTRAL_MIGRATION_TABLES = frozenset({
     "print_routing_rules",
     "print_jobs",
     "print_job_events",
+    "print_agent_pairings",
+    "print_agent_credentials",
     "tenant_domain_certificate_jobs",
 })
 

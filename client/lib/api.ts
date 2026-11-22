@@ -134,7 +134,7 @@ function recoverUnauthorizedAdminSession(status: number, path: string): string |
   return "Sessao expirada. Redirecionando para o login...";
 }
 
-async function fetchApi(path: string, init: RequestInit): Promise<Response> {
+async function fetchApi(path: string, init: RequestInit, options?: { allowNonJson?: boolean }): Promise<Response> {
   let lastError: Error | null = null;
   const method = (init.method ?? "GET").toUpperCase();
   const safeToRetry = method === "GET" || method === "HEAD" || method === "OPTIONS";
@@ -147,7 +147,7 @@ async function fetchApi(path: string, init: RequestInit): Promise<Response> {
         const hasFallback = index < bases.length - 1;
         if (hasFallback && [404, 405, 502, 503, 504].includes(res.status)) continue;
       }
-      if (res.ok && res.status !== 204) {
+      if (res.ok && res.status !== 204 && !options?.allowNonJson) {
         const contentType = res.headers.get("content-type") ?? "";
         if (!contentType.includes("application/json")) {
           lastError = new Error("Resposta invalida da API.");
@@ -165,6 +165,10 @@ async function fetchApi(path: string, init: RequestInit): Promise<Response> {
 /** Low-level escape hatch for API surfaces that still need Response semantics. */
 export function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   return fetchApi(path, init);
+}
+
+export function apiDownload(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetchApi(path, { method: "GET", ...init, headers: { ...authHeaders(), ...(init.headers ?? {}) } }, { allowNonJson: true });
 }
 
 /** Centralized browser request for explicitly external, non-API resources. */
@@ -10120,6 +10124,25 @@ export interface ApiPrintServerRule { id: string; name: string; event: string; s
 export interface ApiPrintServerJob { id: string; external_id?: string | null; station_name?: string | null; printer_name?: string | null; sector?: string | null; document_type?: string | null; status: PrintServerJobStatus; attempts: number; created_at: string; updated_at?: string | null; error_message?: string | null; }
 export interface ApiPrintServerSummary { stations_online: number; stations_total: number; printers_ready: number; printers_total: number; pending_jobs: number; failed_jobs: number; }
 export interface ApiPrintServerOverview { summary: ApiPrintServerSummary; stations: ApiPrintServerStation[]; printers: ApiPrintServerPrinter[]; rules: ApiPrintServerRule[]; queue: ApiPrintServerJob[]; }
+export interface ApiPrintServerAgentRelease {
+  available: boolean;
+  version?: string | null;
+  file_name?: string | null;
+  download_url?: string | null;
+  sha256?: string | null;
+  size_bytes?: number | null;
+  min_windows_version?: string | null;
+  requirements?: string[] | null;
+  release_notes?: string | null;
+  published_at?: string | null;
+}
+
+export interface ApiPrintServerAgentDownload {
+  blob: Blob;
+  fileName: string;
+}
+
+export interface ApiPrintServerPairingCode { station_id: string; code: string; expires_in_minutes: number; }
 
 export const printServerApi = {
   overview: async () => {
@@ -10147,4 +10170,15 @@ export const printServerApi = {
   setStationActive: (stationId: string, active: boolean) => patch<ApiPrintServerStation>(`/admin/print-center/stations/${encodeURIComponent(stationId)}`, { active }),
   testPrinter: (printerId: string) => post<{ accepted: boolean; job_id?: string }>(`/admin/print-center/printers/${encodeURIComponent(printerId)}/test`, {}),
   retryJob: (jobId: string) => post<ApiPrintServerJob>(`/admin/print-center/jobs/${encodeURIComponent(jobId)}/retry`, {}),
+  createPairingCode: (stationId: string, ttlMinutes = 15) => post<ApiPrintServerPairingCode>(`/admin/print-center/stations/${encodeURIComponent(stationId)}/pairing-code`, { ttl_minutes: ttlMinutes }),
+  agentRelease: () => get<ApiPrintServerAgentRelease>("/admin/print-center/agent-release"),
+  downloadAgentInstaller: async (): Promise<ApiPrintServerAgentDownload> => {
+    const response = await apiDownload("/admin/print-center/agent-release/download");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const disposition = response.headers.get("content-disposition") ?? "";
+    const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+    const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+    const fileName = encodedName ? decodeURIComponent(encodedName) : (plainName || "GranTorinoPrintService-Setup.exe");
+    return { blob: await response.blob(), fileName };
+  },
 };

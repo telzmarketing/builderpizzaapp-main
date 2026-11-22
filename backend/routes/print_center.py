@@ -1,13 +1,18 @@
 from fastapi import APIRouter, Depends, Header, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
 from backend.core.rbac_authorization import AuthorizedTenantActor, require_rbac_permission
-from backend.core.response import created, err, ok
+from backend.core.response import created, err, err_msg, ok
 from backend.database import get_db
 from backend.models.print_center import PrintJob, PrintPrinter, PrintRoutingRule, PrintStation
-from backend.schemas.print_center import PrintJobIn, PrintStatusIn, PrinterIn, RoutingRuleIn, StationIn
+from backend.schemas.print_center import PrintAgentPairingCodeIn, PrintJobIn, PrintStatusIn, PrinterIn, RoutingRuleIn, StationIn
 from backend.services.print_center_service import PrintCenterService
+from backend.services.print_agent_service import PrintAgentReleaseService
+import json
+import uuid
+from backend.models.rbac import AdminAuditLog
 
 router = APIRouter(prefix="/admin/print-center", tags=["print-center"])
 read = Depends(require_rbac_permission("configuracoes", "view"))
@@ -73,3 +78,30 @@ def retry(job_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantAct
 
 @router.post("/jobs/{job_id}/cancel")
 def cancel(job_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return run(lambda: ok(svc(db, actor).cancel(job_id).__dict__))
+
+
+@router.post("/stations/{station_id}/pairing-code")
+def create_pairing_code(station_id: str, body: PrintAgentPairingCodeIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write):
+    from backend.services.print_agent_service import PrintAgentService
+    code = PrintAgentService(db, actor.tenant_id, actor.user_id).create_pairing_code(station_id, body.ttl_minutes)
+    db.add(AdminAuditLog(
+        id=str(uuid.uuid4()), tenant_id=actor.tenant_id, user_id=actor.user_id, user_name=actor.user_name,
+        action="create_pairing_code", module_key="configuracoes", entity_type="print_station", entity_id=station_id,
+        new_value=json.dumps({"ttl_minutes": body.ttl_minutes}),
+    ))
+    db.commit()
+    return created({"station_id": station_id, "code": code, "expires_in_minutes": body.ttl_minutes}, "Código de pareamento criado.")
+
+
+@router.get("/agent-release")
+def agent_release(db: Session = Depends(get_db), actor: AuthorizedTenantActor = read):
+    return ok(PrintAgentReleaseService.metadata())
+
+
+@router.get("/agent-release/download")
+def download_agent_release(db: Session = Depends(get_db), actor: AuthorizedTenantActor = read):
+    path = PrintAgentReleaseService.artifact_path()
+    if path is None:
+        return err_msg("Instalador do agente ainda não está disponível.", code="PrintAgentArtifactUnavailable", status_code=404)
+    settings = __import__("backend.config", fromlist=["get_settings"]).get_settings()
+    return FileResponse(path, filename=settings.PRINT_AGENT_FILE_NAME, media_type="application/vnd.microsoft.portable-executable")

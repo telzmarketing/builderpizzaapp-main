@@ -91,6 +91,7 @@ from backend.routes import partner_identification as partner_identification_rout
 from backend.routes import production_vision as production_vision_routes
 from backend.routes import catalog_global as catalog_global_routes
 from backend.routes import print_center as print_center_routes
+from backend.routes import print_agent as print_agent_routes
 
 settings = get_settings()
 
@@ -1529,6 +1530,7 @@ app.include_router(fiscal_routes.router, prefix="/api")
 app.include_router(partner_identification_routes.router, prefix="/api")
 app.include_router(partner_identification_routes.compat_router, prefix="/api")
 app.include_router(print_center_routes.router, prefix="/api")
+app.include_router(print_agent_routes.router, prefix="/api")
 app.include_router(production_vision_routes.router, prefix="/api")
 app.include_router(platform_tenants_routes.router, prefix="/api")
 app.include_router(platform_tenants_routes.master_router, prefix="/api")

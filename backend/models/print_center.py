@@ -35,6 +35,45 @@ class PrintStation(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
 
+class PrintAgentPairing(Base):
+    """One-time tenant-scoped pairing code issued to a print station."""
+    __tablename__ = "print_agent_pairings"
+    __table_args__ = (
+        Index("ix_print_agent_pairings_tenant_station_active", "tenant_id", "station_id", "used_at", "expires_at"),
+        UniqueConstraint("tenant_id", "code_hash", name="uq_print_agent_pairings_tenant_code_hash"),
+    )
+
+    id = Column(String(36), primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
+    station_id = Column(String(36), ForeignKey("print_stations.id", ondelete="CASCADE"), nullable=False)
+    code_hash = Column(String(64), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    created_by_admin_id = Column(String, ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class PrintAgentCredential(Base):
+    """Rotatable bearer credential for a paired Windows agent."""
+    __tablename__ = "print_agent_credentials"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "station_id", name="uq_print_agent_credentials_tenant_station"),
+        UniqueConstraint("tenant_id", "token_hash", name="uq_print_agent_credentials_tenant_token_hash"),
+        Index("ix_print_agent_credentials_tenant_active", "tenant_id", "revoked_at", "last_seen_at"),
+    )
+
+    id = Column(String(36), primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
+    station_id = Column(String(36), ForeignKey("print_stations.id", ondelete="CASCADE"), nullable=False)
+    token_hash = Column(String(64), nullable=False)
+    agent_version = Column(String(80), nullable=True)
+    hostname = Column(String(255), nullable=True)
+    last_ip = Column(String(64), nullable=True)
+    last_seen_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
 class PrintPrinter(Base):
     __tablename__ = "print_printers"
     __table_args__ = (

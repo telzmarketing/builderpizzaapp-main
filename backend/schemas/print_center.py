@@ -51,6 +51,32 @@ class PrintStatusIn(BaseModel):
     message: str | None = Field(default=None, max_length=500)
 
 
+class PrintAgentPairingCodeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    ttl_minutes: int = Field(default=15, ge=1, le=1440)
+
+
+class PrintAgentPairIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    code: str = Field(min_length=16, max_length=128)
+    hostname: str = Field(min_length=1, max_length=255)
+    agent_version: str = Field(min_length=1, max_length=80)
+
+
+class PrintAgentHeartbeatIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    hostname: str | None = Field(default=None, max_length=255)
+    agent_version: str | None = Field(default=None, max_length=80)
+    printers: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
+
+
+class PrintAgentJobStatusIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    status: Literal["processing", "spooler_submitted", "printed", "error", "uncertain", "cancelled"]
+    message: str | None = Field(default=None, max_length=500)
+    attempt_id: str | None = Field(default=None, min_length=1, max_length=100)
+
+
 class PrintOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str

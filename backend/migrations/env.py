@@ -76,6 +76,7 @@ from backend.models import (  # noqa: F401
     inventory_portion,
     print_order,
     print_center,
+    print_agent,
 )
 
 config = context.config

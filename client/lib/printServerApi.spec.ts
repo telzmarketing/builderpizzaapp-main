@@ -42,4 +42,28 @@ describe("printServerApi", () => {
     expect(fetchMock.mock.calls[0][0]).toContain("/admin/print-center/printers/printer%2F01/test");
     expect(fetchMock.mock.calls[1][0]).toContain("/admin/print-center/jobs/job%2F01/retry");
   });
+
+  it("loads the Windows agent release metadata", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      data: { available: true, version: "1.0.0", file_name: "GranTorinoPrintService-Setup.exe", sha256: "abc123", size_bytes: 2048 },
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+
+    const result = await printServerApi.agentRelease();
+
+    expect(result.version).toBe("1.0.0");
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/admin/print-center/agent-release"), expect.objectContaining({ method: "GET" }));
+  });
+
+  it("downloads the installer and reads its filename from content disposition", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(new Blob(["installer"]), {
+      status: 200,
+      headers: { "content-type": "application/octet-stream", "content-disposition": "attachment; filename=GranTorinoPrintService-Setup.exe" },
+    }));
+
+    const result = await printServerApi.downloadAgentInstaller();
+
+    expect(result.fileName).toBe("GranTorinoPrintService-Setup.exe");
+    expect(await result.blob.text()).toBe("installer");
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/admin/print-center/agent-release/download"), expect.objectContaining({ method: "GET" }));
+  });
 });

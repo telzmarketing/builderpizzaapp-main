@@ -19,7 +19,7 @@ EXPECTED_TARGET_FILES = {
 }
 REVISION_PATTERN = re.compile(r"202\d{5}_[a-z0-9_]+")
 EXPECTED_OPERATIONAL_HEAD = "20261117_combo_landing"
-EXPECTED_REPOSITORY_HEAD = "20261121_print_center"
+EXPECTED_REPOSITORY_HEAD = "20261122_print_agent_protocol"
 
 
 def _migration_heads() -> set[str]:

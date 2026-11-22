@@ -1,0 +1,29 @@
+name: Gran Torino Print Service
+on:
+  workflow_dispatch:
+  push:
+    paths: ['print-service/**']
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: print-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.x
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+      - name: Publish and package
+        shell: powershell
+        run: ./scripts/build.ps1
+      - name: Generate checksums
+        shell: powershell
+        run: Get-ChildItem artifacts -File | Get-FileHash -Algorithm SHA256 | ConvertTo-Json | Out-File artifacts/SHA256SUMS.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GranTorinoPrintService-win-x64
+          path: print-service/artifacts/*

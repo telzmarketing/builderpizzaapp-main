@@ -132,6 +132,11 @@ class Settings(BaseSettings):
     # Root-owned, collector-generated operational projections. The API has
     # read-only access and never executes host commands from HTTP requests.
     PLATFORM_MONITORING_SNAPSHOT_DIR: str = "/var/lib/telz/monitoring"
+    PRINT_AGENT_ARTIFACT_PATH: str = ""
+    PRINT_AGENT_VERSION: str = ""
+    PRINT_AGENT_FILE_NAME: str = "GranTorinoPrintService-Setup.exe"
+    PRINT_AGENT_MIN_WINDOWS_VERSION: str = "Windows 10 22H2"
+    PRINT_AGENT_RELEASE_NOTES: str = ""
 
     # Loyalty
     POINTS_PER_REAL: float = 1.0           # pontos por R$ gasto
