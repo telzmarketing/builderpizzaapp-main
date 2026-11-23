@@ -49,6 +49,7 @@ jobs:
           $searchRoots | ForEach-Object { Write-Host "  $_" }
 
           $pathCandidates = @(
+            $env:ISCC_PATH,
             (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Path,
             (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
           ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
