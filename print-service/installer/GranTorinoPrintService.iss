@@ -15,7 +15,7 @@ SolidCompression=yes
 [Files]
 Source: "..\publish\win-x64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 [Run]
-Filename: "sc.exe"; Parameters: "create GranTorinoPrintService binPath= \"{app}\{#AppExeName}\" start= auto"; Flags: runhidden waituntilterminated
+Filename: "sc.exe"; Parameters: "create GranTorinoPrintService binPath= ""{app}\{#AppExeName}"" start= auto"; Flags: runhidden waituntilterminated
 Filename: "sc.exe"; Parameters: "start GranTorinoPrintService"; Flags: runhidden waituntilterminated
 [UninstallRun]
 Filename: "sc.exe"; Parameters: "stop GranTorinoPrintService"; Flags: runhidden waituntilterminated
