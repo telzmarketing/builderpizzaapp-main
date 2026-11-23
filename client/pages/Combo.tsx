@@ -56,7 +56,7 @@ export default function Combo({ kitId }: ComboProps) {
       }),
     };
     const primary = products[0];
-    addToCart(primary, 1, "Combo", [], [{ productId: primary.id, name: primary.name, price: primary.price, icon: primary.icon }], 1, promotionalTotal, undefined, undefined, undefined, undefined, undefined, undefined, kit);
+    addToCart(primary, 1, "Combo", [], [{ productId: primary.id, name: primary.name, price: primary.price, icon: primary.icon }], 1, promotionalTotal, undefined, undefined, undefined, undefined, undefined, undefined, undefined, kit);
     navigate("/cart");
   };
 
