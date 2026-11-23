@@ -134,6 +134,13 @@ class InventoryReplenishmentRequestIn(BaseModel):
     item_ids: list[str] | None = Field(default=None, min_length=1)
 
 
+class InventoryOutgoingReconciliationIn(BaseModel):
+    """Reconcile physical consumption for orders that already left production."""
+
+    from_date: date | None = None
+    to_date: date | None = None
+
+
 class InventoryPurchaseItemOut(BaseModel):
     id: str
     purchase_id: str

@@ -552,16 +552,22 @@ class InventoryService:
             return False
         return bool(settings.get("sales_control_enabled")) and bool(settings.get("auto_consume_on_preparing"))
 
-    def consume_order_sale(self, order_id: str) -> dict:
-        if not self.automatic_deduction_enabled():
+    def consume_order_sale(self, order_id: str, *, force: bool = False) -> dict:
+        # Normal preparing transitions retain the tenant setting.  Release
+        # transitions call this with force=True so an order can never leave
+        # the operation flow without a physical stock movement.
+        if not force and not self.automatic_deduction_enabled():
             return {"deducted": False, "reason": "disabled", "movements": 0}
         # Serialize retries and concurrent starts for the same tenant order.
         order = self._db.query(Order).filter(Order.id == order_id, Order.tenant_id == self._tenant_id).with_for_update().first()
         if not order:
             raise InventoryInvalidReference("Pedido nao encontrado para baixa de estoque.")
         status = getattr(order.status, "value", order.status)
-        if status != "preparing":
-            return {"deducted": False, "reason": "not_preparing", "movements": 0}
+        allowed_statuses = {"preparing"} if not force else {
+            "preparing", "ready_for_pickup", "on_the_way", "delivered",
+        }
+        if status not in allowed_statuses:
+            return {"deducted": False, "reason": "not_releasable", "movements": 0}
         # Persistent physical units choose the unit writer. Never charge the same
         # commercial order again when its stock gate/tentative writer is active.
         from backend.models.kds_production import ProductionUnit

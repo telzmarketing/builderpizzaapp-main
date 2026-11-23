@@ -50,7 +50,9 @@ def ensure_kds_units_ready(db: Session, tenant_id: str, order_id: str) -> None:
 
 
 class KdsProductionService:
-    def __init__(self, db: Session, context: TenantContext): self.db, self.tenant_id = db, context.tenant_id
+    def __init__(self, db: Session, context: TenantContext):
+        self.db, self.tenant_id = db, context.tenant_id
+        self._tenant_context = context
     def _now(self): return datetime.now(timezone.utc)
     @staticmethod
     def normalize_station(station_id: str | None) -> str:
@@ -606,6 +608,68 @@ class KdsProductionService:
             ))
         self.db.flush()
         return {"consumed": True, "reason": "ok", "lines": len(requirements)}
+
+    def consume_order_for_release(self, order_id: str, actor_id: str) -> dict:
+        """Guarantee physical consumption before an order leaves production.
+
+        The production setting controls the early KDS stock gate, but it must
+        not be possible for a completed order to leave without its physical
+        ingredients being debited.  This method is intentionally idempotent:
+        already-consumed attempts are attributed without creating movements.
+        """
+        order = self.db.query(Order).filter(
+            Order.tenant_id == self.tenant_id,
+            Order.id == order_id,
+            Order.archived_at.is_(None),
+        ).with_for_update().first()
+        if not order:
+            raise OrderNotFound(order_id)
+
+        units = self.db.query(ProductionUnit).filter(
+            ProductionUnit.tenant_id == self.tenant_id,
+            ProductionUnit.order_id == order_id,
+        ).order_by(ProductionUnit.id).with_for_update().all()
+
+        if not units:
+            # Legacy orders without physical units still use the canonical
+            # recipe/snapshot writer, now forced at release time.
+            from backend.services.inventory_service import InventoryService
+            return InventoryService(
+                self.db, order.tenant_id, self._context_for_inventory(), actor_id=actor_id,
+            ).consume_order_sale(order_id, force=True)
+
+        attempts = self.db.query(ProductionAttempt).filter(
+            ProductionAttempt.tenant_id == self.tenant_id,
+            ProductionAttempt.production_unit_id.in_([unit.id for unit in units]),
+        ).order_by(ProductionAttempt.production_unit_id, ProductionAttempt.attempt_number).all()
+        latest = {}
+        for attempt in attempts:
+            latest[attempt.production_unit_id] = attempt
+        if any(latest.get(unit.id) is None for unit in units):
+            raise KdsStockConflict(
+                "Nao foi possivel localizar a tentativa de producao da unidade.",
+                code="KdsUnitsIncomplete",
+            )
+
+        results = []
+        for unit in units:
+            attempt = latest[unit.id]
+            if unit.state != "ready" or attempt.state != "ready":
+                raise KdsStockConflict(
+                    "Todas as unidades precisam estar prontas antes da baixa de estoque.",
+                    code="KdsUnitsPending",
+                )
+            results.append(self.consume_attempt(attempt.id, actor_id, require_stock=True))
+        return {
+            "deducted": any(result.get("consumed") and result.get("reason") != "already_consumed" for result in results),
+            "reason": "already_deducted" if all(result.get("reason") == "already_consumed" for result in results) else "ok",
+            "movements": sum(int(result.get("lines", 0) or 0) for result in results),
+            "units": len(results),
+        }
+
+    def _context_for_inventory(self):
+        """Use the trusted context when available without widening KDS APIs."""
+        return getattr(self, "_tenant_context", None)
     def remake(self, task_id, actor_id, body):
         self._lock_station()
         a=self._unit(task_id,True)

@@ -23,6 +23,7 @@ from backend.schemas.inventory import (
     InventoryPurchaseIn,
     InventoryPurchaseOut,
     InventoryReplenishmentRequestIn,
+    InventoryOutgoingReconciliationIn,
     InventoryRecipeVersionIn,
     InventoryRecipeVersionOut,
     InventoryStockBalanceOut,
@@ -34,6 +35,7 @@ from backend.schemas.inventory import (
 )
 from backend.services.inventory_service import InventoryService
 from backend.services.inventory_adjustment_service import InventoryAdjustmentService
+from backend.services.order_service import OrderService
 
 router = APIRouter(prefix="/gestao/inventory", tags=["gestao-inventory"])
 
@@ -221,6 +223,18 @@ def create_purchase(body: InventoryPurchaseIn, db: Session = Depends(get_db), _a
 def create_replenishment_request(body: InventoryReplenishmentRequestIn | None = None, db: Session = Depends(get_db), _actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "create")), tenant_context: TenantContext | None = Depends(panel_operation_context)):
     try:
         return service(db, tenant_context, _actor).create_replenishment_request(body.item_ids if body is not None else None)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/reconcile-outgoing-orders")
+def reconcile_outgoing_orders(body: InventoryOutgoingReconciliationIn | None = None, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "manage")), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        context = tenant_context or actor.tenant_context
+        return OrderService(db, context).reconcile_inventory_for_outgoing_orders(
+            body.from_date if body else None,
+            body.to_date if body else None,
+        )
     except DomainError as exc:
         return err(exc)
 

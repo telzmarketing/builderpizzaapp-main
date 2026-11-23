@@ -17,7 +17,7 @@ from copy import deepcopy
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import inspect
+from sqlalchemy import inspect, func
 
 from backend.core.exceptions import (
     CartEmpty, OrderNotFound, OrderCancelled,
@@ -2032,6 +2032,9 @@ class OrderService:
         # State machine validates transition (raises InvalidStatusTransition if invalid)
         order_sm.transition(order_id, current, new_status)
 
+        if new_status in {"ready_for_pickup", "on_the_way", "delivered"}:
+            self._ensure_inventory_consumed_before_release(order.id, changed_by)
+
         old_status = current
         order.status = OrderStatus(new_status)
         order.updated_at = datetime.now(timezone.utc)
@@ -2118,6 +2121,7 @@ class OrderService:
             )
 
         order_sm.complete_local_fulfillment(order.id, current, fulfillment_type=order.fulfillment_type)
+        self._ensure_inventory_consumed_before_release(order.id, changed_by)
         now = datetime.now(timezone.utc)
         order.status = OrderStatus.delivered
         order.updated_at = now
@@ -2164,6 +2168,7 @@ class OrderService:
             raise DomainError("Somente pedidos do salao podem ser servidos.", code="DineInOnly")
         current = order.status.value if hasattr(order.status, "value") else str(order.status)
         order_sm.complete_local_fulfillment(order.id, current, fulfillment_type="dine_in")
+        self._ensure_inventory_consumed_before_release(order.id, changed_by)
         now = datetime.now(timezone.utc)
         order.status = OrderStatus.delivered
         order.delivered_at = now
@@ -2182,6 +2187,60 @@ class OrderService:
 
         order = self._get_order(order_id)
         InventoryService(self._db, order.tenant_id, self._tenant_context).consume_order_sale(order_id)
+
+    def _ensure_inventory_consumed_before_release(self, order_id: str, actor_id: str) -> dict:
+        from backend.services.kds_production_service import KdsProductionService
+
+        context = self._tenant_context or TenantContext(
+            tenant_id="tenant-legacy-default", source=TenantSource.JOB,
+        )
+        return KdsProductionService(self._db, context).consume_order_for_release(order_id, actor_id)
+
+    def reconcile_inventory_for_outgoing_orders(self, from_date=None, to_date=None) -> dict:
+        """Repair missed stock debits using the same idempotent release path."""
+        from datetime import date, time
+        from zoneinfo import ZoneInfo
+
+        local_tz = ZoneInfo("America/Sao_Paulo")
+        start_date = from_date or date.today()
+        end_date = to_date or start_date
+        if end_date < start_date:
+            raise DomainError("O periodo de reconciliacao e invalido.", code="InvalidDateRange")
+        start = datetime.combine(start_date, time.min, tzinfo=local_tz).astimezone(timezone.utc)
+        end = datetime.combine(end_date, time.max, tzinfo=local_tz).astimezone(timezone.utc)
+        operational_time = func.coalesce(
+            Order.delivered_at,
+            Order.out_for_delivery_at,
+            Order.ready_for_pickup_at,
+            Order.created_at,
+        )
+        orders = self._tenant_query(Order).filter(
+            Order.archived_at.is_(None),
+            Order.status.in_((OrderStatus.ready_for_pickup, OrderStatus.on_the_way, OrderStatus.delivered)),
+            operational_time >= start,
+            operational_time <= end,
+        ).order_by(operational_time, Order.created_at, Order.id).all()
+        result = {"from_date": start_date.isoformat(), "to_date": end_date.isoformat(),
+                  "scanned": len(orders), "reconciled": 0, "already_consumed": 0,
+                  "blocked": 0, "orders": []}
+        for order in orders:
+            try:
+                with self._db.begin_nested():
+                    effect = self._ensure_inventory_consumed_before_release(order.id, "system:inventory-reconciliation")
+                reason = effect.get("reason")
+                if reason == "already_deducted":
+                    result["already_consumed"] += 1
+                else:
+                    result["reconciled"] += 1
+                result["orders"].append({"order_id": order.id, "order_code": order.order_code,
+                                        "status": getattr(order.status, "value", order.status), **effect})
+            except DomainError as exc:
+                result["blocked"] += 1
+                result["orders"].append({"order_id": order.id, "order_code": order.order_code,
+                                        "status": getattr(order.status, "value", order.status),
+                                        "blocked": True, "code": exc.code, "message": exc.message})
+        self._db.commit()
+        return result
 
     def _reverse_inventory_for_cancelled_sale(self, order_id: str) -> None:
         from backend.services.inventory_service import InventoryService
