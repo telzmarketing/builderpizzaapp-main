@@ -18,8 +18,9 @@ import {
   X,
 } from "lucide-react";
 import {
-  getCommercialCategoryTabs,
+  getManualOrderCategoryTabs,
   getPreferredInitialCategory,
+  MANUAL_ORDER_PROMOTIONS_TAB,
   sortCommercialCategoryNames,
 } from "@/lib/catalogOrdering";
 import Product from "@/pages/Product";
@@ -391,7 +392,9 @@ export default function ManualOrderComposer({
   );
   const filteredProducts = catalog.filter(
     (product) =>
-      (!category || product.category === category) &&
+      (category === MANUAL_ORDER_PROMOTIONS_TAB
+        ? product.promotion_applied === true
+        : !category || product.category === category) &&
       `${product.name} ${product.description}`
         .toLocaleLowerCase()
         .includes(query.toLocaleLowerCase()),
@@ -806,14 +809,14 @@ export default function ManualOrderComposer({
                   />
                 </label>
                 <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
-                  {getCommercialCategoryTabs(categories).map((value) => (
+                  {getManualOrderCategoryTabs(categories).map((value) => (
                     <button
                       type="button"
                       key={value}
                       onClick={() => setCategory(value)}
                       className={`min-h-11 shrink-0 rounded-xl border px-4 text-sm font-bold transition-colors ${category === value ? "border-gold bg-gold text-black" : "border-surface-03 bg-surface-01 text-stone hover:border-gold/50 hover:text-cream"}`}
                     >
-                      {value || "Todos"}
+                      {value === MANUAL_ORDER_PROMOTIONS_TAB ? "Promoções" : value || "Todos"}
                     </button>
                   ))}
                 </div>
@@ -1512,14 +1515,14 @@ export default function ManualOrderComposer({
                 />
               </label>
               <div className="flex gap-2 overflow-x-auto pb-2">
-                {getCommercialCategoryTabs(categories).map((value) => (
+                {getManualOrderCategoryTabs(categories).map((value) => (
                   <button
                     type="button"
                     key={value}
                     onClick={() => setCategory(value)}
                     className={`min-h-12 shrink-0 rounded-full border px-4 font-bold ${category === value ? "border-gold bg-gold text-black" : "border-surface-03"}`}
                   >
-                    {value || "Todos"}
+                    {value === MANUAL_ORDER_PROMOTIONS_TAB ? "Promoções" : value || "Todos"}
                   </button>
                 ))}
               </div>

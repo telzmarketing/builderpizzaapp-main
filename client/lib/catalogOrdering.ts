@@ -29,6 +29,14 @@ export function getCommercialCategoryTabs(names: string[]) {
   return [...sortCommercialCategoryNames(names), ""];
 }
 
+/** Additional catalog tab used only by the shared manual-order composer. */
+export const MANUAL_ORDER_PROMOTIONS_TAB = "__manual_order_promotions__";
+
+export function getManualOrderCategoryTabs(names: string[]) {
+  const categories = sortCommercialCategoryNames(names);
+  return [...categories, MANUAL_ORDER_PROMOTIONS_TAB, ""];
+}
+
 /** Selects the first category that actually contains the preferred product type. */
 export function getPreferredInitialCategory(
   products: Array<Pick<ApiProduct, "category" | "product_type">>,

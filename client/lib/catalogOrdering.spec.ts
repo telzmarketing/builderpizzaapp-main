@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   getCommercialCategoryTabs,
+  getManualOrderCategoryTabs,
+  MANUAL_ORDER_PROMOTIONS_TAB,
   getPreferredInitialCategory,
   sortCommercialCategoryNames,
 } from "./catalogOrdering";
@@ -9,6 +11,11 @@ describe("commercial category ordering", () => {
   it("keeps pizzas first, beverages second, and the catch-all tab last", () => {
     expect(getCommercialCategoryTabs(["Todos", "Bebidas", "Doces", "Pizzas"]))
       .toEqual(["Pizzas", "Bebidas", "Doces", "Todos", ""]);
+  });
+
+  it("adds the manual-order promotions tab before the catch-all tab", () => {
+    expect(getManualOrderCategoryTabs(["Bebidas", "Pizzas"]))
+      .toEqual(["Pizzas", "Bebidas", MANUAL_ORDER_PROMOTIONS_TAB, ""]);
   });
 
   it("recognizes singular and accented commercial names", () => {
