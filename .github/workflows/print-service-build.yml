@@ -29,7 +29,11 @@ jobs:
             "$chocoRoot\lib\InnoSetup",
             'C:\ProgramData\chocolatey\bin',
             'C:\Program Files (x86)\Inno Setup 6',
-            'C:\Program Files\Inno Setup 6'
+            'C:\Program Files (x86)\Inno Setup 7',
+            'C:\Program Files\Inno Setup 6',
+            'C:\Program Files\Inno Setup 7',
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6",
+            "$env:LOCALAPPDATA\Programs\Inno Setup 7"
           ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) } | Select-Object -Unique
 
           Write-Host 'Inno Setup discovery roots:'
