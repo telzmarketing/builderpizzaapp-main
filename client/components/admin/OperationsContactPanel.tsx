@@ -11,8 +11,10 @@ import { isPendingChatbotConversation } from "@/lib/chatbotAttendance";
 import {
   contactConversationKey,
   isContactConversationUnread,
+  loadContactNotificationReadState,
   pendingChatbotConversations,
   pendingWhatsAppConversations,
+  saveContactNotificationReadState,
 } from "@/lib/contactNotificationCounts";
 
 type Channel = "chatbot" | "whatsapp";
@@ -29,6 +31,7 @@ function conversationActivityMarker(
 }
 
 export default function OperationsContactPanel() {
+  const persistedReadState = useRef(loadContactNotificationReadState());
   const [channel, setChannel] = useState<Channel>("chatbot");
   const [open, setOpen] = useState(false);
   const [chatbot, setChatbot] = useState<ChatbotConversation[]>([]);
@@ -41,8 +44,8 @@ export default function OperationsContactPanel() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [openedConversationKeys, setOpenedConversationKeys] = useState<Set<string>>(new Set());
-  const openedConversationMarkers = useRef(new Map<string, string>());
+  const [openedConversationKeys, setOpenedConversationKeys] = useState<Set<string>>(() => new Set(persistedReadState.current.opened));
+  const openedConversationMarkers = useRef(new Map(persistedReadState.current.markers));
   const actionRef = useRef(false);
   const detailRequest = useRef(0);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -91,6 +94,7 @@ export default function OperationsContactPanel() {
       const nextWhatsApp = wa ?? [];
       setOpenedConversationKeys((current) => {
         const next = new Set(current);
+        let changed = false;
         for (const item of [...nextChatbot, ...nextWhatsApp]) {
           const channel = "ai_enabled" in item ? "whatsapp" : "chatbot";
           const key = contactConversationKey(channel, item.id);
@@ -98,9 +102,11 @@ export default function OperationsContactPanel() {
           if (marker && marker !== conversationActivityMarker(channel, item)) {
             next.delete(key);
             openedConversationMarkers.current.delete(key);
+            changed = true;
           }
         }
-        return next;
+        if (changed) saveContactNotificationReadState({ opened: next, markers: openedConversationMarkers.current });
+        return changed ? next : current;
       });
       setChatbot(nextChatbot);
       setWhatsapp(nextWhatsApp);
@@ -127,6 +133,7 @@ export default function OperationsContactPanel() {
     setOpenedConversationKeys((current) => {
       const next = new Set(current);
       next.add(contactConversationKey(itemChannel, item.id));
+      saveContactNotificationReadState({ opened: next, markers: openedConversationMarkers.current });
       return next;
     });
     const request = ++detailRequest.current;
