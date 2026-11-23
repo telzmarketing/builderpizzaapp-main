@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   canCreateManualOrder,
+  closedKitManualLine,
   configuredManualLine,
   simpleManualLine,
 } from "./manualOrder";
-import type { ApiEffectivePermissions, ApiProduct } from "./api";
+import type { ApiEffectivePermissions, ApiProduct, ApiPromotionalKit } from "./api";
 
 describe("operator order adaptation", () => {
   it("uses create permission independently of editing existing orders", () => {
@@ -109,5 +110,37 @@ describe("operator order adaptation", () => {
     } as ApiProduct;
     expect(simpleManualLine(product, "line", 4).item.quantity).toBe(4);
     expect(simpleManualLine(product, "line").item.quantity).toBe(1);
+  });
+
+  it("creates a closed promotional kit as one quote line", () => {
+    const kit = {
+      id: "kit-1",
+      name: "Combo Família",
+      slug: "combo-familia",
+      description: "Pizza e bebidas",
+      icon: "🎁",
+      kit_type: "kit",
+      price_original: 70,
+      price_promotional: 55,
+      discount_type: "fixed",
+      discount_value: 55,
+      valid_until: null,
+      active: true,
+      image_url: null,
+      video_url: null,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      items: [{ id: "item-1", kit_id: "kit-1", product_id: "pizza-1", quantity: 1 }],
+    } as ApiPromotionalKit;
+    const line = closedKitManualLine(kit, "line-1");
+
+    expect(line.item).toMatchObject({
+      kit_id: "kit-1",
+      quantity: 1,
+      selected_size: "Combo",
+      final_price: 55,
+    });
+    expect(line.item.product_id).toBeUndefined();
+    expect(line.item.flavors).toEqual([]);
   });
 });

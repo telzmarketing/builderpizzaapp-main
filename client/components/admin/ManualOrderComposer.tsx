@@ -26,6 +26,7 @@ import {
 import Product from "@/pages/Product";
 import {
   ApiRequestError,
+  campaignsApi,
   customersApi,
   manualOrdersApi,
   ordersApi,
@@ -37,6 +38,7 @@ import {
   type ApiCustomer,
   type ApiOrder,
   type ApiProduct,
+  type ApiPromotionalKit,
   type ManualOrderIn,
   type ManualOrderQuote,
   type PartnerOrderOrigin,
@@ -46,6 +48,7 @@ import {
   canCreateManualOrder,
   configuredManualLine,
   newManualOrderKey,
+  closedKitManualLine,
   simpleManualLine,
   type ManualCartLine,
 } from "@/lib/manualOrder";
@@ -105,6 +108,49 @@ function QuotePromotionsSummary({ quote, lines }: { quote: ManualOrderQuote; lin
         </p>
       ))}
     </div>
+  );
+}
+
+function PromotionalKitCard({
+  kit,
+  products,
+  onAdd,
+}: {
+  kit: ApiPromotionalKit;
+  products: ApiProduct[];
+  onAdd: (kit: ApiPromotionalKit) => void;
+}) {
+  const original = kit.price_original;
+  const promotional = kit.price_promotional;
+  return (
+    <button
+      type="button"
+      onClick={() => onAdd(kit)}
+      className="group relative flex min-h-44 min-w-0 flex-col items-center gap-3 rounded-2xl border border-surface-03 bg-surface-02 p-4 text-center transition-all hover:-translate-y-0.5 hover:border-gold/60"
+    >
+      <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl bg-surface-03">
+        {kit.image_url && isAssetUrl(kit.image_url) ? (
+          <img src={resolveOptimizedAssetUrl(kit.image_url, 160)} alt="" className="h-full w-full object-contain" loading="lazy" />
+        ) : (
+          <span className="text-5xl">{kit.icon || "🎁"}</span>
+        )}
+      </div>
+      <strong className="px-2">{kit.name}</strong>
+      <span className="text-xs text-stone">
+        {kit.items.map((item) => {
+          const product = products.find((candidate) => candidate.id === item.product_id);
+          return `${item.quantity}x ${product?.name || item.product_id}`;
+        }).join(" · ") || "Combo sem composição"}
+      </span>
+      <div className="flex items-baseline gap-2">
+        {original > promotional && <span className="text-xs text-stone line-through">{money(original)}</span>}
+        <span className="text-base font-black text-gold">{money(promotional)}</span>
+      </div>
+      <span className="text-xs font-bold text-emerald-300">Adicionar combo</span>
+      <span className="absolute bottom-3 right-3 grid h-9 w-9 place-items-center rounded-full bg-gold text-cream">
+        <Plus size={17} />
+      </span>
+    </button>
   );
 }
 const errorText = (error: unknown) =>
@@ -192,6 +238,7 @@ export default function ManualOrderComposer({
   const [sessionChanged, setSessionChanged] = useState(false);
   const [step, setStep] = useState<number>(mode === "pos" ? 1 : (defaultStep ?? 0));
   const [catalog, setCatalog] = useState<ApiProduct[]>([]);
+  const [promotionalKits, setPromotionalKits] = useState<ApiPromotionalKit[]>([]);
   const [customers, setCustomers] = useState<ApiCustomer[]>([]);
   const [flavorConfig, setFlavorConfig] = useState<MultiFlavorsConfig | null>(
     null,
@@ -258,6 +305,7 @@ export default function ManualOrderComposer({
     setLoadError("");
     const results = await Promise.allSettled([
       productsApi.list(true, undefined, "delivery"),
+      campaignsApi.listKits(true),
       customersApi.list(),
       productsApi.getMultiFlavorsConfig(),
     ]);
@@ -277,9 +325,10 @@ export default function ManualOrderComposer({
         }
       }
     }
-    if (results[1].status === "fulfilled") setCustomers(results[1].value);
-    if (results[2].status === "fulfilled") {
-      const value = results[2].value;
+    if (results[1].status === "fulfilled") setPromotionalKits(results[1].value);
+    if (results[2].status === "fulfilled") setCustomers(results[2].value);
+    if (results[3].status === "fulfilled") {
+      const value = results[3].value;
       setFlavorConfig({
         maxFlavors: value.max_flavors,
         pricingRule: value.pricing_rule,
@@ -399,6 +448,12 @@ export default function ManualOrderComposer({
         .toLocaleLowerCase()
         .includes(query.toLocaleLowerCase()),
   );
+  const filteredPromotionalKits = promotionalKits.filter((kit) => {
+    const notExpired = !kit.valid_until || new Date(kit.valid_until).getTime() > Date.now();
+    return notExpired && `${kit.name} ${kit.description || ""}`
+      .toLocaleLowerCase()
+      .includes(query.toLocaleLowerCase());
+  });
   const filteredCustomers = customerQuery.trim()
     ? customers
         .filter(
@@ -433,6 +488,10 @@ export default function ManualOrderComposer({
         setJustAdded((current) => (current === product.id ? null : current)),
       1500,
     );
+  }
+
+  function handlePromotionalKitAction(kit: ApiPromotionalKit) {
+    patch({ lines: [...draft.lines, closedKitManualLine(kit, newManualOrderKey())] });
   }
 
   function setProductQuantity(productId: string, value: string) {
@@ -821,6 +880,9 @@ export default function ManualOrderComposer({
                   ))}
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                  {category === MANUAL_ORDER_PROMOTIONS_TAB && filteredPromotionalKits.map((kit) => (
+                    <PromotionalKitCard key={`kit-${kit.id}`} kit={kit} products={catalog} onAdd={handlePromotionalKitAction} />
+                  ))}
                   {filteredProducts.map((product) => (
                     <div
                       key={product.id}
@@ -932,7 +994,7 @@ export default function ManualOrderComposer({
                     </div>
                   ))}
                 </div>
-                {!filteredProducts.length && !loading && (
+                {!filteredProducts.length && !filteredPromotionalKits.length && !loading && (
                   <p className="py-12 text-center text-stone">
                     Nenhum produto nesta seleção.
                   </p>
@@ -1527,6 +1589,9 @@ export default function ManualOrderComposer({
                 ))}
               </div>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                {category === MANUAL_ORDER_PROMOTIONS_TAB && filteredPromotionalKits.map((kit) => (
+                  <PromotionalKitCard key={`kit-${kit.id}`} kit={kit} products={catalog} onAdd={handlePromotionalKitAction} />
+                ))}
                 {filteredProducts.map((product) => (
                   <div
                     key={product.id}
@@ -1632,7 +1697,7 @@ export default function ManualOrderComposer({
                   </div>
                 ))}
               </div>
-              {!filteredProducts.length && !loading && (
+              {!filteredProducts.length && !filteredPromotionalKits.length && !loading && (
                 <p className="py-8 text-center text-stone">
                   Nenhum produto nesta seleção.
                 </p>

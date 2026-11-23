@@ -3,6 +3,7 @@ import type { CartPromotionMeta } from "@/context/AppContext";
 import type {
   ApiEffectivePermissions,
   ApiProduct,
+  ApiPromotionalKit,
   CheckoutItemIn,
 } from "./api";
 
@@ -120,6 +121,27 @@ export function simpleManualLine(
       selected_border_name: null,
       selected_drink_variant_id: null,
       selected_drink_variant_name: null,
+    },
+  };
+}
+
+export function closedKitManualLine(
+  kit: ApiPromotionalKit,
+  id: string,
+): ManualCartLine {
+  return {
+    id,
+    name: kit.name,
+    item: {
+      kit_id: kit.id,
+      quantity: 1,
+      selected_size: "Combo",
+      flavor_division: 1,
+      flavors: [],
+      final_price: kit.price_promotional,
+      add_ons: [],
+      notes: null,
+      option_selections: [],
     },
   };
 }
