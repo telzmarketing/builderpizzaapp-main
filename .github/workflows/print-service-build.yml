@@ -18,9 +18,7 @@ jobs:
           dotnet-version: 8.x
       - name: Install Inno Setup
         shell: powershell
-        run: |
-          choco install innosetup --no-progress --yes --force
-          if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar o pacote innosetup via Chocolatey (exit code $LASTEXITCODE)." }
+        run: choco install innosetup --no-progress -y --force
       - name: Locate Inno Setup compiler
         shell: powershell
         run: |
