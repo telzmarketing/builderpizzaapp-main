@@ -6,10 +6,27 @@ $artifacts = Join-Path $root 'artifacts'
 $installerScript = Join-Path $root 'installer/GranTorinoPrintService.iss'
 $installerOutput = Join-Path $artifacts 'GranTorinoPrintService-Setup.exe'
 
+$root = (Resolve-Path -LiteralPath $root).Path
+$project = (Resolve-Path -LiteralPath $project).Path
+$installerScript = (Resolve-Path -LiteralPath $installerScript).Path
+$publish = [IO.Path]::GetFullPath($publish)
+$artifacts = [IO.Path]::GetFullPath($artifacts)
+$installerOutput = [IO.Path]::GetFullPath($installerOutput)
+
+Write-Host "Build root: $root"
+Write-Host "Project: $project"
+Write-Host "Publish output: $publish"
+Write-Host "Artifacts output: $artifacts"
+Write-Host "Expected installer: $installerOutput"
+
+if (-not (Test-Path -LiteralPath $project -PathType Leaf)) { throw "Projeto nao encontrado: $project" }
+if (-not (Test-Path -LiteralPath $installerScript -PathType Leaf)) { throw "Script Inno Setup nao encontrado: $installerScript" }
+
 New-Item -Path $artifacts -ItemType Directory -Force | Out-Null
+Get-ChildItem -LiteralPath $artifacts -Force -ErrorAction SilentlyContinue |
+    Remove-Item -Recurse -Force
 Remove-Item $publish -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -Path $publish -ItemType Directory -Force | Out-Null
-Remove-Item $installerOutput -Force -ErrorAction SilentlyContinue
 
 dotnet restore $project
 dotnet publish $project -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o $publish
@@ -17,7 +34,7 @@ dotnet publish $project -c Release -r win-x64 --self-contained true -p:PublishSi
 $isccCandidates = @()
 if ($env:ISCC_PATH) { $isccCandidates += $env:ISCC_PATH }
 $isccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
-if ($isccCommand) { $isccCandidates += $isccCommand.Source }
+if ($isccCommand) { $isccCandidates += $isccCommand.Path; $isccCandidates += $isccCommand.Source }
 if ($env:ChocolateyInstall) {
     $isccCandidates += (Join-Path $env:ChocolateyInstall 'bin/ISCC.exe')
     $isccCandidates += (Join-Path $env:ChocolateyInstall 'lib/innosetup/tools/ISCC.exe')
@@ -39,7 +56,9 @@ if (-not $isccPath) {
 }
 
 Write-Host "Using Inno Setup compiler: $isccPath"
-& $isccPath $installerScript
+$isccPath = (Resolve-Path -LiteralPath $isccPath).Path
+Write-Host "Invoking ISCC with absolute output directory: /O$artifacts"
+& $isccPath "/O$artifacts" $installerScript
 if ($LASTEXITCODE -ne 0) {
     Write-Error "ISCC.exe falhou com exit code $LASTEXITCODE. Esperado: $installerOutput"
     exit $LASTEXITCODE
@@ -55,3 +74,7 @@ if (-not (Test-Path -LiteralPath $installerOutput -PathType Leaf)) {
     Write-Error "Instalador nao foi produzido em $installerOutput. Conteudo de artifacts: $artifactList"
     exit 1
 }
+if ((Get-Item -LiteralPath $installerOutput).Length -le 0) {
+    throw "Instalador vazio: $installerOutput"
+}
+Write-Host "Installer ready: $installerOutput ($((Get-Item -LiteralPath $installerOutput).Length) bytes)"
