@@ -2084,7 +2084,8 @@ export const adminOrderBoardApi = {
 export interface CheckoutItemIn {
   selected_border_id?: string | null;
   selected_border_name?: string | null;
-  product_id: string;
+  product_id?: string;
+  kit_id?: string;
   quantity: number;
   selected_size: string;
   selected_size_id?: string | null;

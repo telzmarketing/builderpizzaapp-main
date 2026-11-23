@@ -23,13 +23,14 @@ class OptionSelectionIn(BaseModel):
 
 
 class CartItemIn(BaseModel):
-    product_id: str
+    product_id: Optional[str] = None
+    kit_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
     quantity: int = Field(ge=1)
-    selected_size: str
+    selected_size: str = "Unico"
     selected_size_id: Optional[str] = None  # ID of the ProductSize row for server-side price validation
     flavor_division: int = Field(ge=1, le=3, default=1)
-    flavors: list[FlavorIn]
-    final_price: float
+    flavors: list[FlavorIn] = Field(default_factory=list)
+    final_price: float = 0.0
     add_ons: list[str] = []
     option_selections: list[OptionSelectionIn] = Field(default_factory=list, max_length=100)
     # Pizza crust selection
@@ -41,6 +42,12 @@ class CartItemIn(BaseModel):
     selected_drink_variant_id: Optional[str] = None
     selected_drink_variant_name: Optional[str] = None
     notes: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_product_or_kit(self):
+        if bool(self.product_id) == bool(self.kit_id):
+            raise ValueError("Informe produto ou combo fechado, nunca ambos.")
+        return self
 
 
 class DeliveryAddressIn(BaseModel):

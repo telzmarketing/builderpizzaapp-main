@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ShoppingCart, Package } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { campaignsApi, isAssetUrl, productsApi, resolveOptimizedAssetUrl, type ApiProduct, type ApiPromotionalKit } from "@/lib/api";
-import { useApp } from "@/context/AppContext";
+import { useApp, type CartKitMeta } from "@/context/AppContext";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 
@@ -17,15 +17,26 @@ export default function Combo({ kitId }: ComboProps) {
   const [combo, setCombo] = useState<ApiPromotionalKit | null>(null);
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     const lookup = kitId || slug;
     if (!lookup) return;
     const loadKit = kitId ? campaignsApi.getKitById(kitId) : campaignsApi.getKitBySlug(slug!);
     loadKit.then(async (kit) => {
-      setCombo(kit);
       const loaded = await Promise.all(kit.items.map((item) => productsApi.get(item.product_id).catch(() => null)));
-      setProducts(loaded.filter(Boolean) as ApiProduct[]);
+      if (loaded.some((product) => !product)) {
+        setLoadError(true);
+        setCombo(null);
+        setProducts([]);
+        return;
+      }
+      setCombo(kit);
+      setProducts(loaded as ApiProduct[]);
+    }).catch(() => {
+      setLoadError(true);
+      setCombo(null);
+      setProducts([]);
     }).finally(() => setLoading(false));
   }, [kitId, slug]);
 
@@ -34,21 +45,23 @@ export default function Combo({ kitId }: ComboProps) {
   const promotionalTotal = combo?.price_promotional || originalTotal;
 
   const buyCombo = () => {
-    if (!combo) return;
-    const factor = originalTotal > 0 ? promotionalTotal / originalTotal : 1;
-    combo.items.forEach((item) => {
-      const product = productMap.get(item.product_id);
-      if (!product) return;
-      const unitPrice = +(product.price * factor).toFixed(2);
-      for (let index = 0; index < item.quantity; index += 1) {
-        addToCart(product, 1, "M", [], [{ productId: product.id, name: product.name, price: unitPrice, icon: product.icon }], 1, unitPrice);
-      }
-    });
+    if (!combo || products.length !== combo.items.length || combo.items.some((item) => !productMap.has(item.product_id))) return;
+    const kit: CartKitMeta = {
+      instanceId: `kit-${combo.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: combo.id,
+      name: combo.name,
+      components: combo.items.map((item) => {
+        const product = productMap.get(item.product_id)!;
+        return { productId: product.id, name: product.name, icon: product.icon, quantity: item.quantity };
+      }),
+    };
+    const primary = products[0];
+    addToCart(primary, 1, "Combo", [], [{ productId: primary.id, name: primary.name, price: primary.price, icon: primary.icon }], 1, promotionalTotal, undefined, undefined, undefined, undefined, undefined, undefined, kit);
     navigate("/cart");
   };
 
   if (loading) return <div className="min-h-screen bg-surface-00 flex items-center justify-center text-gold">Carregando combo...</div>;
-  if (!combo) return <div className="min-h-screen bg-surface-00 flex flex-col items-center justify-center gap-4 text-cream"><p>Combo indisponível.</p><button className="text-gold" onClick={() => navigate("/promocoes")}>Voltar</button></div>;
+  if (!combo) return <div className="min-h-screen bg-surface-00 flex flex-col items-center justify-center gap-4 text-cream"><p>{loadError ? "Não foi possível carregar todos os itens do combo." : "Combo indisponível."}</p><button className="text-gold" onClick={() => navigate("/promocoes")}>Voltar</button></div>;
 
   return <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 pb-24">
     <header className="bg-brand-dark px-4 py-3 flex items-center justify-between sticky top-0 z-30 border-b border-surface-02">

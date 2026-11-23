@@ -48,6 +48,7 @@ from backend.schemas.order import CheckoutIn, CartItemIn, FlavorIn, OrderStatusU
 from backend.services.customer_metrics_service import sync_customer_order_metrics
 from backend.services.product_pricing_service import ProductPriceResult, ProductPricingService, normalize_crust_price_addition
 from backend.services.product_category_service import effective_capabilities
+from backend.services.combo_service import ComboService, ResolvedComboComponent
 
 
 # ── Pricing helpers (shared with front-end logic) ─────────────────────────────
@@ -292,8 +293,10 @@ class OrderService:
         self._own(address)
         self._db.add(address)
 
-    def _validate_item(self, item: CartItemIn, config: MultiFlavorsConfig, *, channel: str = "delivery"):
+    def _validate_item(self, item: CartItemIn, config: MultiFlavorsConfig, *, channel: str = "delivery", combo_component: bool = False):
         """Resolve selections and prices from the tenant catalog; client labels are hints only."""
+        if not item.product_id:
+            raise ProductNotFound(item.product_id or "")
         if len(item.flavors) != item.flavor_division:
             raise FlavorDivisionMismatch(item.product_id, item.flavor_division, len(item.flavors))
         if item.flavor_division > config.max_flavors:
@@ -325,7 +328,7 @@ class OrderService:
             return row
 
         size = option(ProductSize, item.selected_size_id, "Tamanho") if capabilities["enable_sizes"] else None
-        if size is None and capabilities["enable_sizes"] and any(candidate.active for candidate in product.sizes):
+        if size is None and not combo_component and capabilities["enable_sizes"] and any(candidate.active for candidate in product.sizes):
             raise DomainError("Selecione um tamanho valido.", code="ProductSizeRequired")
         crust = option(ProductCrustType, item.selected_crust_type_id, "Massa") if capabilities["enable_dough"] else None
         border = option(ProductCrustType, item.selected_border_id, "Borda") if capabilities["enable_border"] else None
@@ -428,7 +431,7 @@ class OrderService:
         )
         if not capabilities["enable_promotions"]:
             pricing = ProductPriceResult(standard_price=pricing.standard_price, final_price=pricing.standard_price)
-        item.selected_size = size.label if size else "Unico"
+        item.selected_size = size.label if size else ("Combo" if combo_component else "Unico")
         item.selected_crust_type_name = crust.name if crust else None
         item.selected_border_name = border.name if border else None
         item.selected_drink_variant_name = variant.name if variant else None
@@ -534,11 +537,27 @@ class OrderService:
             scheduled_for=payload.delivery.scheduled_for if payload.delivery else None,
         )
 
+        if any(item.kit_id for item in payload.items):
+            expanded_items, combo_components = ComboService(self._db, self._tenant_context).expand(payload.items)
+        else:
+            expanded_items, combo_components = payload.items, {}
         config = self._get_config()
         items: list[dict] = []
         subtotal = 0.0
-        for item in payload.items:
-            unit_price, flavor_products, pricing, size_obj, crust_obj = self._validate_item(item, config)
+        for item in expanded_items:
+            combo = combo_components.get(id(item))
+            unit_price, flavor_products, pricing, size_obj, crust_obj = self._validate_item(
+                item, config, combo_component=combo is not None,
+            )
+            if combo:
+                unit_price = combo.unit_price
+                pricing = ProductPriceResult(
+                    standard_price=pricing.standard_price,
+                    final_price=unit_price,
+                    promotion_id=combo.kit_id,
+                    promotion_name=f"Combo fechado: {combo.kit_name}",
+                    discount_amount=max(0.0, pricing.standard_price - unit_price),
+                )
             line_total = round(unit_price * item.quantity, 2)
             subtotal += line_total
             items.append({
@@ -573,7 +592,7 @@ class OrderService:
                     for product in flavor_products
                 ],
             })
-        self._validate_inventory_items(payload.items)
+        self._validate_inventory_items(expanded_items)
         subtotal = round(subtotal, 2)
 
         from backend.services.shipping_service import ShippingService
@@ -1283,16 +1302,32 @@ class OrderService:
             scheduled_for=payload.delivery.scheduled_for if payload.delivery else None,
         )
 
+        if any(item.kit_id for item in payload.items):
+            expanded_items, combo_components = ComboService(self._db, self._tenant_context).expand(payload.items)
+        else:
+            expanded_items, combo_components = payload.items, {}
         config = self._get_config()
 
         # 1. Validate items and compute subtotal
         item_data: list[tuple[CartItemIn, float, list[Product], ProductPriceResult, ProductSize | None, ProductCrustType | None]] = []
         subtotal = 0.0
-        for item in payload.items:
-            unit_price, flavor_products, pricing, size_obj, crust_obj = self._validate_item(item, config)
+        for item in expanded_items:
+            combo = combo_components.get(id(item))
+            unit_price, flavor_products, pricing, size_obj, crust_obj = self._validate_item(
+                item, config, combo_component=combo is not None,
+            )
+            if combo:
+                unit_price = combo.unit_price
+                pricing = ProductPriceResult(
+                    standard_price=pricing.standard_price,
+                    final_price=unit_price,
+                    promotion_id=combo.kit_id,
+                    promotion_name=f"Combo fechado: {combo.kit_name}",
+                    discount_amount=max(0.0, pricing.standard_price - unit_price),
+                )
             subtotal += unit_price * item.quantity
             item_data.append((item, unit_price, flavor_products, pricing, size_obj, crust_obj))
-        self._validate_inventory_items(payload.items)
+        self._validate_inventory_items(expanded_items)
         subtotal = round(subtotal, 2)
         coupon_blocker = next((pricing for _, _, _, pricing, _, _ in item_data if pricing.blocks_other_coupons), None)
         promotion_free_shipping = any(pricing.free_shipping for _, _, _, pricing, _, _ in item_data)

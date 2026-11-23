@@ -2,6 +2,7 @@ import { getStoreRefreshPlan, type CatalogBootstrapPlan } from "@/lib/storeRefre
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { firePixelEvent, getTrackingData } from "@/lib/tracking";
 import { readPlatformSupportSession } from "@/lib/platformSupportSession";
+import { cartItemIdsForRemoval } from "@/lib/cartKits";
 import {
   productsApi,
   promotionsApi,
@@ -59,6 +60,20 @@ export interface CartItemOptionSelection {
   priceAddition: number;
 }
 
+export interface CartKitComponent {
+  productId: string;
+  name: string;
+  icon: string;
+  quantity: number;
+}
+
+export interface CartKitMeta {
+  instanceId: string;
+  id: string;
+  name: string;
+  components: CartKitComponent[];
+}
+
 export interface CartItem {
   cartItemId: string;
   productId: string;
@@ -86,6 +101,7 @@ export interface CartItem {
   promotionGiftName?: string | null;
   promotionGiftIcon?: string | null;
   promotionBlocksOtherCoupons?: boolean;
+  kit?: CartKitMeta;
 }
 
 export interface CartPromotionMeta {
@@ -323,7 +339,8 @@ interface AppContextType {
     sizeId?: string,
     promotion?: CartPromotionMeta
     , border?: CartItemVariation | null,
-    selectedOptions?: CartItemOptionSelection[]
+    selectedOptions?: CartItemOptionSelection[],
+    kit?: CartKitMeta
   ) => void;
   updateCartItem: (cartItemId: string, quantity: number, size: string, addOns: string[]) => void;
   removeFromCart: (cartItemId: string) => void;
@@ -927,7 +944,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sizeId?: string,
     promotion?: CartPromotionMeta
     , border?: CartItemVariation | null,
-    selectedOptions?: CartItemOptionSelection[]
+    selectedOptions?: CartItemOptionSelection[],
+    kit?: CartKitMeta
   ) => {
     const cartItemId = `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const isFixedFlavorCombination = isFixedFlavorCombinationProduct(primaryProduct);
@@ -970,6 +988,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         promotionGiftName: promotion?.giftName ?? null,
         promotionGiftIcon: promotion?.giftIcon ?? null,
         promotionBlocksOtherCoupons: !!promotion?.blocksOtherCoupons,
+        kit,
       },
     ]);
     const _td = getTrackingData();
@@ -987,13 +1006,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateCartItem = (cartItemId: string, quantity: number, size: string, addOns: string[]) =>
-    setCart((prev) =>
-      prev.map((item) =>
-        item.cartItemId === cartItemId
-          ? { ...item, quantity, selectedSize: size, selectedAddOns: addOns }
-          : item
-      )
-    );
+    setCart((prev) => {
+      const target = prev.find((item) => item.cartItemId === cartItemId);
+      if (target?.kit?.instanceId) return prev;
+      return prev.map((item) => item.cartItemId === cartItemId
+        ? { ...item, quantity, selectedSize: size, selectedAddOns: addOns }
+        : item);
+    });
 
   const removeFromCart = (cartItemId: string) => {
     const item = cart.find((i) => i.cartItemId === cartItemId);
@@ -1007,7 +1026,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         session_id: _td.session_id,
       }).catch(() => {});
     }
-    setCart((prev) => prev.filter((i) => i.cartItemId !== cartItemId));
+    setCart((prev) => {
+      const target = prev.find((i) => i.cartItemId === cartItemId);
+      const removedIds = new Set(cartItemIdsForRemoval(prev, cartItemId));
+      return target ? prev.filter((i) => !removedIds.has(i.cartItemId)) : prev;
+    });
   };
 
   const clearCart = () => setCart([]);

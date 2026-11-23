@@ -7,6 +7,7 @@ import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import StoreStatusBanner from "@/components/StoreStatusBanner";
+import { groupCartItems, type CartItemGroup } from "@/lib/cartKits";
 
 const CheckoutUpsell = lazy(() => import("@/pages/checkout/CheckoutUpsell"));
 
@@ -88,6 +89,31 @@ function CartItemRow({ item, onRemove, onUpdate }: {
   );
 }
 
+function CartKitRow({ group, onRemove }: { group: Extract<CartItemGroup, { kind: "kit" }>; onRemove: () => void }) {
+  const icons = group.kit.components.map((component) => component.icon);
+  const total = group.items.reduce((sum, item) => sum + item.finalPrice * item.quantity, 0);
+  return (
+    <div className="bg-surface-02 rounded-2xl p-4 border border-gold/40">
+      <div className="flex min-w-0 items-start gap-3">
+        <CartProductIcon icons={icons} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-cream font-semibold text-sm leading-tight break-words">{group.kit.name}</h3>
+            <button onClick={onRemove} aria-label={`Remover ${group.kit.name}`} className="text-stone hover:text-red-400 transition-colors">
+              <Trash2 size={17} />
+            </button>
+          </div>
+          <p className="text-gold text-xs font-semibold mt-1">Kit promocional · composição fechada</p>
+          <ul className="mt-2 space-y-1 text-xs text-stone">
+            {group.kit.components.map((component) => <li key={`${group.key}-${component.productId}`}>{component.quantity}x {component.name}</li>)}
+          </ul>
+          <p className="text-gold font-bold text-sm mt-2">R$ {total.toFixed(2)}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const SIZE_LABEL: Record<string, string> = {
   Brotinho: "Pizza Individual",
   "Pizza Broto": "Pizza Individual",
@@ -107,6 +133,7 @@ export default function Cart() {
   const { cart, removeFromCart, updateCartItem, cartSubtotal, cartDeliveryFee, siteContent, customer } = useApp();
   const { pages, nav } = siteContent;
   const c = pages.cart;
+  const cartGroups = useMemo(() => groupCartItems(cart), [cart]);
 
   const [couponCode, setCouponCode] = useState("");
   const [couponDiscount, setCouponDiscount] = useState(0);
@@ -259,7 +286,11 @@ export default function Cart() {
           <h2 className="text-sm font-bold uppercase tracking-wide text-gold-light">
             {selectedItemsTitle}
           </h2>
-          {cart.map((item) => {
+          {cartGroups.map((group) => {
+            if (group.kind === "kit") {
+              return <CartKitRow key={group.key} group={group} onRemove={() => removeFromCart(group.items[0].cartItemId)} />;
+            }
+            const item = group.item;
             const promotionGift = promotionGiftByCartItemId.get(item.cartItemId);
             return (
               <Fragment key={item.cartItemId}>

@@ -23,6 +23,7 @@ import {
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { checkoutTrackingPayload, trackEvent, getTrackingData, firePixelEvent } from "@/lib/tracking";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
+import { groupCartItems } from "@/lib/cartKits";
 import { scheduleShippingQuote } from "@/lib/checkoutShipping";
 import { useApp } from "@/context/AppContext";
 import {
@@ -114,6 +115,7 @@ function statusClass(state: PaymentState): string {
 export default function Checkout() {
   const navigate = useNavigate();
   const { cart, cartSubtotal, clearCart, siteContent, customer, customerLogout } = useApp();
+  const cartGroups = useMemo(() => groupCartItems(cart), [cart]);
   const c = siteContent.pages.checkout;
 
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("delivery");
@@ -640,36 +642,36 @@ export default function Checkout() {
     const tracking = checkoutTrackingPayload();
     const changeFor = Number(cashChangeFor.replace(",", "."));
     const payload: CheckoutIn = {
-      items: cart.map((item) => ({
-        product_id: item.productId,
-        quantity: item.quantity,
-        selected_size: item.selectedSize,
-        selected_size_id: item.selectedSizeId ?? null,
-        flavor_division: item.flavorDivision,
-        flavors: item.flavors.map((f) => ({
-          product_id: f.productId,
-          name: f.name,
-          price: f.price,
-          icon: f.icon,
-        })),
-        final_price: item.finalPrice,
-        add_ons: item.selectedAddOns,
-        selected_crust_type_id: item.selectedCrustType?.id ?? null,
-        selected_crust_type_name: item.selectedCrustType?.name ?? null,
-        selected_border_id: item.selectedBorder?.id ?? null,
-        selected_border_name: item.selectedBorder?.name ?? null,
-        selected_drink_variant_id: item.selectedDrinkVariant?.id ?? null,
-        selected_drink_variant_name: item.selectedDrinkVariant?.name ?? null,
-        notes: item.notes ?? null,
-        option_selections: item.selectedOptions.map((option) => ({
-          group_id: option.groupId,
-          group_name: option.groupName,
-          option_id: option.optionId,
-          label: option.label,
-          quantity: option.quantity,
-          price_addition: option.priceAddition,
-        })),
-      })),
+      items: cartGroups.map((group) => {
+        if (group.kind === "kit") {
+          const first = group.items[0];
+          const component = group.kit.components.find((entry) => entry.productId === first.productId);
+          const kitQuantity = component && first.quantity % component.quantity === 0
+            ? first.quantity / component.quantity
+            : 0;
+          if (!kitQuantity) throw new Error("A composição do combo no carrinho é inválida. Remova e adicione o combo novamente.");
+          return { kit_id: group.kit.id, quantity: kitQuantity, selected_size: "Combo", flavor_division: 1, flavors: [], final_price: first.finalPrice, add_ons: [] };
+        }
+        const item = group.item;
+        return {
+          product_id: item.productId,
+          quantity: item.quantity,
+          selected_size: item.selectedSize,
+          selected_size_id: item.selectedSizeId ?? null,
+          flavor_division: item.flavorDivision,
+          flavors: item.flavors.map((f) => ({ product_id: f.productId, name: f.name, price: f.price, icon: f.icon })),
+          final_price: item.finalPrice,
+          add_ons: item.selectedAddOns,
+          selected_crust_type_id: item.selectedCrustType?.id ?? null,
+          selected_crust_type_name: item.selectedCrustType?.name ?? null,
+          selected_border_id: item.selectedBorder?.id ?? null,
+          selected_border_name: item.selectedBorder?.name ?? null,
+          selected_drink_variant_id: item.selectedDrinkVariant?.id ?? null,
+          selected_drink_variant_name: item.selectedDrinkVariant?.name ?? null,
+          notes: item.notes ?? null,
+          option_selections: item.selectedOptions.map((option) => ({ group_id: option.groupId, group_name: option.groupName, option_id: option.optionId, label: option.label, quantity: option.quantity, price_addition: option.priceAddition })),
+        };
+      }),
       delivery: {
         name: form.name,
         phone: form.phone,
@@ -1289,13 +1291,19 @@ export default function Checkout() {
         <section>
           <h2 className="text-cream font-bold text-lg mb-4">{c.summaryTitle}</h2>
           <div className="space-y-3">
-            {cart.map((item, index) => {
+            {cartGroups.map((group) => {
+              const items = group.kind === "kit" ? group.items : [group.item];
+              const item = items[0];
+              const total = items.reduce((sum, current) => {
+                const quoteIndex = cart.findIndex((cartItem) => cartItem.cartItemId === current.cartItemId);
+                return sum + (reviewedQuote?.items[quoteIndex]?.unit_price ?? current.finalPrice) * current.quantity;
+              }, 0);
               const isMulti = item.flavorDivision > 1;
-              const displayName = isMulti ? item.flavors.map((f) => f.name).join(" + ") : item.productData.name;
+              const displayName = group.kind === "kit" ? group.kit.name : isMulti ? item.flavors.map((f) => f.name).join(" + ") : item.productData.name;
               const iconSrc = item.flavors[0]?.icon ?? item.productData.icon;
               const hasImage = isAssetUrl(iconSrc);
               return (
-                <div key={item.cartItemId} className="bg-surface-02 rounded-xl p-4 flex min-w-0 items-center gap-4">
+                <div key={group.key} className="bg-surface-02 rounded-xl p-4 flex min-w-0 items-center gap-4">
                   <div className="w-12 h-12 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center text-xl overflow-hidden">
                     {hasImage
                       ? <img src={resolveAssetUrl(iconSrc)} alt={displayName} className="w-full h-full object-cover" />
@@ -1304,13 +1312,22 @@ export default function Checkout() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-cream font-semibold text-sm break-words">{displayName}</p>
-                    <p className="text-stone text-xs">{item.quantity}x - {pizzaSizeLabel(item.selectedSize)}</p>
-                    {item.selectedOptions.length > 0 && <p className="text-stone text-[11px] mt-0.5">{item.selectedOptions.map((option) => `${option.groupName}: ${option.label}${option.quantity && option.quantity > 1 ? ` (${option.quantity}x)` : ""}`).join(" · ")}</p>}
-                    {item.promotionApplied && item.promotionName && (
+                    {group.kind === "kit" ? (
+                      <>
+                        <p className="text-gold-light text-[11px] font-semibold mt-0.5">Kit promocional · composição fechada</p>
+                        <ul className="text-stone text-[11px] mt-1 space-y-0.5">
+                          {group.kit.components.map((component) => <li key={`${group.key}-${component.productId}`}>{component.quantity}x {component.name}</li>)}
+                        </ul>
+                      </>
+                    ) : <>
+                      <p className="text-stone text-xs">{item.quantity}x - {pizzaSizeLabel(item.selectedSize)}</p>
+                      {item.selectedOptions.length > 0 && <p className="text-stone text-[11px] mt-0.5">{item.selectedOptions.map((option) => `${option.groupName}: ${option.label}${option.quantity && option.quantity > 1 ? ` (${option.quantity}x)` : ""}`).join(" · ")}</p>}
+                    </>}
+                    {group.kind !== "kit" && item.promotionApplied && item.promotionName && (
                       <p className="text-emerald-300 text-[11px] font-semibold mt-0.5">{item.promotionName} aplicada</p>
                     )}
                   </div>
-                  <p className="text-gold font-bold text-sm flex-shrink-0">R$ {((reviewedQuote?.items[index]?.unit_price ?? item.finalPrice) * item.quantity).toFixed(2)}</p>
+                  <p className="text-gold font-bold text-sm flex-shrink-0">R$ {total.toFixed(2)}</p>
                 </div>
               );
             })}
