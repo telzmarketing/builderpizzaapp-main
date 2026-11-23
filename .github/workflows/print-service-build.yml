@@ -18,7 +18,9 @@ jobs:
           dotnet-version: 8.x
       - name: Install Inno Setup
         shell: powershell
-        run: choco install innosetup --no-progress -y --force
+        run: |
+          winget install --id JRSoftware.InnoSetup.7 -e --silent --accept-package-agreements --accept-source-agreements
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar Inno Setup pelo winget (exit code $LASTEXITCODE)." }
       - name: Locate Inno Setup compiler
         shell: powershell
         run: |
