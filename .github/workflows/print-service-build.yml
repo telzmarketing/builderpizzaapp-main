@@ -2,7 +2,9 @@ name: Gran Torino Print Service
 on:
   workflow_dispatch:
   push:
-    paths: ['print-service/**']
+    paths:
+      - 'print-service/**'
+      - '.github/workflows/print-service-build.yml'
 jobs:
   build:
     runs-on: windows-latest

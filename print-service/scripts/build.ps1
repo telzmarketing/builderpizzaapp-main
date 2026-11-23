@@ -13,6 +13,7 @@ $publish = [IO.Path]::GetFullPath($publish)
 $artifacts = [IO.Path]::GetFullPath($artifacts)
 $installerOutput = [IO.Path]::GetFullPath($installerOutput)
 
+Write-Host 'Preparing Gran Torino Print Service installer package.'
 Write-Host "Build root: $root"
 Write-Host "Project: $project"
 Write-Host "Publish output: $publish"
