@@ -26,12 +26,12 @@ jobs:
         run: |
           $chocoRoot = if ($env:ChocolateyInstall) { $env:ChocolateyInstall } else { 'C:\ProgramData\chocolatey' }
           $searchRoots = @(
-            $env:ProgramFiles,
-            ${env:ProgramFiles(x86)},
             "$chocoRoot\bin",
-            "$chocoRoot\lib",
+            "$chocoRoot\lib\innosetup",
+            "$chocoRoot\lib\InnoSetup",
             'C:\ProgramData\chocolatey\bin',
-            'C:\ProgramData\chocolatey\lib'
+            'C:\Program Files (x86)\Inno Setup 6',
+            'C:\Program Files\Inno Setup 6'
           ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) } | Select-Object -Unique
 
           Write-Host 'Inno Setup discovery roots:'
