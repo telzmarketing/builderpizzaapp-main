@@ -1551,6 +1551,27 @@ export default function ManualOrderComposer({
                       )}
                     </div>
                     <strong className="px-8">{product.name}</strong>
+                    {product.promotion_applied ? (
+                      <div className="mt-2">
+                        <div className="flex flex-wrap items-baseline justify-center gap-2">
+                          <span className="text-xs text-stone line-through">
+                            {money(product.standard_price ?? product.price)}
+                          </span>
+                          <span className="text-base font-black text-gold">
+                            {money(product.current_price ?? product.price)}
+                          </span>
+                        </div>
+                        <span className="mt-0.5 block break-words text-[11px] font-bold text-emerald-300">
+                          {product.promotion_name || "Promoção ativa"}
+                          {(product.promotion_discount || 0) > 0 &&
+                            ` · -${money(product.promotion_discount || 0)}`}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-sm font-bold text-gold">
+                        {money(product.current_price ?? product.price)}
+                      </span>
+                    )}
                     <span className="text-xs text-stone">
                       {product.inventory_available === false
                         ? "Indisponível"
