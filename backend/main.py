@@ -68,6 +68,10 @@ from backend.routes import recipe_images as recipe_image_routes
 from backend.routes import recipe_composition as recipe_composition_routes
 from backend.routes import cmv as cmv_routes
 from backend.routes import finance as finance_routes
+from backend.routes import purchase_requisitions as purchase_requisition_routes
+from backend.routes import purchase_quotations as purchase_quotation_routes
+from backend.routes import purchase_receipts as purchase_receipt_routes
+from backend.routes import purchase_dashboard as purchase_dashboard_routes
 from backend.routes import fiscal as fiscal_routes
 from backend.routes import platform_tenants as platform_tenants_routes
 from backend.routes import company_domains as company_domains_routes
@@ -1439,6 +1443,10 @@ app.include_router(gestao_routes.router)
 app.include_router(inventory_routes.router)
 app.include_router(cmv_routes.router)
 app.include_router(finance_routes.router)
+app.include_router(purchase_requisition_routes.router)
+app.include_router(purchase_quotation_routes.router)
+app.include_router(purchase_receipt_routes.router)
+app.include_router(purchase_dashboard_routes.router)
 app.include_router(marketplace_settlement_routes.router)
 from backend.routes import app_finance as app_finance_routes
 app.include_router(app_finance_routes.router)
@@ -1524,6 +1532,10 @@ app.include_router(recipe_composition_routes.router, prefix="/api")
 app.include_router(recipe_composition_routes.public_router, prefix="/api")
 app.include_router(cmv_routes.router, prefix="/api")
 app.include_router(finance_routes.router, prefix="/api")
+app.include_router(purchase_requisition_routes.router, prefix="/api")
+app.include_router(purchase_quotation_routes.router, prefix="/api")
+app.include_router(purchase_receipt_routes.router, prefix="/api")
+app.include_router(purchase_dashboard_routes.router, prefix="/api")
 app.include_router(marketplace_settlement_routes.router, prefix="/api")
 app.include_router(app_finance_routes.router, prefix="/api")
 app.include_router(fiscal_routes.router, prefix="/api")

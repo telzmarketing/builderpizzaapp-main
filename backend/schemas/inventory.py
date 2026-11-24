@@ -126,6 +126,7 @@ class InventoryPurchaseIn(BaseModel):
     expected_date: date | None = None
     notes: str | None = None
     items: list[InventoryPurchaseItemIn] = Field(default_factory=list)
+    expected_version: int | None = Field(default=None, gt=0)
 
 
 class InventoryReplenishmentRequestIn(BaseModel):
@@ -168,6 +169,9 @@ class InventoryPurchaseOut(BaseModel):
     items: list[InventoryPurchaseItemOut] = []
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    quotation_id: str | None = None
+    requisition_id: str | None = None
+    version: int = 1
 
 
 class InventoryManualEntryIn(BaseModel):

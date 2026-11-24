@@ -1,0 +1,19 @@
+import { useCallback, useEffect, useState } from "react";
+import { AlertTriangle, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { inventoryApi, type PurchaseQuotation } from "@/lib/api";
+
+const statusLabels: Record<PurchaseQuotation["status"], string> = { draft: "Rascunho", open: "Aberta", closed: "Encerrada", awarded: "Adjudicada", cancelled: "Cancelada" };
+const money = (value: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
+
+export default function PurchaseQuotationPanel() {
+  const [rows, setRows] = useState<PurchaseQuotation[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
+  const load = useCallback(() => { setLoading(true); setError(""); inventoryApi.listQuotations().then(setRows).catch((err) => setError(err instanceof Error ? err.message : "Não foi possível carregar as cotações.")).finally(() => setLoading(false)); }, []);
+  useEffect(() => { load(); }, [load]);
+  return <section className="space-y-5 rounded-lg border border-surface-03 bg-surface-02 p-5">
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-lg font-black text-cream">Cotações e Comparativo</h2><p className="mt-1 text-sm text-stone">Consulte propostas normalizadas por unidade-base. Cotação não movimenta estoque nem financeiro.</p></div><button type="button" onClick={load} className="inline-flex items-center gap-2 rounded-lg border border-surface-03 px-3 py-2 text-sm font-bold text-stone"><RefreshCw size={15} className={loading ? "animate-spin" : ""} /> Atualizar</button></div>
+    {loading && <div className="flex min-h-32 items-center justify-center text-stone"><Loader2 size={18} className="mr-2 animate-spin" /> Carregando cotações...</div>}
+    {error && <div className="flex gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200"><AlertTriangle size={17} /> {error}</div>}
+    {!loading && !error && rows.length === 0 && <div className="rounded-lg border border-surface-03 px-4 py-8 text-center text-sm text-stone">Nenhuma cotação cadastrada.</div>}
+    {!loading && !error && rows.map((quotation) => <article key={quotation.id} className="rounded-lg border border-surface-03 bg-surface-01 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><div className="font-black text-cream">{quotation.code}</div><div className="text-xs text-stone">Requisição {quotation.requisition_id} · {quotation.suppliers.length} fornecedor(es)</div></div><span className="rounded-full border border-gold/30 bg-gold/10 px-2 py-1 text-xs font-bold text-gold">{statusLabels[quotation.status]}</span></div><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="text-xs uppercase text-stone"><tr><th className="px-2 py-2">Item</th><th className="px-2 py-2">Quantidade</th><th className="px-2 py-2">Melhor preço normalizado</th><th className="px-2 py-2">Fornecedor</th></tr></thead><tbody className="divide-y divide-surface-03">{quotation.lines.map((line) => { const offers = quotation.offers.filter((offer) => offer.quotation_line_id === line.id).sort((a, b) => a.normalized_unit_price - b.normalized_unit_price); const best = offers[0]; return <tr key={line.id}><td className="px-2 py-2 font-bold text-cream">{line.item_name}</td><td className="px-2 py-2 text-stone">{line.quantity} {line.unit_symbol}</td><td className="px-2 py-2 text-stone">{best ? <><span className="font-bold text-emerald-200">{money(best.normalized_unit_price)}</span><span className="ml-2 text-xs">({best.delivery_days ?? "-"} dias)</span></> : "Sem proposta"}</td><td className="px-2 py-2 text-stone">{best ? <span className="inline-flex items-center gap-1"><ShieldCheck size={14} /> {best.supplier_name}</span> : "-"}</td></tr>; })}</tbody></table></div></article>)}
+  </section>;
+}

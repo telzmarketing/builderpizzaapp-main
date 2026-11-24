@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.tenant_context import TenantContext, TenantContextMissing
@@ -8,6 +8,7 @@ from backend.core.wave7_tenant_orm import wave7_orm_enabled
 from backend.models.cmv import OrderCmvSnapshot
 from backend.models.gestao import GestaoModuleSettings
 from backend.models.inventory import InventoryItem, InventoryRecipeItem, InventoryRecipeVersion, InventoryStockMovement
+from backend.models.inventory_foundation import InventoryLot
 from backend.models.order import Order, OrderStatus
 from backend.models.product import Product
 from backend.models.payment import Payment, PaymentStatus
@@ -120,10 +121,12 @@ class CmvService:
                 func.coalesce(func.sum(InventoryStockMovement.quantity_delta), 0.0).label("quantity"),
                 func.coalesce(func.sum(InventoryStockMovement.quantity_delta * InventoryStockMovement.unit_cost), 0.0).label("cost"),
             )
+            .outerjoin(InventoryLot, (InventoryLot.tenant_id == InventoryStockMovement.tenant_id) & (InventoryLot.id == InventoryStockMovement.lot_id))
             .filter(
                 InventoryStockMovement.tenant_id == self._tenant_id,
                 InventoryStockMovement.quantity_delta > 0,
                 InventoryStockMovement.unit_cost > 0,
+                or_(InventoryStockMovement.lot_id.is_(None), InventoryLot.status == "available"),
             )
             .group_by(InventoryStockMovement.item_id)
             .all()

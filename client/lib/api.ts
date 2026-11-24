@@ -2570,6 +2570,82 @@ export interface InventoryOverview {
   balances: InventoryStockBalance[];
 }
 
+export type PurchasePlanningState = "confirmed" | "pending" | "estimated" | "blocked" | "unavailable";
+export type PurchasePlanningAction = "covered" | "purchase_required" | "review_required";
+
+export interface PurchasePlanningNeed {
+  item_id: string;
+  item_name: string;
+  unit_id: string | null;
+  unit_symbol: string | null;
+  source: "direct" | "portion";
+  source_item_id?: string | null;
+  source_item_name?: string | null;
+  current_stock: number;
+  reserved_stock: number;
+  available_stock: number;
+  in_transit: number;
+  minimum_stock: number;
+  target_stock: number;
+  suggested_quantity: number;
+  state: PurchasePlanningState;
+  action: PurchasePlanningAction;
+  reason: string;
+}
+
+export interface PurchasePlanning {
+  tenant_id: string;
+  generated_at: string;
+  items: PurchasePlanningNeed[];
+  totals: Record<string, number>;
+}
+
+export interface PurchaseQuotationOffer {
+  id: string;
+  supplier_id: string;
+  supplier_name: string;
+  quotation_line_id: string;
+  unit_price: number;
+  conversion_factor: number;
+  normalized_unit_price: number;
+  freight: number;
+  discount: number;
+  total: number;
+  payment_terms?: string | null;
+  delivery_days?: number | null;
+  valid_until?: string | null;
+  notes?: string | null;
+}
+export interface PurchaseQuotation {
+  id: string; tenant_id: string; requisition_id: string; code: string; status: "draft" | "open" | "closed" | "awarded" | "cancelled";
+  response_due?: string | null; notes?: string | null; version: number; awarded_supplier_id?: string | null; created_by_admin_id: string; created_at: string; updated_at: string;
+  suppliers: Array<{ supplier_id: string; supplier_name: string; status: string }>;
+  lines: Array<{ id: string; item_id: string; item_name: string; unit_id: string; unit_symbol: string; quantity: number; position: number }>;
+  offers: PurchaseQuotationOffer[];
+}
+
+export interface PurchaseReceiptItem {
+  id: string; purchase_item_id: string; item_id: string; item_name: string; location_id: string;
+  quantity_received: number; quantity_rejected: number; unit_cost: number;
+  lot_code?: string | null; manufactured_on?: string | null; expires_on?: string | null; temperature_c?: number | null; quality_status?: "accepted" | "quarantine" | "rejected"; inspection_notes?: string | null;
+}
+export interface PurchaseReceipt {
+  id: string; tenant_id: string; purchase_id: string; document_id?: string | null;
+  status: "draft" | "submitted" | "posted" | "rejected"; received_at: string;
+  notes?: string | null; version: number; received_by_admin_id: string;
+  created_at: string; updated_at: string; items: PurchaseReceiptItem[];
+}
+export interface PurchaseDashboard {
+  period: { date_from: string; date_to: string; generated_at: string };
+  requisitions: { total: number; by_status: Record<string, number> };
+  quotations: { total: number; by_status: Record<string, number> };
+  orders: { total: number; by_status: Record<string, number>; total_amount: number };
+  receipts: { total: number; by_status: Record<string, number>; posted: number; quantity_received: number; quantity_rejected: number };
+  inventory: { movement_count: number; quantity_in: number; received_value: number };
+  finance: { obligation_count: number; total_amount: number; pending_amount: number; paid_amount: number };
+  alerts: { overdue_quotations: number; overdue_orders: number; pending_requisitions: number };
+}
+
 export type InventoryPortionUsage = "mandatory" | "optional" | "direct";
 
 export interface InventoryPortionConfig {
@@ -6652,6 +6728,17 @@ export const gestaoApi = {
 
 export const inventoryApi = {
   overview: () => get<InventoryOverview>("/gestao/inventory/overview"),
+  planningNeeds: () => get<PurchasePlanning>("/gestao/purchases/requisitions/planning/needs"),
+  listQuotations: (status?: string) => get<PurchaseQuotation[]>(`/gestao/purchases/quotations${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  listPurchaseReceipts: () => get<PurchaseReceipt[]>("/gestao/purchases/receipts"),
+  purchaseDashboard: (dateFrom?: string, dateTo?: string) => get<PurchaseDashboard>(`/gestao/purchases/dashboard${dateFrom && dateTo ? `?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}` : ""}`),
+  getPurchaseReceipt: (id: string) => get<PurchaseReceipt>(`/gestao/purchases/receipts/${encodeURIComponent(id)}`),
+  createPurchaseReceipt: (data: { purchase_id: string; document_id?: string | null; notes?: string | null; items: Array<{ purchase_item_id: string; item_id: string; location_id: string; quantity_received: number; quantity_rejected?: number; unit_cost?: number; lot_code?: string | null; manufactured_on?: string | null; expires_on?: string | null; temperature_c?: number | null; quality_status?: "accepted" | "quarantine" | "rejected"; inspection_notes?: string | null }> }, key: string) =>
+    request<PurchaseReceipt>("POST", "/gestao/purchases/receipts", data, { "Idempotency-Key": key }),
+  submitPurchaseReceipt: (id: string, expectedVersion: number, key: string) =>
+    request<PurchaseReceipt>("POST", `/gestao/purchases/receipts/${encodeURIComponent(id)}/submit`, { expected_version: expectedVersion }, { "Idempotency-Key": key }),
+  postPurchaseReceipt: (id: string, expectedVersion: number, key: string) =>
+    request<PurchaseReceipt>("POST", `/gestao/purchases/receipts/${encodeURIComponent(id)}/post`, { expected_version: expectedVersion }, { "Idempotency-Key": key }),
   createUnit: (data: Omit<InventoryUnit, "id" | "tenant_id" | "created_at" | "updated_at">) =>
     post<InventoryUnit>("/gestao/inventory/units", data),
   updateUnit: (id: string, data: Omit<InventoryUnit, "id" | "tenant_id" | "created_at" | "updated_at">) =>
@@ -6683,6 +6770,12 @@ export const inventoryApi = {
     request<Record<string, unknown>>("POST", `/gestao/inventory/items/${encodeURIComponent(itemId)}/adjustments`, body, { "Idempotency-Key": key }),
   createPurchase: (data: Omit<InventoryPurchase, "id" | "tenant_id" | "supplier_name" | "total_amount" | "created_at" | "updated_at">) =>
     post<InventoryPurchase>("/gestao/inventory/purchases", data),
+  createPurchaseFromQuotation: (quotationId: string, supplierId: string, notes: string | null, key: string) =>
+    request<InventoryPurchase>("POST", `/gestao/inventory/purchases/from-quotation?quotation_id=${encodeURIComponent(quotationId)}&supplier_id=${encodeURIComponent(supplierId)}${notes ? `&notes=${encodeURIComponent(notes)}` : ""}`, undefined, { "Idempotency-Key": key }),
+  submitPurchaseOrder: (id: string, expectedVersion: number, key: string) =>
+    request<InventoryPurchase>("POST", `/gestao/inventory/purchases/${encodeURIComponent(id)}/submit?expected_version=${expectedVersion}`, undefined, { "Idempotency-Key": key }),
+  approvePurchaseOrder: (id: string, expectedVersion: number, key: string, reason?: string | null) =>
+    request<InventoryPurchase>("POST", `/gestao/inventory/purchases/${encodeURIComponent(id)}/approve?expected_version=${expectedVersion}${reason ? `&reason=${encodeURIComponent(reason)}` : ""}`, undefined, { "Idempotency-Key": key }),
   createReplenishmentRequest: (itemIds?: string[]) =>
     post<InventoryPurchase>("/gestao/inventory/purchase-requests/replenishment", itemIds?.length ? { item_ids: itemIds } : {}),
   updatePurchase: (id: string, data: Omit<InventoryPurchase, "id" | "tenant_id" | "supplier_name" | "total_amount" | "created_at" | "updated_at">) =>

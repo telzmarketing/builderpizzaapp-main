@@ -109,7 +109,7 @@ class MovementLine(ConversionPreviewIn):
 
 
 class OperationIn(Command):
-    kind: Literal["manual_in", "manual_out", "transfer", "loss", "adjustment_in", "adjustment_out"]
+    kind: Literal["manual_in", "manual_out", "transfer", "loss", "adjustment_in", "adjustment_out", "receipt"]
     business_key: str = Field(min_length=1, max_length=180)
     reason: str = Field(min_length=1, max_length=120)
     lines: list[MovementLine] = Field(min_length=1, max_length=100)

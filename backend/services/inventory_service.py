@@ -29,6 +29,7 @@ from backend.models.inventory import (
     InventoryUnit,
 )
 from backend.models.inventory_foundation import InventoryReservation
+from backend.models.purchase_quotation import PurchaseQuotation, PurchaseQuotationOffer
 from backend.models.order import Order, OrderItem
 from backend.models.finance import FinanceTransaction
 from backend.models.rbac import AdminAuditLog
@@ -316,6 +317,53 @@ class InventoryService:
             self._publish_purchase_confirmed(purchase)
         return self._serialize_purchase(purchase)
 
+    def create_from_awarded_quotation(self, quotation_id: str, supplier_id: str, key: str, notes: str | None = None) -> dict:
+        from backend.services.idempotency_service import IdempotencyService
+        claim = IdempotencyService(self._db, self._tenant_id).claim(key, "inventory_purchase_from_quotation", {"quotation_id": quotation_id, "supplier_id": supplier_id, "notes": notes})
+        if claim.replay_resource_id:
+            return self._serialize_purchase(self._get_purchase(claim.replay_resource_id))
+        try:
+            quote = self._db.query(PurchaseQuotation).filter(PurchaseQuotation.tenant_id == self._tenant_id, PurchaseQuotation.id == quotation_id, PurchaseQuotation.status == "awarded").first()
+            if not quote or quote.awarded_supplier_id != supplier_id:
+                raise InventoryInvalidReference("A cotacao precisa estar adjudicada para este fornecedor.")
+            offers = self._db.query(PurchaseQuotationOffer).filter(PurchaseQuotationOffer.tenant_id == self._tenant_id, PurchaseQuotationOffer.quotation_id == quote.id, PurchaseQuotationOffer.supplier_id == supplier_id).all()
+            if len(offers) != len(quote.lines):
+                raise InventoryInvalidReference("A cotacao adjudicada nao possui proposta para todos os itens.")
+            used = {row.quotation_offer_id for row in self._db.query(InventoryPurchaseItem).filter(InventoryPurchaseItem.tenant_id == self._tenant_id, InventoryPurchaseItem.quotation_offer_id.isnot(None)).all()}
+            if any(row.id in used for row in offers):
+                raise InventoryInvalidReference("Uma ou mais propostas ja foram utilizadas em outro pedido.")
+            purchase_date, daily_sequence, title = self._next_purchase_identity()
+            purchase = InventoryPurchase(id=f"inv-pur-{uuid.uuid4().hex[:12]}", tenant_id=self._tenant_id, title=title, purchase_date=purchase_date, daily_sequence=daily_sequence, supplier_id=supplier_id, status="draft", source="quotation", quotation_id=quote.id, requisition_id=quote.requisition_id, award_snapshot={"quotation_id": quote.id, "supplier_id": supplier_id, "offer_ids": [row.id for row in offers]}, notes=notes)
+            self._db.add(purchase); self._db.flush()
+            self._replace_purchase_items(purchase, [{"item_id": line.item_id, "quantity": line.quantity, "unit_cost": next(row.unit_price for row in offers if row.quotation_line_id == line.id), "quotation_offer_id": next(row.id for row in offers if row.quotation_line_id == line.id)} for line in quote.lines])
+            IdempotencyService(self._db, self._tenant_id).complete(claim.record, purchase.id, commit=False); self._db.commit(); self._db.refresh(purchase); return self._serialize_purchase(purchase)
+        except Exception:
+            IdempotencyService(self._db, self._tenant_id).abandon(claim.record); raise
+
+    def transition_purchase_order(self, purchase_id: str, action: str, expected_version: int, key: str, reason: str | None = None) -> dict:
+        from backend.services.idempotency_service import IdempotencyService
+        claim = IdempotencyService(self._db, self._tenant_id).claim(key, "inventory_purchase_transition", {"purchase_id": purchase_id, "action": action, "expected_version": expected_version, "reason": reason})
+        if claim.replay_resource_id: return self._serialize_purchase(self._get_purchase(claim.replay_resource_id))
+        try:
+            purchase = self._db.query(InventoryPurchase).filter(InventoryPurchase.tenant_id == self._tenant_id, InventoryPurchase.id == purchase_id).with_for_update().first()
+            if not purchase: raise InventoryNotFound("Compra")
+            if purchase.version != expected_version: raise InventoryInvalidReference("O pedido foi alterado por outro usuario.")
+            targets = {"submit": ("draft", "requested"), "approve": ("requested", "confirmed"), "cancel": (("draft", "requested"), "cancelled")}
+            expected, target = targets.get(action, (None, None))
+            if (purchase.status not in expected if isinstance(expected, tuple) else purchase.status != expected) or not target: raise InventoryInvalidReference("Transicao de pedido nao permitida.")
+            purchase.status, purchase.version = target, purchase.version + 1
+            if action == "approve":
+                purchase.approved_by_admin_id = self._actor_id
+            if reason: purchase.notes = f"{purchase.notes or ''}\n{reason}".strip()
+            self._db.commit(); self._db.refresh(purchase)
+            # Legacy purchases keep their existing finance projection. Quotation-originated
+            # orders are only supplier-confirmed here; fiscal reconciliation remains the
+            # financial boundary for the new purchasing flow.
+            if action == "approve" and purchase.source != "quotation": self._publish_purchase_confirmed(purchase)
+            IdempotencyService(self._db, self._tenant_id).complete(claim.record, purchase.id); return self._serialize_purchase(purchase)
+        except Exception:
+            IdempotencyService(self._db, self._tenant_id).abandon(claim.record); raise
+
     def create_replenishment_request(self, item_ids: list[str] | None = None) -> dict:
         """Create a minimum-stock request for all or explicitly selected items."""
         from datetime import datetime, timezone
@@ -366,6 +414,8 @@ class InventoryService:
 
     def update_purchase(self, purchase_id: str, payload: InventoryPurchaseIn) -> dict:
         purchase = self._get_purchase(purchase_id)
+        if payload.expected_version is not None and purchase.version != payload.expected_version:
+            raise InventoryInvalidReference("A compra foi alterada por outro usuario.")
         previous_status = purchase.status
         if payload.status == "cancelled":
             raise InventoryInvalidReference("Cancelamento exige o fluxo oficial de reversao.")
@@ -380,6 +430,7 @@ class InventoryService:
         self._db.query(InventoryPurchaseItem).filter(InventoryPurchaseItem.purchase_id == purchase.id).delete(synchronize_session=False)
         self._replace_purchase_items(purchase, items)
         self._validate_purchase_confirmation(purchase)
+        purchase.version += 1
         self._db.commit()
         self._db.refresh(purchase)
         if previous_status != "confirmed" and purchase.status == "confirmed":
@@ -1146,6 +1197,7 @@ class InventoryService:
                 quantity=item["quantity"],
                 unit_cost=item["unit_cost"],
                 total_cost=total_cost,
+                quotation_offer_id=item.get("quotation_offer_id"),
             ))
         purchase.total_amount = round(total, 8)
 
@@ -1250,6 +1302,9 @@ class InventoryService:
             ],
             "created_at": purchase.created_at,
             "updated_at": purchase.updated_at,
+            "quotation_id": purchase.quotation_id,
+            "requisition_id": purchase.requisition_id,
+            "version": purchase.version,
         }
 
     def _serialize_manual_entry(self, entry: InventoryManualEntry) -> dict:

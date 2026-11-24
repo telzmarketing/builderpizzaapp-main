@@ -218,6 +218,23 @@ def create_purchase(body: InventoryPurchaseIn, db: Session = Depends(get_db), _a
     except DomainError as exc:
         return err(exc)
 
+@router.post("/purchases/from-quotation", response_model=InventoryPurchaseOut, status_code=201)
+def create_purchase_from_quotation(quotation_id: str, supplier_id: str, notes: str | None = None, idempotency_key: str = Header(..., alias="Idempotency-Key"), db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "create")), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context, actor).create_from_awarded_quotation(quotation_id, supplier_id, idempotency_key, notes)
+    except DomainError as exc:
+        return err(exc)
+
+@router.post("/purchases/{purchase_id}/submit", response_model=InventoryPurchaseOut)
+def submit_purchase(purchase_id: str, expected_version: int, idempotency_key: str = Header(..., alias="Idempotency-Key"), db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "edit")), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try: return service(db, tenant_context, actor).transition_purchase_order(purchase_id, "submit", expected_version, idempotency_key)
+    except DomainError as exc: return err(exc)
+
+@router.post("/purchases/{purchase_id}/approve", response_model=InventoryPurchaseOut)
+def approve_purchase(purchase_id: str, expected_version: int, reason: str | None = None, idempotency_key: str = Header(..., alias="Idempotency-Key"), db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "manage")), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try: return service(db, tenant_context, actor).transition_purchase_order(purchase_id, "approve", expected_version, idempotency_key, reason)
+    except DomainError as exc: return err(exc)
+
 
 @router.post("/purchase-requests/replenishment", response_model=InventoryPurchaseOut, status_code=201)
 def create_replenishment_request(body: InventoryReplenishmentRequestIn | None = None, db: Session = Depends(get_db), _actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "create")), tenant_context: TenantContext | None = Depends(panel_operation_context)):

@@ -117,7 +117,7 @@ class InventoryFoundationService:
             value = int.from_bytes(hashlib.sha256(f"{self.tenant_id}:{scope}:{key}".encode()).digest()[:8], "big", signed=True)
             self.db.execute(text("SELECT pg_advisory_xact_lock(:value)"), {"value": value})
 
-    def _command(self, scope, key, body, kind, business_key, execute):
+    def _command(self, scope, key, body, kind, business_key, execute, *, commit=True):
         if not key or len(key) > 200:
             raise FoundationInvalid("Idempotency-Key obrigatoria, maximo 200 caracteres.")
         raw = body.model_dump(mode="json")
@@ -132,7 +132,7 @@ class InventoryFoundationService:
                 if prior.request_hash != request_hash:
                     raise FoundationConflict("Chave reutilizada com conteudo diferente.", code="IdempotencyConflict")
                 result = {name: value for name, value in prior.result_json.items() if name != "_request_snapshot"}
-                self.db.commit()
+                if commit: self.db.commit()
                 return result
             if self._query(InventoryOperation).filter(InventoryOperation.kind == kind, InventoryOperation.business_key == business_key).first():
                 raise FoundationConflict("Identidade de negocio ja utilizada.", code="BusinessIdentityConflict")
@@ -145,7 +145,7 @@ class InventoryFoundationService:
             self.db.flush()
             result = output(execute(operation))
             operation.status, operation.result_json, operation.committed_at = "committed", {**result, "_request_snapshot": raw}, utcnow()
-            self.db.commit()
+            if commit: self.db.commit()
             return result
         except IntegrityError as exc:
             self.db.rollback()
@@ -457,44 +457,46 @@ class InventoryFoundationService:
         self.db.flush()
         return movement.id
 
+    def _operation_execute(self, body, op):
+        self._new(body)
+        item_rows = self._lock_items(line.item_id for line in body.lines)
+        self._lock_units([item.unit_id for item in item_rows] + [unit for line in body.lines for unit in (line.unit_id, line.measured_unit_id)])
+        ids, normalized = [], []
+        for index, line in enumerate(body.lines, 1):
+            self._get(InventoryLocation, line.location_id)
+            quantity = Decimal(self.preview(line)["quantity"])
+            lot = self._get(InventoryLot, line.lot_id, lock=True) if line.lot_id else None
+            if lot and (lot.item_id != line.item_id or lot.location_id != line.location_id):
+                raise FoundationInvalid("Lote nao pertence ao item/local informado.")
+            incoming = body.kind in ("manual_in", "adjustment_in", "receipt")
+            if not incoming:
+                if lot and not self._eligible(lot) and body.kind != "loss":
+                    raise FoundationConflict("Lote bloqueado ou vencido.", code="LotUnavailable")
+                if self._available(line.item_id, line.location_id, line.lot_id) < quantity:
+                    raise FoundationConflict("Saldo livre insuficiente.", code="InventoryUnavailable")
+            if body.kind == "transfer":
+                if not line.target_location_id or line.target_location_id == line.location_id:
+                    raise FoundationInvalid("Transferencia exige local destino distinto.")
+                self._get(InventoryLocation, line.target_location_id)
+                if lot and (quantity != self._physical(line.item_id, line.location_id, lot.id) or any(r.lot_id == lot.id for r in self._active_reservations(line.item_id))):
+                    raise FoundationConflict("F1 transfere lote inteiro sem reservas; parcial exige subdivisao futura.")
+                ids.append(self._movement(op, index, len(ids)+1, line.item_id, line.location_id, line.lot_id, -quantity, line.unit_cost, "foundation_manual", op.id, body.reason))
+                ids.append(self._movement(op, index, len(ids)+1, line.item_id, line.target_location_id, line.lot_id, quantity, line.unit_cost, "foundation_manual", op.id, body.reason))
+                if lot: lot.location_id, lot.version = line.target_location_id, lot.version + 1
+            else:
+                if line.target_location_id: raise FoundationInvalid("Destino permitido apenas em transferencia.")
+                source_type = "receipt" if body.kind == "receipt" else "foundation_manual"
+                source_id = body.business_key.split(":", 1)[1] if body.kind == "receipt" and ":" in body.business_key else op.id
+                ids.append(self._movement(op, index, len(ids)+1, line.item_id, line.location_id, line.lot_id, quantity if incoming else -quantity, line.unit_cost, source_type, source_id, body.reason))
+            normalized.append({"line": index, "quantity": quantity, "item_id": line.item_id, "lot_id": line.lot_id})
+        return {"id": op.id, "kind": body.kind, "business_key": body.business_key, "version": 1, "status": "committed", "movement_ids": ids, "lines": normalized}
+
     def create_operation(self, body, key):
-        def execute(op):
-            self._new(body)
-            item_rows = self._lock_items(line.item_id for line in body.lines)
-            self._lock_units([item.unit_id for item in item_rows] + [unit for line in body.lines for unit in (line.unit_id, line.measured_unit_id)])
-            ids, normalized = [], []
-            for index, line in enumerate(body.lines, 1):
-                self._get(InventoryLocation, line.location_id)
-                quantity = Decimal(self.preview(line)["quantity"])
-                lot = self._get(InventoryLot, line.lot_id, lock=True) if line.lot_id else None
-                if lot and (lot.item_id != line.item_id or lot.location_id != line.location_id):
-                    raise FoundationInvalid("Lote nao pertence ao item/local informado.")
-                incoming = body.kind in ("manual_in", "adjustment_in")
-                if not incoming:
-                    if lot and not self._eligible(lot) and body.kind != "loss":
-                        raise FoundationConflict("Lote bloqueado ou vencido.", code="LotUnavailable")
-                    if self._available(line.item_id, line.location_id, line.lot_id) < quantity:
-                        raise FoundationConflict("Saldo livre insuficiente.", code="InventoryUnavailable")
-                if body.kind == "transfer":
-                    if not line.target_location_id or line.target_location_id == line.location_id:
-                        raise FoundationInvalid("Transferencia exige local destino distinto.")
-                    self._get(InventoryLocation, line.target_location_id)
-                    if lot:
-                        # A lot has one canonical location in F1: move only a full unreserved lot.
-                        if quantity != self._physical(line.item_id, line.location_id, lot.id) or any(r.lot_id == lot.id for r in self._active_reservations(line.item_id)):
-                            raise FoundationConflict("F1 transfere lote inteiro sem reservas; parcial exige subdivisao futura.")
-                    ids.append(self._movement(op, index, len(ids)+1, line.item_id, line.location_id, line.lot_id, -quantity, line.unit_cost, "foundation_manual", op.id, body.reason))
-                    ids.append(self._movement(op, index, len(ids)+1, line.item_id, line.target_location_id, line.lot_id, quantity, line.unit_cost, "foundation_manual", op.id, body.reason))
-                    if lot:
-                        lot.location_id, lot.version = line.target_location_id, lot.version + 1
-                else:
-                    if line.target_location_id:
-                        raise FoundationInvalid("Destino permitido apenas em transferencia.")
-                    ids.append(self._movement(op, index, len(ids)+1, line.item_id, line.location_id, line.lot_id,
-                        quantity if incoming else -quantity, line.unit_cost, "foundation_manual", op.id, body.reason))
-                normalized.append({"line": index, "quantity": quantity, "item_id": line.item_id, "lot_id": line.lot_id})
-            return {"id": op.id, "kind": body.kind, "business_key": body.business_key, "version": 1, "status": "committed", "movement_ids": ids, "lines": normalized}
-        return self._command("operations", key, body, body.kind, body.business_key, execute)
+        return self._command("operations", key, body, body.kind, body.business_key, lambda operation: self._operation_execute(body, operation))
+
+    def create_operation_in_transaction(self, body, key):
+        """Create a canonical operation while the caller owns the transaction."""
+        return self._command("operations", key, body, body.kind, body.business_key, lambda operation: self._operation_execute(body, operation), commit=False)
 
     def reserve(self, body, key):
         def execute(op):

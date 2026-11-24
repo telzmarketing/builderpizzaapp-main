@@ -118,6 +118,8 @@ class InventoryPurchase(Base):
     __table_args__ = (
         Index("uq_inventory_purchases_tenant_id_id", "tenant_id", "id", unique=True),
         Index("uq_inventory_purchases_tenant_date_sequence", "tenant_id", "purchase_date", "daily_sequence", unique=True),
+        ForeignKeyConstraint(["tenant_id", "quotation_id"], ["purchase_quotations.tenant_id", "purchase_quotations.id"], name="fk_inventory_purchases_quotation", ondelete="RESTRICT"),
+        CheckConstraint("version > 0", name="ck_inventory_purchase_version"),
     )
     supplier_id = Column(String, ForeignKey("inventory_suppliers.id", ondelete="SET NULL"), nullable=True, index=True)
     status = Column(String(30), nullable=False, default="draft")
@@ -130,6 +132,11 @@ class InventoryPurchase(Base):
     source = Column(String(40), nullable=True)
     requested_at = Column(DateTime(timezone=True), nullable=True)
     requested_by_admin_id = Column(String, ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True)
+    quotation_id = Column(String(36), nullable=True)
+    requisition_id = Column(String(36), nullable=True)
+    award_snapshot = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=True)
+    version = Column(Integer, nullable=False, default=1, server_default="1")
+    approved_by_admin_id = Column(String, ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True)
     total_amount = Column(Numeric(20, 8), nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
@@ -143,12 +150,13 @@ class InventoryPurchaseItem(Base):
 
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_inventory_purchase_items_tenant"), nullable=True)
-    __table_args__ = (Index("uq_inventory_purchase_items_tenant_id_id", "tenant_id", "id", unique=True),)
+    __table_args__ = (Index("uq_inventory_purchase_items_tenant_id_id", "tenant_id", "id", unique=True), Index("uq_inventory_purchase_items_tenant_offer", "tenant_id", "quotation_offer_id", unique=True), ForeignKeyConstraint(["tenant_id", "quotation_offer_id"], ["purchase_quotation_offers.tenant_id", "purchase_quotation_offers.id"], name="fk_inventory_purchase_items_offer", ondelete="RESTRICT"))
     purchase_id = Column(String, ForeignKey("inventory_purchases.id", ondelete="CASCADE"), nullable=False, index=True)
     item_id = Column(String, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
     quantity = Column(Numeric(20, 6), nullable=False, default=0)
     unit_cost = Column(Numeric(20, 8), nullable=False, default=0)
     total_cost = Column(Numeric(20, 8), nullable=False, default=0)
+    quotation_offer_id = Column(String(36), nullable=True)
 
     purchase = relationship("InventoryPurchase", back_populates="items")
     item = relationship("InventoryItem")

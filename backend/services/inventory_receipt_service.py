@@ -10,6 +10,8 @@ from backend.models.inventory_receipts import InventoryReceiptDocument, Inventor
 from backend.models.finance import FinanceObligation, FinanceObligationInstallment, FinanceTransaction
 from backend.services.fiscal_receipt_xml import parse_receipt_xml, ReceiptXmlError
 from backend.services.finance_service import FinanceService
+from backend.services.idempotency_service import IdempotencyService
+from sqlalchemy.exc import IntegrityError
 from backend.models.inventory import InventoryItem, InventoryPurchase
 from backend.models.preparation import InventoryOperationRecipe, PreparationOrder
 
@@ -182,8 +184,12 @@ class InventoryReceiptService:
         installments = body.get("installments") or []
         total = sum((Decimal(str(x["amount"])) for x in installments), Decimal("0"))
         if total <= 0: raise ReceiptDocumentError("Informe parcelas explicitas com valor positivo.")
+        claim = IdempotencyService(self.db, self.tenant_id).claim(key, "inventory_receipt_reconcile", {"document_id": document_id, "body": body})
         existing = self.db.query(FinanceObligation).filter(FinanceObligation.tenant_id == self.tenant_id, FinanceObligation.receipt_document_id == row.id).first()
-        if existing: return {"document_id": row.id, "status": "linked", "transaction_ids": [], "obligation_total": str(existing.total_amount), "paid_total": "0"}
+        if existing:
+            result = {"document_id": row.id, "status": "linked", "transaction_ids": [], "obligation_total": str(existing.total_amount), "paid_total": "0"}
+            IdempotencyService(self.db, self.tenant_id).complete(claim.record, existing.id)
+            return result
         if row.purchase_id:
             purchase_transaction = self.db.query(FinanceTransaction).filter(
                 FinanceTransaction.tenant_id == self.tenant_id,
@@ -191,6 +197,7 @@ class InventoryReceiptService:
                 FinanceTransaction.origin_type == "inventory_purchase_payable",
             ).first()
             if purchase_transaction:
+                IdempotencyService(self.db, self.tenant_id).abandon(claim.record)
                 raise ReceiptDocumentError(
                     "A compra ja possui obrigacao financeira; reconcilie a origem antes de vincular o recebimento."
                 )
@@ -200,4 +207,15 @@ class InventoryReceiptService:
         for idx, item in enumerate(installments, 1):
             tx = FinanceTransaction(id=f"fin-trx-{uuid.uuid4().hex[:12]}", tenant_id=self.tenant_id, category_id=fs._ensure_category("Compras de estoque", "expense", "inventory_purchases"), counterparty_type="supplier", counterparty_name="Fornecedor", entry_type="expense", status="pending", description=f"Obrigacao NF-e {row.access_key or row.id}", amount=float(item["amount"]), due_date=item.get("due_date"), competence_date=item.get("due_date"), obligation_id=ob.id, origin_type="inventory_receipt_payable", origin_id=row.id, created_by_admin_id=self.admin_id)
             self.db.add(tx); self.db.flush(); txids.append(tx.id); self.db.add(FinanceObligationInstallment(id=f"fin-obg-itm-{uuid.uuid4().hex[:12]}", tenant_id=self.tenant_id, obligation_id=ob.id, finance_transaction_id=tx.id, installment_number=idx, amount=Decimal(str(item["amount"])), due_date=item.get("due_date")))
-        self.db.commit(); return {"document_id": row.id, "status": "linked", "transaction_ids": txids, "obligation_total": str(total), "paid_total": "0"}
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            existing = self.db.query(FinanceObligation).filter(FinanceObligation.tenant_id == self.tenant_id, FinanceObligation.receipt_document_id == row.id).first()
+            if not existing: raise
+            result = {"document_id": row.id, "status": "linked", "transaction_ids": [], "obligation_total": str(existing.total_amount), "paid_total": "0"}
+            IdempotencyService(self.db, self.tenant_id).recover_completed(key, "inventory_receipt_reconcile", {"document_id": document_id, "body": body}, existing.id)
+            return result
+        result = {"document_id": row.id, "status": "linked", "transaction_ids": txids, "obligation_total": str(total), "paid_total": "0"}
+        IdempotencyService(self.db, self.tenant_id).complete(claim.record, ob.id)
+        return result
