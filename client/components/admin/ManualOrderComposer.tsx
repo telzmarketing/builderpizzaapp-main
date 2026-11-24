@@ -1029,6 +1029,58 @@ export default function ManualOrderComposer({
                 </div>
               </div>
               <div className="kds-pdv-order-scroll min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+                <div className="space-y-2 rounded-xl border border-gold/30 bg-gold/5 p-3">
+                  <label className="block text-xs font-bold uppercase tracking-wide text-stone">
+                    Origem do pedido
+                    <select
+                      aria-label="Origem do pedido"
+                      className={`${input} mt-2`}
+                      value={draft.orderOrigin}
+                      onChange={(event) =>
+                        patch({
+                          orderOrigin: event.target.value as PartnerOrderOrigin,
+                          partnerOrderNumber: "",
+                        })
+                      }
+                    >
+                      {PARTNER_ORIGIN_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                          {option.value === "own" ? " Â· Gran Torino" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <PartnerOrderIdentity
+                    order={{
+                      order_origin: draft.orderOrigin,
+                      partner_order_number: isPartnerOrigin(draft.orderOrigin)
+                        ? draft.partnerOrderNumber || "nÃºmero pendente"
+                        : null,
+                    }}
+                  />
+                  {isPartnerOrigin(draft.orderOrigin) && (
+                    <label className="block text-xs font-bold uppercase tracking-wide text-stone">
+                      NÃºmero do pedido no aplicativo
+                      <input
+                        aria-label="NÃºmero do pedido no aplicativo"
+                        required
+                        className={`${input} mt-2`}
+                        value={draft.partnerOrderNumber}
+                        onChange={(event) =>
+                          patch({ partnerOrderNumber: event.target.value })
+                        }
+                        placeholder="Ex.: 123456789"
+                      />
+                    </label>
+                  )}
+                  {isPartnerOrigin(draft.orderOrigin) &&
+                    !draft.partnerOrderNumber.trim() && (
+                      <p className="text-xs text-amber-200">
+                        Informe o nÃºmero do pedido para finalizar.
+                      </p>
+                    )}
+                </div>
                 <label className="block text-xs font-bold uppercase tracking-wide text-stone">
                   Cliente
                   <input
