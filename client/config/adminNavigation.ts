@@ -115,6 +115,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     label: "Gestão",
     children: [
       { path: "/painel/gestor", icon: Sparkles, label: "Gestor IA", exact: true, permissions: ["whatsapp", "relatorios"] },
+      { path: "/painel/gestao/compras", icon: ShoppingCart, label: "Compras", permissions: ["inventory"] },
       { path: "/painel/gestao/estoque", icon: Package, label: "Estoque", permissions: ["inventory"] },
       { path: "/painel/gestao/cmv", icon: BarChart3, label: "CMV", permissions: ["cmv"] },
       { path: "/painel/gestao/financeiro", icon: CreditCard, label: "Financeiro", permissions: ["finance"] },

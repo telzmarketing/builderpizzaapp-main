@@ -495,6 +495,7 @@ const CrmTarefas = lazy(() => import("./pages/admin/crm/CrmTarefas"));
 const CrmInteligencia = lazy(() => import("./pages/admin/crm/CrmInteligencia"));
 const CrmAgenteWhatsApp = lazy(() => import("./pages/admin/crm/CrmAgenteWhatsApp"));
 const GestaoInventory = lazy(() => import("./pages/admin/gestao/GestaoInventory"));
+const GestaoPurchases = lazy(() => import("./pages/admin/gestao/GestaoPurchases"));
 const GestaoCmv = lazy(() => import("./pages/admin/gestao/GestaoCmv"));
 const GestaoFinance = lazy(() => import("./pages/admin/gestao/GestaoFinance"));
 const GestaoFiscal = lazy(() => import("./pages/admin/gestao/GestaoFiscal"));
@@ -739,6 +740,12 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/crm/grupos" element={<CrmGrupos />} />
                 <Route path="/painel/crm/tarefas" element={<CrmTarefas />} />
                 <Route path="/painel/crm/agente-whatsapp" element={<CrmAgenteWhatsApp />} />
+                <Route path="/painel/gestao/compras/*" element={<GestaoPurchases />} />
+                <Route path="/painel/gestao/estoque/compras" element={<Navigate to="/painel/gestao/compras/compras" replace />} />
+                <Route path="/painel/gestao/estoque/cotacoes" element={<Navigate to="/painel/gestao/compras/cotacoes" replace />} />
+                <Route path="/painel/gestao/estoque/bi-compras" element={<Navigate to="/painel/gestao/compras/bi-compras" replace />} />
+                <Route path="/painel/gestao/estoque/recebimentos" element={<Navigate to="/painel/gestao/compras/recebimentos" replace />} />
+                <Route path="/painel/gestao/estoque/reposicao" element={<Navigate to="/painel/gestao/compras/reposicao" replace />} />
                 <Route path="/painel/gestao/estoque/*" element={<GestaoInventory />} />
                 <Route path="/painel/gestao/cmv" element={<GestaoCmv />} />
                 <Route path="/painel/gestao/financeiro" element={<GestaoFinance />} />

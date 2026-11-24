@@ -17,6 +17,7 @@ const routeLoaders: Array<[string, RouteLoader]> = [
   ["/painel/marketing/notificacoes", () => import("@/pages/admin/marketing/MarketingStoreNotifications")],
   ["/painel/marketing/upsell", () => import("@/pages/admin/marketing/MarketingUpsell")],
   ["/painel/gestao/estoque", () => import("@/pages/admin/gestao/GestaoInventory")],
+  ["/painel/gestao/compras", () => import("@/pages/admin/gestao/GestaoPurchases")],
   ["/painel/gestao/cmv", () => import("@/pages/admin/gestao/GestaoCmv")],
   ["/painel/gestao/financeiro", () => import("@/pages/admin/gestao/GestaoFinance")],
   ["/painel/gestao/fiscal", () => import("@/pages/admin/gestao/GestaoFiscal")],

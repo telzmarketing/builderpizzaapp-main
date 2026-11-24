@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AlertTriangle, BarChart3, CheckCircle2, ChefHat, Database, Layers3, Loader2, Package, Pencil, Plus, RefreshCw, Settings, ShoppingCart, Trash2, Truck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChefHat, Database, Layers3, Loader2, Package, Pencil, Plus, RefreshCw, Settings, ShoppingCart, Trash2, Truck } from "lucide-react";
 import { AdminPageTabs, type AdminPageTab } from "@/components/admin/AdminPageChrome";
 import AdminGestao from "./AdminGestao";
 import InventoryFoundationPanel from "@/components/admin/InventoryFoundationPanel";
@@ -9,10 +9,6 @@ import InventoryReceiptDocumentsPanel from "@/components/admin/InventoryReceiptD
 import PreparationOperationsPanel from "@/components/admin/PreparationOperationsPanel";
 import InventoryPortioningPanel from "@/components/admin/InventoryPortioningPanel";
 import InventoryPortionStockPanel from "@/components/admin/InventoryPortionStockPanel";
-import PurchasePlanningPanel from "@/components/admin/PurchasePlanningPanel";
-import PurchaseQuotationPanel from "@/components/admin/PurchaseQuotationPanel";
-import PurchaseReceiptPanel from "@/components/admin/PurchaseReceiptPanel";
-import PurchaseDashboardPanel from "@/components/admin/PurchaseDashboardPanel";
 import InventoryStockAdjustmentDialog, { hasUnresolvedAdjustment, type AdjustmentItem } from "@/components/admin/InventoryStockAdjustmentDialog";
 import { filterAndSort, InventoryTableControls } from "@/components/admin/InventoryTableControls";
 import {
@@ -29,7 +25,7 @@ import {
 } from "@/lib/api";
 import { formatQuantity } from "@/lib/formatQuantity";
 
-type Section = "settings" | "items" | "ingredient-stock" | "portioning" | "portion-stock" | "replenishment" | "foundation" | "purchases" | "quotations" | "dashboard" | "receipts" | "entries" | "suppliers" | "preparation" | "base";
+type Section = "settings" | "items" | "ingredient-stock" | "portioning" | "portion-stock" | "foundation" | "entries" | "suppliers" | "preparation" | "base";
 type InventoryGroup = "cadastro" | "estoque" | "producao" | "operacao";
 
 const inventoryRouteBase = "/painel/gestao/estoque";
@@ -38,12 +34,7 @@ const sectionSlugs: Record<Section, string> = {
   "ingredient-stock": "estoque-insumos",
   portioning: "porcionamento",
   "portion-stock": "estoque-porcionamento",
-  replenishment: "reposicao",
   foundation: "saldos-conversoes",
-  purchases: "compras",
-  quotations: "cotacoes",
-  receipts: "recebimentos",
-  dashboard: "bi-compras",
   entries: "entradas",
   suppliers: "fornecedores",
   preparation: "preparo",
@@ -62,7 +53,7 @@ const groupSections: Record<InventoryGroup, Section[]> = {
   cadastro: ["items", "portioning", "suppliers", "base"],
   estoque: ["ingredient-stock", "portion-stock", "foundation"],
   producao: ["preparation"],
-  operacao: ["dashboard", "replenishment", "purchases", "quotations", "receipts", "entries", "settings"],
+  operacao: ["entries", "settings"],
 };
 
 const sectionGroup = (section: Section): InventoryGroup => (
@@ -81,12 +72,7 @@ const sections: AdminPageTab<Section>[] = [
   { id: "ingredient-stock", label: "Estoque de Insumos", icon: Database },
   { id: "portioning", label: "Porcionamento", icon: Package },
   { id: "portion-stock", label: "Estoque de Porcionamento", icon: Database },
-  { id: "replenishment", label: "Reposição", icon: AlertTriangle },
   { id: "foundation", label: "Saldos e Conversões", icon: Layers3 },
-  { id: "purchases", label: "Compras", icon: ShoppingCart },
-  { id: "quotations", label: "Cotações", icon: ShoppingCart },
-  { id: "dashboard", label: "BI de Compras", icon: BarChart3 },
-  { id: "receipts", label: "Recebimentos", icon: Database },
   { id: "entries", label: "Entradas", icon: Database },
   { id: "suppliers", label: "Fornecedores", icon: Truck },
   { id: "preparation", label: "Preparo", icon: ChefHat },
@@ -99,12 +85,7 @@ const sectionContent: Record<Section, { title: string; description: string }> = 
   "ingredient-stock": { title: "Estoque de Insumos", description: "Consulte os saldos atuais, mínimos e locais dos insumos cadastrados." },
   portioning: { title: "Cadastro de Porcionamento", description: "Configure como cada insumo será transformado em porções para uso." },
   "portion-stock": { title: "Estoque de Porcionamento", description: "Consulte as porções disponíveis e solicite novos porcionamentos." },
-  replenishment: { title: "Reposição de Estoque", description: "Identifique os insumos abaixo do mínimo e gere uma solicitação de compra." },
   foundation: { title: "Base do Estoque", description: "Cadastre unidades, categorias, locais e conversões usadas pelo estoque." },
-  purchases: { title: "Compras de Estoque", description: "Crie, revise e confirme compras de insumos sem alterar o saldo antes da entrada." },
-  quotations: { title: "Cotações", description: "Compare propostas de fornecedores por unidade-base, preço e prazo." },
-  receipts: { title: "Recebimentos", description: "Confira mercadorias e publique entradas idempotentes no estoque." },
-  dashboard: { title: "BI de Compras", description: "Acompanhe requisições, cotações, pedidos, recebimentos, estoque e financeiro." },
   entries: { title: "Entradas e Movimentos de Estoque", description: "Registre entradas, saídas e ajustes manuais com motivo e observações." },
   suppliers: { title: "Cadastro de Fornecedores", description: "Cadastre e mantenha os fornecedores utilizados nas compras de estoque." },
   preparation: { title: "Preparo de Porcionamento", description: "Acompanhe as solicitações, consulte a ficha e registre o porcionamento efetuado." },
@@ -162,12 +143,12 @@ export default function GestaoInventory() {
         </div>
       )}
     >
-      {section === "foundation" ? <InventoryFoundationPanel /> : section === "preparation" ? <PreparationOperationsPanel /> : section === "portioning" ? <InventoryPortioningPanel /> : section === "portion-stock" ? <InventoryPortionStockPanel /> : section === "replenishment" ? <PurchasePlanningPanel /> : section === "quotations" ? <PurchaseQuotationPanel /> : section === "receipts" ? <PurchaseReceiptPanel /> : section === "dashboard" ? <PurchaseDashboardPanel /> : section !== "settings" && <InventoryBase section={section} />}
+      {section === "foundation" ? <InventoryFoundationPanel /> : section === "preparation" ? <PreparationOperationsPanel /> : section === "portioning" ? <InventoryPortioningPanel /> : section === "portion-stock" ? <InventoryPortionStockPanel /> : section !== "settings" && <InventoryBase section={section} />}
     </AdminGestao>
   );
 }
 
-function InventoryBase({ section }: { section: Exclude<Section, "settings" | "foundation" | "documents" | "preparation" | "receipts" | "dashboard"> }) {
+function InventoryBase({ section }: { section: Exclude<Section, "settings" | "foundation" | "documents" | "preparation"> }) {
   const [data, setData] = useState<InventoryOverview>(emptyOverview);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -241,8 +222,6 @@ function InventoryBase({ section }: { section: Exclude<Section, "settings" | "fo
           {section === "ingredient-stock" && <IngredientStockSection data={data} saving={saving} onRequestPurchase={() => run(() => inventoryApi.createReplenishmentRequest(), "Solicitação de compras gerada. Nenhum saldo foi alterado.")} onAdjusted={() => void refreshAfterAdjustment()} />}
           {section === "base" && <BaseSection data={data} saving={saving} run={run} />}
           {section === "suppliers" && <SuppliersSection data={data} saving={saving} run={run} />}
-          {section === "purchases" && <PurchasesSection data={data} saving={saving} run={run} />}
-          {section === "replenishment" && <ReplenishmentSection data={data} saving={saving} onCreatePurchase={(itemIds) => run(() => inventoryApi.createReplenishmentRequest(itemIds), "Solicitação de compras gerada. Nenhum saldo foi alterado.")} />}
           {section === "entries" && <EntriesSection data={data} saving={saving} run={run} />}
         </>
       )}
