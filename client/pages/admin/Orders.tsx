@@ -230,6 +230,9 @@ type AmendmentModalState = {
   order: ApiOrder;
   lines: Record<string, AmendmentLine>;
   additions: Record<string, AmendmentLine>;
+  delivery: { name: string; phone: string; street: string; city: string; complement: string };
+  paymentMethod: string;
+  deliveryPaymentMethod: "cash" | "card";
   reason: string;
   idempotencyKey: string;
 };
@@ -588,6 +591,15 @@ export default function AdminOrders() {
         quantity: item.quantity,
       }])),
       additions: {},
+      delivery: {
+        name: order.delivery_name ?? "",
+        phone: order.delivery_phone ?? "",
+        street: order.delivery_street ?? "",
+        city: order.delivery_city ?? "",
+        complement: order.delivery_complement ?? "",
+      },
+      paymentMethod: order.payment_method ?? (order.pay_on_delivery ? "pay_on_delivery" : "pix"),
+      deliveryPaymentMethod: order.delivery_payment_method === "card" ? "card" : "cash",
       reason: "Ajuste solicitado pelo cliente",
       idempotencyKey: newAmendmentIdempotencyKey(order),
     });
@@ -610,20 +622,28 @@ export default function AdminOrders() {
 
   const handleAmendment = useCallback(async () => {
     if (!amendmentModal) return;
-    const { order, lines, additions, reason, idempotencyKey } = amendmentModal;
+    const { order, lines, additions, delivery, reason, idempotencyKey } = amendmentModal;
     const items = buildAmendmentItems(order, lines, amendmentProducts, additions);
     if (!items.length) {
       setStatusActionError("O pedido precisa manter pelo menos um item.");
       return;
     }
     const expectedTotal = amendmentPreviewTotal(order, lines, amendmentProducts, additions);
+    const deliveryChanged = delivery.name !== (order.delivery_name ?? "")
+      || delivery.phone !== (order.delivery_phone ?? "")
+      || delivery.street !== (order.delivery_street ?? "")
+      || delivery.city !== (order.delivery_city ?? "")
+      || delivery.complement !== (order.delivery_complement ?? "");
     setAmendingId(order.id);
     try {
       await ordersApi.amend(order.id, {
         expected_revision: order.composition_revision ?? 0,
-        expected_total: expectedTotal,
+        ...(deliveryChanged ? {} : { expected_total: expectedTotal }),
         reason: reason.trim() || "Ajuste solicitado pelo cliente",
         items,
+        delivery,
+        payment_method: amendmentModal.paymentMethod,
+        delivery_payment_method: amendmentModal.deliveryPaymentMethod,
       }, idempotencyKey);
       const updated = await ordersApi.get(order.id);
       setOrders((prev) => prev.map((current) => current.id === order.id ? updated : current));
@@ -1232,6 +1252,33 @@ export default function AdminOrders() {
               }} className="h-10 rounded-lg bg-emerald-500/20 px-3 text-xs font-bold text-emerald-200 disabled:opacity-50">
                 Adicionar
               </button>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {(["name", "phone", "street", "city", "complement"] as const).map((field) => (
+                <input key={field}
+                  value={amendmentModal.delivery[field]}
+                  onChange={(event) => setAmendmentModal((current) => current ? ({
+                    ...current,
+                    delivery: { ...current.delivery, [field]: event.target.value },
+                    idempotencyKey: newAmendmentIdempotencyKey(current.order),
+                  }) : current)}
+                  placeholder={{ name: "Nome", phone: "Telefone", street: "Endereço", city: "Cidade", complement: "Complemento" }[field]}
+                  className="h-10 rounded-lg border border-surface-03 bg-surface-00 px-3 text-sm text-cream"
+                  aria-label={{ name: "Nome do endereço", phone: "Telefone do endereço", street: "Rua do endereço", city: "Cidade do endereço", complement: "Complemento do endereço" }[field]}
+                />
+              ))}
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <select value={amendmentModal.paymentMethod}
+                onChange={(event) => setAmendmentModal((current) => current ? ({ ...current, paymentMethod: event.target.value, idempotencyKey: newAmendmentIdempotencyKey(current.order) }) : current)}
+                className="h-10 rounded-lg border border-surface-03 bg-surface-00 px-3 text-sm text-cream" aria-label="Forma de pagamento">
+                <option value="pix">Pix</option><option value="credit_card">Cartão de crédito</option><option value="debit_card">Cartão de débito</option><option value="pay_on_delivery">Pagamento na entrega</option>
+              </select>
+              {amendmentModal.paymentMethod === "pay_on_delivery" && <select value={amendmentModal.deliveryPaymentMethod}
+                onChange={(event) => setAmendmentModal((current) => current ? ({ ...current, deliveryPaymentMethod: event.target.value as "cash" | "card", idempotencyKey: newAmendmentIdempotencyKey(current.order) }) : current)}
+                className="h-10 rounded-lg border border-surface-03 bg-surface-00 px-3 text-sm text-cream" aria-label="Pagamento na entrega">
+                <option value="cash">Dinheiro</option><option value="card">Cartão</option>
+              </select>}
             </div>
             <div className="mt-4 flex items-center justify-between rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-sm">
               <span className="text-stone">Total previsto {loadingAmendmentProducts ? "(carregando catálogo...)" : ""}</span>

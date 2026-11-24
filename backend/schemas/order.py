@@ -251,14 +251,19 @@ class OrderFulfillmentUpdate(BaseModel):
 
 
 class OrderAmendmentIn(BaseModel):
-    """Replace the composition only; identity, delivery and payment method stay fixed."""
+    """Replace the editable order snapshot in one audited transaction."""
 
     model_config = {"extra": "forbid", "str_strip_whitespace": True, "allow_inf_nan": False}
 
     expected_revision: int = Field(ge=0)
-    expected_total: float = Field(ge=0, allow_inf_nan=False)
+    expected_total: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     reason: str = Field(min_length=3, max_length=500)
     items: list[CartItemIn] = Field(min_length=1, max_length=100)
+    delivery: Optional[DeliveryAddressIn] = None
+    payment_method: Optional[str] = None
+    delivery_payment_method: Optional[str] = None
+    cash_needs_change: Optional[bool] = None
+    cash_change_for: Optional[float] = Field(default=None, ge=0)
 
 
 class OrderAmendmentOut(BaseModel):

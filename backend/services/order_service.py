@@ -930,21 +930,12 @@ class OrderService:
 
         _, _, started = self._amendment_production_state(order)
 
-        # The checkout always creates a payment placeholder. It may be updated
-        # only while untouched; an issued PIX/link or a settlement is immutable here.
+        # The original gateway evidence remains immutable, but the order may
+        # still be amended after payment. Any delta is recorded for an explicit
+        # charge/refund settlement instead of silently changing the payment.
         payment = self._tenant_query(Payment).filter(Payment.order_id == order.id).populate_existing().with_for_update().first()
         if order.payment is not None and (payment is None or order.payment.tenant_id != order.tenant_id):
             raise OrderAmendmentBlocked("Pagamento inconsistente com o estabelecimento do pedido.")
-        if not started and payment is not None and (
-            payment.status != PaymentStatus.pending
-            or any(getattr(payment, name) for name in (
-                "transaction_id", "provider_payment_id", "mercado_pago_payment_id", "provider_status",
-                "qr_code", "qr_code_text", "pix_payload", "pix_qr_code", "payment_url", "client_secret",
-                "raw_response", "webhook_data",
-            ))
-            or (payment.paid_at and not payment.pay_on_delivery)
-        ):
-            raise OrderAmendmentBlocked("Pagamento ja iniciado ou liquidado exige conciliacao antes de alterar.", code="OrderAmendmentPaymentLocked")
         source_ids = [order.id] + [item.id for item in order.items]
         dependencies = [
             (OrderCmvSnapshot, OrderCmvSnapshot.order_id == order.id),
@@ -1036,11 +1027,38 @@ class OrderService:
             discount, _, _ = self._resolve_manual_discount(discount_payload, subtotal, Decimal("0"), allowed=True)
             if not order.manual_discount_type and _money_decimal(order.discount, "Desconto") != 0:
                 raise OrderAmendmentBlocked("Desconto sem origem definida exige conciliacao antes de alterar.")
-            total = (subtotal + _money_decimal(order.shipping_fee, "Frete") - discount).quantize(_CENT, rounding=ROUND_HALF_UP)
-            self._validate_expected_total(payload.expected_total, float(total))
-            if payment and payment.cash_needs_change and (
-                payment.cash_change_for is None or _money_decimal(payment.cash_change_for, "Troco") <= total
-            ):
+            shipping_fee = _money_decimal(order.shipping_fee, "Frete")
+            shipping_result = None
+            if payload.delivery is not None:
+                from backend.services.shipping_service import ShippingService
+                from backend.schemas.shipping_v2 import ShippingCalculateIn
+                shipping_result = ShippingService(self._db, self._tenant_context).calculate(
+                    ShippingCalculateIn(
+                        city=payload.delivery.city,
+                        street=payload.delivery.street,
+                        neighborhood=payload.delivery.neighborhood,
+                        zip_code=payload.delivery.zip_code,
+                        order_subtotal=float(subtotal),
+                        is_pickup=payload.delivery.is_pickup,
+                        is_scheduled=payload.delivery.is_scheduled,
+                    ),
+                    order_id=order.id,
+                )
+                if not shipping_result.available:
+                    raise OrderAmendmentBlocked(shipping_result.message or "Entrega indisponivel para este endereco.", code="DeliveryUnavailable")
+                shipping_fee = _money_decimal(shipping_result.shipping_price, "Frete")
+            total = (subtotal + shipping_fee - discount).quantize(_CENT, rounding=ROUND_HALF_UP)
+            if payload.expected_total is not None:
+                self._validate_expected_total(payload.expected_total, float(total))
+            target_payment_method = payload.payment_method or ("pay_on_delivery" if payment and payment.pay_on_delivery else None)
+            if target_payment_method and target_payment_method not in PaymentMethod._value2member_map_ and target_payment_method != "pay_on_delivery":
+                raise OrderAmendmentBlocked("Forma de pagamento invalida.", code="InvalidPaymentMethod")
+            if target_payment_method == "pay_on_delivery" and payload.delivery_payment_method not in {"cash", "card"}:
+                raise OrderAmendmentBlocked("Escolha se o pagamento na entrega sera em cartao ou dinheiro.", code="InvalidDeliveryPaymentMethod")
+            target_cash_change = payload.cash_change_for if payload.cash_needs_change else None
+            if target_cash_change is None and payment and payment.cash_needs_change and payload.payment_method is None:
+                target_cash_change = payment.cash_change_for
+            if target_cash_change is not None and _money_decimal(target_cash_change, "Troco") <= total:
                 raise OrderAmendmentBlocked("O valor de troco nao atende ao novo total.", code="InvalidCashChange")
 
             loss_results = self._record_amendment_loss_and_reproduction(
@@ -1163,9 +1181,26 @@ class OrderService:
                     order.id, actor.user_id, commit=False,
                 )
             order.subtotal, order.discount, order.total = float(subtotal), float(discount), float(total)
+            if payload.delivery is not None:
+                order.delivery_name = _clip_text(payload.delivery.name, 200) or ""
+                order.delivery_phone = _clip_text(payload.delivery.phone, 30) or ""
+                order.delivery_street = _clip_text(payload.delivery.street, 300) or ""
+                order.delivery_city = _clip_text(payload.delivery.city, 100) or ""
+                order.delivery_complement = _clip_text(payload.delivery.complement, 100)
+                order.fulfillment_type = "pickup" if payload.delivery.is_pickup else "delivery"
+                order.shipping_fee = float(shipping_fee)
+                order.delivery_fee_final = float(shipping_fee)
+                order.estimated_time = shipping_result.estimated_time if shipping_result else order.estimated_time
+            if payment and payload.payment_method:
+                is_delivery_payment = payload.payment_method == "pay_on_delivery"
+                payment.method = PaymentMethod.cash if is_delivery_payment else PaymentMethod(payload.payment_method)
+                payment.pay_on_delivery = is_delivery_payment
+                payment.delivery_payment_method = payload.delivery_payment_method if is_delivery_payment else None
+                payment.cash_needs_change = bool(payload.cash_needs_change) if is_delivery_payment and payload.delivery_payment_method == "cash" else None
+                payment.cash_change_for = float(payload.cash_change_for) if payment.cash_needs_change else None
             order.composition_revision += 1
             order.updated_at = datetime.now(timezone.utc)
-            if payment and (not started or payment.pay_on_delivery):
+            if payment and (payment.status == PaymentStatus.pending or payment.pay_on_delivery):
                 payment.amount = order.total
             if started:
                 self._ensure_amendment_cmv_snapshots(order)
@@ -1187,7 +1222,7 @@ class OrderService:
                 "previous_total": str(old_total), "new_total": str(new_total),
                 "delta": str(delta),
                 "action": "charge" if delta > 0 else ("abatement" if delta < 0 else "none"),
-                "payment_reconciled": bool(payment and (not started or payment.pay_on_delivery)),
+                "payment_reconciled": bool(payment and (payment.status == PaymentStatus.pending or payment.pay_on_delivery)),
             }
             amendment = OrderAmendment(
                 id=str(uuid.uuid4()), tenant_id=order.tenant_id, order_id=order.id,
@@ -1201,7 +1236,7 @@ class OrderService:
             # gateway payment. Persist a tenant-scoped pending finance title
             # so the cashier has an explicit charge/abatement to reconcile.
             # The amendment itself remains the immutable source of truth.
-            if delta != 0 and started and payment and not payment.pay_on_delivery:
+            if delta != 0 and payment and not payment.pay_on_delivery and (started or payment.status != PaymentStatus.pending):
                 from backend.models.finance import FinanceTransaction
                 self._db.add(FinanceTransaction(
                     id=f"fin-amend-{amendment.id}",

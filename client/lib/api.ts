@@ -6304,9 +6304,14 @@ export const ordersApi = {
 
   amend: (id: string, body: {
     expected_revision: number;
-    expected_total: number;
+    expected_total?: number;
     reason: string;
     items: CheckoutItemIn[];
+    delivery?: { name: string; phone: string; street: string; city: string; complement?: string | null; is_pickup?: boolean };
+    payment_method?: string | null;
+    delivery_payment_method?: "cash" | "card" | string | null;
+    cash_needs_change?: boolean | null;
+    cash_change_for?: number | null;
   }, idempotencyKey: string) =>
     request<{ id: string; order_id: string; revision: number; state: string }>(
       "POST", `/orders/${encodeURIComponent(id)}/amendments`, body, { "Idempotency-Key": idempotencyKey },
