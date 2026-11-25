@@ -2549,10 +2549,11 @@ class FinanceService:
             )
         if not item or not item.enabled or item.status == "disabled":
             return {}
-        try:
-            return json.loads(item.settings_json or "{}")
-        except json.JSONDecodeError:
-            return {}
+        from backend.services.gestao_service import GestaoService
+
+        # Keep legacy tenant settings usable as the canonical defaults evolve.
+        # GestaoService merges defaults first and lets stored keys win.
+        return GestaoService(self._db, self._tenant_id)._safe_settings(item)
 
     def _ensure_default_account(self, setting_key: str, name: str) -> str:
         """Return a tenant-owned account for automatic projections.

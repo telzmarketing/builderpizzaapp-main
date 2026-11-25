@@ -13,7 +13,7 @@ import backend.models
 from backend.core.tenant_context import TenantContext, TenantSource
 from backend.database import Base
 from backend.models.finance import (
-    FinanceCategory,
+    FinanceAccount, FinanceCategory,
     FinanceObligation,
     FinanceObligationInstallment,
     FinanceSettlement,
@@ -22,9 +22,10 @@ from backend.models.finance import (
 from backend.models.inventory import InventoryPurchase
 from backend.models.inventory_receipts import InventoryReceiptDocument
 from backend.models.order import Order
-from backend.models.payment import Payment
+from backend.models.payment import Payment, PaymentMethod, PaymentStatus
 from backend.models.delivery import DeliveryDailyAllowance, DeliveryEarning
 from backend.models.cmv import OrderCmvSnapshot
+from backend.models.gestao import GestaoModuleSettings
 from backend.models.idempotency import IdempotencyKey
 from backend.services.finance_service import FinanceService
 from backend.services.inventory_receipt_service import InventoryReceiptService
@@ -45,6 +46,7 @@ def db():
     # whose legacy foreign keys are not part of these regressions.
     tables = [
         FinanceCategory.__table__,
+        FinanceAccount.__table__,
         FinanceObligation.__table__,
         FinanceObligationInstallment.__table__,
         FinanceSettlement.__table__,
@@ -57,6 +59,7 @@ def db():
         DeliveryDailyAllowance.__table__,
         DeliveryEarning.__table__,
         OrderCmvSnapshot.__table__,
+        GestaoModuleSettings.__table__,
     ]
     Base.metadata.create_all(engine, tables=tables)
     with Session(engine) as session:
@@ -67,6 +70,52 @@ def db():
 def finance_service(db):
     context = TenantContext(tenant_id=TENANT, source=TenantSource.JOB)
     return FinanceService(db, TENANT, context)
+
+
+def test_incomplete_finance_settings_enable_idempotent_sales_projection_for_tenant(db):
+    db.add(GestaoModuleSettings(
+        id="finance-settings-incomplete", tenant_id=TENANT, module_key="finance",
+        title="Financeiro", description="", enabled=True, status="active",
+        settings_json='{"dre_enabled": true}', notes="",
+    ))
+    db.add(Order(
+        id="sales-order-1", tenant_id=TENANT, status="paid", order_origin="own",
+        fulfillment_type="delivery", sales_channel="delivery", subtotal=100.0,
+        total=100.0, discount=0.0,
+    ))
+    db.add(Payment(
+        id="sales-payment-1", tenant_id=TENANT, order_id="sales-order-1",
+        method=PaymentMethod.pix, status=PaymentStatus.paid, amount=100.0,
+        paid_at=date(2026, 11, 25),
+    ))
+    db.commit()
+
+    service = finance_service(db)
+    settings = service._module_settings()
+    assert settings["auto_create_receivables"] is True
+    assert settings["dre_enabled"] is True
+
+    first = service.sync_payment_confirmed(
+        payment_id="sales-payment-1", order_id="sales-order-1", amount=100.0,
+        gateway="mock",
+    )
+    second = service.sync_payment_confirmed(
+        payment_id="sales-payment-1", order_id="sales-order-1", amount=100.0,
+        gateway="mock",
+    )
+    backfill = service.backfill_sales()
+
+    rows = db.query(FinanceTransaction).filter(
+        FinanceTransaction.tenant_id == TENANT,
+        FinanceTransaction.origin_type == "payment_receivable",
+        FinanceTransaction.origin_id == "sales-payment-1",
+    ).all()
+    assert first["created"] is True, first
+    assert second["reason"] == "already_synced"
+    assert backfill["already_synced"] == 1
+    assert len(rows) == 1
+    assert rows[0].tenant_id == TENANT
+    assert rows[0].amount == 100.0
 
 
 def test_incompatible_partial_reversal_keeps_receivable_and_settlement_active(db):
