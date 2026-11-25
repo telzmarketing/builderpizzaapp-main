@@ -14,7 +14,7 @@ from alembic.script import ScriptDirectory
 ROOT = Path(__file__).parents[1]
 REVISION = "20261017_delivery_schema"
 DELIVERY_COLUMNS_AT_REVISION = {
-    "id", "order_id", "driver_id", "status", "assigned_at", "picked_up_at",
+    "id", "order_id", "delivery_person_id", "status", "assigned_at", "picked_up_at",
     "delivered_at", "notes", "problem_report", "problem_reported_at",
     "problem_resolved_at", "admin_resolution_note", "tenant_id",
     "confirmation_code", "confirmed_by_code_at",
