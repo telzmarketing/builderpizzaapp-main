@@ -45,6 +45,7 @@ import {
   type FinanceBankReconciliationLine,
   type FinancePaymentOverview,
   type FinancePaymentReconciliation,
+  type FinancePaymentReconciliationSettlement,
   type FinanceDeliveryOverview,
   type FinanceDeliveryEarning,
   type ApiMarketplaceSettlement,
@@ -73,6 +74,13 @@ import {
 
 type FinanceModuleId = "overview" | "payables" | "receivables" | "cash" | "banks" | "cards" | "delivery" | "couriers" | "cmv" | "cashflow" | "dre" | "budget" | "planning" | "bi" | "intelligence" | "suppliers" | "fiscal" | "settings" | "registries" | "transactions";
 type FinanceRegistryPanel = "account" | "category" | "counterparty" | "transaction";
+type FinanceSettingsDraft = {
+  auto_create_receivables: boolean;
+  auto_create_payables_from_purchases: boolean;
+  cash_basis_enabled: boolean;
+  accrual_basis_enabled: boolean;
+  dre_enabled: boolean;
+};
 
 const focusClass = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-surface-01";
 
@@ -254,7 +262,11 @@ function FinancePanel() {
   const [reconciliationLines, setReconciliationLines] = useState<FinanceBankReconciliationLine[]>([]);
   const [paymentOverview, setPaymentOverview] = useState<FinancePaymentOverview | null>(null);
   const [paymentReconciliation, setPaymentReconciliation] = useState<FinancePaymentReconciliation | null>(null);
+  const [paymentSettlements, setPaymentSettlements] = useState<FinancePaymentReconciliationSettlement[]>([]);
   const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentSettlementSaving, setPaymentSettlementSaving] = useState(false);
+  const [paymentSettlementMessage, setPaymentSettlementMessage] = useState("");
+  const [paymentSettlementDraft, setPaymentSettlementDraft] = useState({ payment_id: "", external_reference: "", fee_amount: 0, net_amount: 0 });
   const [deliveryOverview, setDeliveryOverview] = useState<FinanceDeliveryOverview | null>(null);
   const [deliveryEarnings, setDeliveryEarnings] = useState<FinanceDeliveryEarning[]>([]);
   const [marketplaceSettlements, setMarketplaceSettlements] = useState<ApiMarketplaceSettlement[]>([]);
@@ -301,6 +313,8 @@ function FinancePanel() {
     notes: "",
   });
   const [gestaoSettings, setGestaoSettings] = useState<GestaoModuleSettings | null>(null);
+  const [financeSettingsDraft, setFinanceSettingsDraft] = useState<FinanceSettingsDraft | null>(null);
+  const [financeSettingsSaving, setFinanceSettingsSaving] = useState(false);
   const [adminLoading, setAdminLoading] = useState(false);
   const [biLoading, setBiLoading] = useState(false);
   const [biPeriod, setBiPeriod] = useState({ date_from: `${today().slice(0, 8)}01`, date_to: today() });
@@ -462,7 +476,19 @@ function FinancePanel() {
     setAdminLoading(true);
     const request = activeModule === "fiscal"
       ? Promise.all([fiscalApi.overview(), financeApi.listObligations()]).then(([overview, items]) => { setFiscalOverview(overview); setObligations(items); })
-      : gestaoApi.settings().then((response) => setGestaoSettings(response.modules.find((item) => item.module_key === "finance") ?? null));
+      : gestaoApi.settings().then((response) => {
+        const finance = response.modules.find((item) => item.module_key === "finance") ?? null;
+        setGestaoSettings(finance);
+        if (finance) {
+          setFinanceSettingsDraft({
+            auto_create_receivables: Boolean(finance.settings.auto_create_receivables),
+            auto_create_payables_from_purchases: Boolean(finance.settings.auto_create_payables_from_purchases),
+            cash_basis_enabled: Boolean(finance.settings.cash_basis_enabled),
+            accrual_basis_enabled: Boolean(finance.settings.accrual_basis_enabled),
+            dre_enabled: Boolean(finance.settings.dre_enabled),
+          });
+        }
+      });
     request
       .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar a administracao financeira."))
       .finally(() => setAdminLoading(false));
@@ -490,6 +516,20 @@ function FinancePanel() {
       .then(setData)
       .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar Financeiro."))
       .finally(() => setLoading(false));
+  };
+
+  const saveFinanceSettings = async () => {
+    if (!financeSettingsDraft) return;
+    setFinanceSettingsSaving(true);
+    setError("");
+    try {
+      const updated = await gestaoApi.updateSettings("finance", { settings: financeSettingsDraft });
+      setGestaoSettings(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel salvar as configuracoes financeiras.");
+    } finally {
+      setFinanceSettingsSaving(false);
+    }
   };
 
   const backfillSales = async () => {
@@ -668,11 +708,37 @@ function FinancePanel() {
   useEffect(() => {
     if (activeModule !== "cards") return;
     setPaymentLoading(true);
-    Promise.all([financeApi.paymentOverview(), financeApi.paymentReconciliation()])
-      .then(([overview, reconciliation]) => { setPaymentOverview(overview); setPaymentReconciliation(reconciliation); })
+    Promise.all([financeApi.paymentOverview(), financeApi.paymentReconciliation(), financeApi.listPaymentReconciliationSettlements()])
+      .then(([overview, reconciliation, settlements]) => { setPaymentOverview(overview); setPaymentReconciliation(reconciliation); setPaymentSettlements(settlements.items); })
       .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar pagamentos."))
       .finally(() => setPaymentLoading(false));
   }, [activeModule]);
+
+  const createPaymentSettlement = async () => {
+    const draft = paymentSettlementDraft;
+    if (!draft.payment_id || !draft.external_reference.trim() || draft.net_amount <= 0 || draft.fee_amount < 0) {
+      setPaymentSettlementMessage("Informe pagamento, referencia externa, taxa e liquido validos.");
+      return;
+    }
+    setPaymentSettlementSaving(true);
+    setPaymentSettlementMessage("");
+    try {
+      const key = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${draft.payment_id}-${Date.now()}`;
+      const created = await financeApi.createPaymentReconciliationSettlement({
+        payment_id: draft.payment_id,
+        external_reference: draft.external_reference.trim(),
+        fee_amount: Number(draft.fee_amount),
+        net_amount: Number(draft.net_amount),
+      }, key);
+      setPaymentSettlements((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      setPaymentSettlementDraft({ payment_id: "", external_reference: "", fee_amount: 0, net_amount: 0 });
+      setPaymentSettlementMessage("Conciliação registrada. O adquirente não foi marcado como confirmado.");
+    } catch (err) {
+      setPaymentSettlementMessage(err instanceof Error ? err.message : "Nao foi possivel registrar a conciliacao.");
+    } finally {
+      setPaymentSettlementSaving(false);
+    }
+  };
 
   const importBankFile = async (file: File) => {
     if (!data?.accounts.length) {
@@ -1097,6 +1163,26 @@ function FinancePanel() {
             </div>
           )}
 
+          {activeModule === "settings" && financeSettingsDraft && (
+            <div className={`${panelClass} mt-5`}>
+              <CardHeading icon={Settings} title="Parâmetros operacionais" description="Altere somente as chaves financeiras já suportadas por esta empresa." />
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {([ ["auto_create_receivables", "Criar recebíveis das vendas confirmadas"], ["auto_create_payables_from_purchases", "Criar contas a pagar de compras confirmadas"], ["cash_basis_enabled", "Usar base de caixa operacional"], ["accrual_basis_enabled", "Usar base de competência operacional"], ["dre_enabled", "Disponibilizar DRE operacional"]] as const).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-3 rounded-xl border border-surface-03 bg-surface-01/50 p-4 text-sm text-cream">
+                    <input type="checkbox" checked={financeSettingsDraft[key]} onChange={(event) => setFinanceSettingsDraft({ ...financeSettingsDraft, [key]: event.target.checked })} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button type="button" className={buttonClass} onClick={() => void saveFinanceSettings()} disabled={financeSettingsSaving}>
+                  {financeSettingsSaving ? <Loader2 size={15} className="animate-spin" /> : <Settings size={15} />}Salvar configurações
+                </button>
+                <p className="text-sm text-stone">Esses parâmetros controlam projeções e relatórios operacionais por empresa. Escrituração contábil e fechamento continuam indisponíveis.</p>
+              </div>
+            </div>
+          )}
+
           {activeModule === "bi" && (
             <div className="space-y-5">
               <div className={panelClass}>
@@ -1394,8 +1480,27 @@ function FinancePanel() {
                   {paymentReconciliation && <div className={`${panelClass} overflow-x-auto`}>
                     <CardHeading icon={Landmark} title="Prontidão da conciliação financeira" description="Mostra somente o vínculo do pagamento com o Financeiro. Não representa repasse ou liquidação confirmada pelo adquirente." />
                     <div className="mt-4 grid gap-3 sm:grid-cols-3"><Metric title="Confirmados" value={String(paymentReconciliation.confirmed_count)} subtitle="Pagamentos aprovados ou pagos" icon={CheckCircle2} tone="success" /><Metric title="Projetados" value={String(paymentReconciliation.projected_count)} subtitle="Com lançamento financeiro" icon={ReceiptText} tone="success" /><Metric title="Líquido vinculado" value={currency(paymentReconciliation.total_linked_net_amount)} subtitle="Conforme lançamentos atuais" icon={Wallet} /></div>
+                    <div className="mt-5 rounded-xl border border-surface-03 bg-surface-01/60 p-4">
+                      <p className="text-sm font-bold text-cream">Registrar recebimento externo</p>
+                      <p className="mt-1 text-xs text-stone">Use a referência do arquivo/gateway e os valores efetivamente informados. Isso não confirma o adquirente.</p>
+                      <div className="mt-3 grid gap-3 lg:grid-cols-[1.2fr_1fr_0.7fr_0.7fr_auto]">
+                        <select value={paymentSettlementDraft.payment_id} onChange={(event) => { const item = paymentReconciliation.items.find((candidate) => candidate.payment_id === event.target.value); setPaymentSettlementDraft({ payment_id: event.target.value, external_reference: "", fee_amount: 0, net_amount: item?.gross_amount || 0 }); }} className={inputClass}>
+                          <option value="">Selecione o pagamento</option>
+                          {paymentReconciliation.items.filter((item) => item.readiness === "projected").map((item) => <option key={item.payment_id} value={item.payment_id}>{item.provider_payment_id || item.payment_id} · {currency(item.gross_amount)}</option>)}
+                        </select>
+                        <input value={paymentSettlementDraft.external_reference} onChange={(event) => setPaymentSettlementDraft((draft) => ({ ...draft, external_reference: event.target.value }))} placeholder="Referência externa" className={inputClass} />
+                        <input type="number" min="0" step="0.01" value={paymentSettlementDraft.fee_amount} onChange={(event) => setPaymentSettlementDraft((draft) => ({ ...draft, fee_amount: Number(event.target.value) }))} placeholder="Taxa" className={inputClass} />
+                        <input type="number" min="0.01" step="0.01" value={paymentSettlementDraft.net_amount} onChange={(event) => setPaymentSettlementDraft((draft) => ({ ...draft, net_amount: Number(event.target.value) }))} placeholder="Líquido" className={inputClass} />
+                        <button type="button" onClick={() => void createPaymentSettlement()} disabled={paymentSettlementSaving} className={buttonClass}>{paymentSettlementSaving ? "Salvando..." : "Registrar"}</button>
+                      </div>
+                      {paymentSettlementMessage && <p className="mt-3 text-sm text-amber-200">{paymentSettlementMessage}</p>}
+                    </div>
                     <div className="mt-4"><table className="w-full min-w-[900px] text-left text-sm"><thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Pagamento</th><th className="px-3 py-3">Método/provedor</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Prontidão</th><th className="px-3 py-3 text-right">Bruto</th><th className="px-3 py-3 text-right">Tarifa</th><th className="px-3 py-3 text-right">Líquido</th></tr></thead><tbody>{paymentReconciliation.items.map((item) => <tr key={item.payment_id} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{item.provider_payment_id || item.payment_id}</td><td className="px-3 py-3 text-stone">{item.method} · {item.provider}</td><td className="px-3 py-3 text-stone">{item.status}</td><td className={`px-3 py-3 font-bold ${item.readiness === "projected" ? "text-emerald-300" : item.readiness === "missing_projection" ? "text-amber-300" : "text-stone"}`}>{item.readiness === "projected" ? "Projetado" : item.readiness === "missing_projection" ? "Sem projeção" : "Não confirmado"}</td><td className="px-3 py-3 text-right text-cream">{currency(item.gross_amount)}</td><td className="px-3 py-3 text-right text-amber-200">{currency(item.linked_fee_amount)}</td><td className="px-3 py-3 text-right text-emerald-300">{currency(item.linked_net_amount)}</td></tr>)}</tbody></table></div>
                   </div>}
+                  <div className={`${panelClass} overflow-x-auto`}>
+                    <CardHeading icon={Landmark} title="Recebimentos conciliados" description="Referências externas e valores informados para conferência. Nenhum item é marcado como liquidação confirmada pelo adquirente." />
+                    <div className="mt-4"><table className="w-full min-w-[780px] text-left text-sm"><thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Referência</th><th className="px-3 py-3">Pagamento</th><th className="px-3 py-3 text-right">Bruto</th><th className="px-3 py-3 text-right">Taxa</th><th className="px-3 py-3 text-right">Líquido</th><th className="px-3 py-3">Evidência</th></tr></thead><tbody>{paymentSettlements.length === 0 ? <tr><td colSpan={6} className="px-3 py-5 text-stone">Nenhum recebimento externo informado.</td></tr> : paymentSettlements.map((item) => <tr key={item.id} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{item.external_reference}</td><td className="px-3 py-3 text-stone">{item.provider_payment_id || item.payment_id}</td><td className="px-3 py-3 text-right text-cream">{currency(item.gross_amount)}</td><td className="px-3 py-3 text-right text-amber-200">{currency(item.fee_amount)}</td><td className="px-3 py-3 text-right text-emerald-300">{currency(item.net_amount)}</td><td className="px-3 py-3 text-amber-200">Informada; não confirmada</td></tr>)}</tbody></table></div>
+                  </div>
                   <div className={`${panelClass} overflow-x-auto`}>
                     <CardHeading icon={ReceiptText} title="Repasses detalhados" description="Valores operacionais originados na logística. O status pago também pode ser projetado como despesa no caixa." />
                     <div className="mt-4 flex justify-end">

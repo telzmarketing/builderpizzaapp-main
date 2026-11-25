@@ -9,13 +9,15 @@ from sqlalchemy.orm import Session
 import backend.models
 from backend.database import Base
 from backend.core.tenant_context import TenantContext, TenantSource
+from backend.core.exceptions import IdempotencyConflict
 from backend.models.finance import (
     FinanceAccount, FinanceCategory, FinanceCounterparty, FinanceSettlement, FinanceTransaction,
 )
 from backend.models.gestao import GestaoModuleSettings
 from backend.models.order import Order
 from backend.models.payment import Payment
-from backend.services.finance_service import FinanceService
+from backend.schemas.finance import FinancePaymentReconciliationIn
+from backend.services.finance_service import FinanceInvalidReference, FinanceService
 
 
 for module in iter_modules(backend.models.__path__):
@@ -107,6 +109,60 @@ def test_cash_flow_includes_confirmed_unprojected_payment_once_and_respects_peri
     assert result["projected_income"] == 125.0
     assert "payment:payment-cash-old" not in {line["id"] for line in result["lines"]}
     assert "payment:payment-cash-pending" not in {line["id"] for line in result["lines"]}
+
+
+def test_external_payment_reconciliation_is_idempotent_non_posting_and_tenant_scoped(db):
+    db.add_all([
+        Order(id="order-card-a", tenant_id="tenant-a", subtotal=100, total=100, sales_channel="delivery", fulfillment_type="delivery"),
+        Order(id="order-card-b", tenant_id="tenant-b", subtotal=100, total=100, sales_channel="delivery", fulfillment_type="delivery"),
+        Payment(id="payment-card-a", tenant_id="tenant-a", order_id="order-card-a", method="credit_card", status="approved", amount=100, gateway="mp", provider="mercadopago", provider_payment_id="mp-1"),
+        Payment(id="payment-card-b", tenant_id="tenant-b", order_id="order-card-b", method="pix", status="approved", amount=100, gateway="mp", provider="mercadopago", provider_payment_id="mp-2"),
+        FinanceTransaction(id="finance-card-a", tenant_id="tenant-a", entry_type="income", status="paid", description="Receita", amount=100, paid_amount=100, net_amount=100, payment_id="payment-card-a", origin_type="payment_receivable", origin_id="payment-card-a"),
+        FinanceTransaction(id="finance-card-b", tenant_id="tenant-b", entry_type="income", status="paid", description="Receita", amount=100, paid_amount=100, net_amount=100, payment_id="payment-card-b", origin_type="payment_receivable", origin_id="payment-card-b"),
+    ])
+    db.commit()
+    svc = FinanceService(db, "tenant-a", TenantContext(tenant_id="tenant-a", source=TenantSource.JOB))
+    payload = FinancePaymentReconciliationIn(
+        payment_id="payment-card-a",
+        external_reference="settlement-001",
+        fee_amount="2.50",
+        net_amount="97.50",
+    )
+
+    first = svc.create_payment_reconciliation(payload, "key-001", "admin-a")
+    second = svc.create_payment_reconciliation(payload, "key-001", "admin-a")
+    listed = svc.list_payment_reconciliations()
+
+    assert first["id"] == second["id"]
+    assert first["gross_amount"] == 100
+    assert first["fee_amount"] == 2.50
+    assert first["net_amount"] == 97.50
+    assert first["acquirer_confirmed"] is False
+    assert first["evidence_status"] == "recorded_not_acquirer_confirmed"
+    assert db.query(FinanceSettlement).filter(FinanceSettlement.origin_type == "payment_reconciliation").count() == 1
+    assert db.get(FinanceSettlement, first["id"]).account_id is None
+    assert listed["total_count"] == 1
+    assert listed["items"][0]["payment_id"] == "payment-card-a"
+
+    with pytest.raises(IdempotencyConflict):
+        svc.create_payment_reconciliation(
+            payload.model_copy(update={"net_amount": "96.50"}), "key-001", "admin-a"
+        )
+    assert FinanceService(db, "tenant-b", TenantContext(tenant_id="tenant-b", source=TenantSource.JOB)).list_payment_reconciliations()["total_count"] == 0
+
+
+def test_external_payment_reconciliation_requires_projection_and_exact_net(db):
+    db.add(Order(id="order-unprojected", tenant_id="tenant-a", subtotal=100, total=100, sales_channel="delivery", fulfillment_type="delivery"))
+    db.add(Payment(id="payment-unprojected", tenant_id="tenant-a", order_id="order-unprojected", method="pix", status="approved", amount=100, gateway="mp"))
+    db.commit()
+    svc = FinanceService(db, "tenant-a", TenantContext(tenant_id="tenant-a", source=TenantSource.JOB))
+    with pytest.raises(FinanceInvalidReference, match="projecao"):
+        svc.create_payment_reconciliation(FinancePaymentReconciliationIn(payment_id="payment-unprojected", external_reference="x", fee_amount=1, net_amount=99), "key-unprojected")
+
+    db.add(FinanceTransaction(id="finance-unprojected", tenant_id="tenant-a", entry_type="income", status="paid", description="Receita", amount=100, paid_amount=100, net_amount=100, payment_id="payment-unprojected", origin_type="payment_receivable", origin_id="payment-unprojected"))
+    db.commit()
+    with pytest.raises(FinanceInvalidReference, match="liquido"):
+        svc.create_payment_reconciliation(FinancePaymentReconciliationIn(payment_id="payment-unprojected", external_reference="x", fee_amount=1, net_amount=98), "key-net")
 
 
 def test_sales_backfill_merges_legacy_settings_is_idempotent_and_is_tenant_scoped(db):

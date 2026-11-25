@@ -33,7 +33,10 @@ from backend.schemas.finance import (
     FinanceContractPayablesOut,
     FinanceOverviewOut,
     FinancePaymentOverviewOut,
+    FinancePaymentReconciliationIn,
     FinancePaymentReconciliationOut,
+    FinancePaymentReconciliationsOut,
+    FinancePaymentReconciliationSettlementOut,
     FinanceDeliveryOverviewOut,
     FinanceDeliveryEarningOut,
     FinanceCashFlowOut,
@@ -99,6 +102,38 @@ def payment_reconciliation(
     tenant_context: TenantContext | None = Depends(panel_operation_context),
 ):
     return service(db, tenant_context).payment_reconciliation_readiness(limit)
+
+
+@router.get("/payments/reconciliation/settlements", response_model=FinancePaymentReconciliationsOut)
+def list_payment_reconciliation_settlements(
+    payment_id: str | None = None,
+    limit: int = Query(default=500, ge=1, le=2000),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+    tenant_context: TenantContext | None = Depends(panel_operation_context),
+):
+    return service(db, tenant_context).list_payment_reconciliations(limit, payment_id)
+
+
+@router.post(
+    "/payments/reconciliation/settlements",
+    response_model=FinancePaymentReconciliationSettlementOut,
+    status_code=201,
+)
+def create_payment_reconciliation_settlement(
+    body: FinancePaymentReconciliationIn,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+    tenant_context: TenantContext | None = Depends(panel_operation_context),
+):
+    try:
+        if not idempotency_key:
+            from backend.core.exceptions import IdempotencyKeyRequired
+            raise IdempotencyKeyRequired()
+        return service(db, tenant_context).create_payment_reconciliation(body, idempotency_key, admin.id)
+    except DomainError as exc:
+        return err(exc)
 
 
 @router.post("/sales/backfill", response_model=dict)

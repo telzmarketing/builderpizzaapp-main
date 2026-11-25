@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload
 
-from backend.core.exceptions import DomainError
+from backend.core.exceptions import DomainError, IdempotencyConflict
 from backend.core.tenant_context import TenantContext, TenantContextMissing
 from backend.core.wave7_tenant_orm import wave7_orm_enabled
 from backend.models.finance import (
@@ -30,7 +30,7 @@ from backend.models.delivery import DeliveryDailyAllowance, DeliveryEarning, Del
 from backend.schemas.finance import (
     FinanceAccountIn, FinanceBudgetIn, FinanceCategoryIn, FinanceCounterpartyIn, FinanceContractIn,
     FinanceBankMatchIn, FinanceBankReconciliationReasonIn, FinanceBankStatementImportIn, FinanceObligationFromFiscalIn,
-    FinanceSettlementIn, FinanceTransactionIn,
+    FinancePaymentReconciliationIn, FinanceSettlementIn, FinanceTransactionIn,
 )
 from backend.services.finance_contracts import (
     FinancialContractViolation,
@@ -512,6 +512,175 @@ class FinanceService:
             "total_linked_fee_amount": round(sum(item["linked_fee_amount"] for item in items), 2),
             "total_linked_net_amount": round(sum(item["linked_net_amount"] for item in items), 2),
         }
+
+    def _serialize_payment_reconciliation(self, row: FinanceSettlement) -> dict:
+        transaction = row.transaction
+        payment = transaction.payment if transaction else None
+        if not transaction or not payment:
+            raise FinanceInvalidReference("A conciliacao nao possui pagamento financeiro vinculado.")
+        method = getattr(payment.method, "value", payment.method) or "unknown"
+        return {
+            "id": row.id,
+            "tenant_id": row.tenant_id or self._tenant_id,
+            "payment_id": payment.id,
+            "transaction_id": transaction.id,
+            "method": str(method),
+            "gateway": payment.gateway or "unknown",
+            "provider": payment.provider or "unknown",
+            "provider_payment_id": payment.provider_payment_id,
+            "external_reference": row.payment_reference,
+            "gross_amount": self._money(row.principal_amount, "valor bruto"),
+            "fee_amount": self._money(row.fee_amount, "taxa externa"),
+            "net_amount": self._money(row.net_amount, "valor liquido externo"),
+            "settled_at": row.settled_at,
+            "recorded_at": row.created_at,
+            "evidence_status": "recorded_not_acquirer_confirmed",
+            "acquirer_confirmed": False,
+            "notes": row.notes,
+        }
+
+    def list_payment_reconciliations(self, limit: int = 500, payment_id: str | None = None) -> dict:
+        bounded_limit = max(1, min(int(limit), 2000))
+        query = (
+            self._db.query(FinanceSettlement)
+            .join(FinanceTransaction, FinanceTransaction.id == FinanceSettlement.transaction_id)
+            .join(Payment, Payment.id == FinanceTransaction.payment_id)
+            .options(joinedload(FinanceSettlement.transaction).joinedload(FinanceTransaction.payment))
+            .filter(
+                FinanceSettlement.tenant_id == self._tenant_id,
+                FinanceSettlement.origin_type == "payment_reconciliation",
+                FinanceSettlement.cancelled_at.is_(None),
+                FinanceTransaction.tenant_id == self._tenant_id,
+            )
+        )
+        if payment_id:
+            query = query.filter(FinanceTransaction.payment_id == payment_id)
+        rows = query.order_by(FinanceSettlement.settled_at.desc(), FinanceSettlement.id.desc()).limit(bounded_limit).all()
+        return {
+            "items": [self._serialize_payment_reconciliation(row) for row in rows],
+            "total_count": len(rows),
+        }
+
+    def create_payment_reconciliation(
+        self,
+        payload: FinancePaymentReconciliationIn,
+        idempotency_key: str,
+        admin_id: str | None = None,
+    ) -> dict:
+        """Record operator/import evidence without asserting acquirer settlement.
+
+        A reconciliation row is attached to the existing income projection but
+        has no account, so it cannot post a second cash movement. The durable
+        payment confirmation remains the accounting/cash source of truth.
+        """
+        raw_key = str(idempotency_key or "").strip()
+        if not raw_key or len(raw_key) > 160:
+            raise FinanceInvalidReference("A chave de idempotencia e obrigatoria e deve ter ate 160 caracteres.")
+        key = f"payment-reconciliation:{raw_key}"
+        external_reference = str(payload.external_reference or "").strip()
+        if not external_reference:
+            raise FinanceInvalidReference("A referencia externa e obrigatoria.")
+
+        existing = (
+            self._db.query(FinanceSettlement)
+            .options(joinedload(FinanceSettlement.transaction).joinedload(FinanceTransaction.payment))
+            .filter(
+                FinanceSettlement.tenant_id == self._tenant_id,
+                FinanceSettlement.idempotency_key == key,
+            )
+            .first()
+        )
+        if existing:
+            if (
+                existing.payment_reference == external_reference
+                and self._money(existing.fee_amount, "taxa externa") == self._money(payload.fee_amount, "taxa externa")
+                and self._money(existing.net_amount, "valor liquido externo") == self._money(payload.net_amount, "valor liquido externo")
+            ):
+                return self._serialize_payment_reconciliation(existing)
+            raise IdempotencyConflict("A chave de idempotencia ja foi usada com outros valores.")
+
+        payment = self._tenant_payments().filter(Payment.id == payload.payment_id).first()
+        if not payment:
+            raise FinanceNotFound("Pagamento")
+        status = str(getattr(payment.status, "value", payment.status) or "")
+        if status not in {PaymentStatus.approved.value, PaymentStatus.paid.value}:
+            raise FinanceInvalidReference("Somente pagamentos aprovados ou pagos podem receber conciliacao externa.")
+        method = str(getattr(payment.method, "value", payment.method) or "")
+        if method not in {"pix", "credit_card", "debit_card"}:
+            raise FinanceInvalidReference("A conciliacao externa esta disponivel apenas para Cartoes e Pix.")
+
+        transaction = (
+            self._db.query(FinanceTransaction)
+            .filter(
+                FinanceTransaction.tenant_id == self._tenant_id,
+                FinanceTransaction.payment_id == payment.id,
+                FinanceTransaction.entry_type == "income",
+                FinanceTransaction.status != "cancelled",
+            )
+            .order_by(FinanceTransaction.created_at.asc(), FinanceTransaction.id.asc())
+            .first()
+        )
+        if not transaction:
+            raise FinanceInvalidReference("O pagamento ainda nao possui projecao financeira. Sincronize as vendas antes da conciliacao.")
+
+        gross_amount = self._money(payment.amount, "valor bruto do pagamento")
+        fee_amount = self._money(payload.fee_amount, "taxa externa")
+        net_amount = self._money(payload.net_amount, "valor liquido externo")
+        if fee_amount < 0 or net_amount <= 0 or fee_amount >= gross_amount:
+            raise FinanceInvalidReference("Taxa e liquido externos precisam respeitar o valor bruto do pagamento.")
+        if net_amount != self._money(gross_amount - fee_amount, "valor liquido calculado"):
+            raise FinanceInvalidReference("O valor liquido externo deve ser igual ao bruto menos a taxa.")
+
+        natural = (
+            self._db.query(FinanceSettlement)
+            .options(joinedload(FinanceSettlement.transaction).joinedload(FinanceTransaction.payment))
+            .filter(
+                FinanceSettlement.tenant_id == self._tenant_id,
+                FinanceSettlement.origin_type == "payment_reconciliation",
+                FinanceSettlement.origin_id == payment.id,
+                FinanceSettlement.payment_reference == external_reference,
+                FinanceSettlement.cancelled_at.is_(None),
+            )
+            .first()
+        )
+        if natural:
+            if self._money(natural.fee_amount, "taxa externa") == fee_amount and self._money(natural.net_amount, "valor liquido externo") == net_amount:
+                return self._serialize_payment_reconciliation(natural)
+            raise IdempotencyConflict("A referencia externa ja foi conciliada com outros valores.")
+
+        row = FinanceSettlement(
+            id=f"fin-set-{uuid.uuid4().hex[:12]}",
+            tenant_id=self._tenant_id,
+            transaction_id=transaction.id,
+            account_id=None,
+            settled_at=payload.settled_at or datetime.now(timezone.utc),
+            principal_amount=float(gross_amount),
+            fee_amount=float(fee_amount),
+            net_amount=float(net_amount),
+            payment_method=method,
+            payment_reference=external_reference,
+            created_by_admin_id=admin_id,
+            origin_type="payment_reconciliation",
+            origin_id=payment.id,
+            idempotency_key=key,
+            notes=payload.notes,
+        )
+        self._db.add(row)
+        try:
+            self._db.commit()
+        except IntegrityError:
+            self._db.rollback()
+            raced = (
+                self._db.query(FinanceSettlement)
+                .options(joinedload(FinanceSettlement.transaction).joinedload(FinanceTransaction.payment))
+                .filter(FinanceSettlement.tenant_id == self._tenant_id, FinanceSettlement.idempotency_key == key)
+                .first()
+            )
+            if raced:
+                return self._serialize_payment_reconciliation(raced)
+            raise
+        self._db.refresh(row)
+        return self._serialize_payment_reconciliation(row)
 
     def delivery_finance_overview(self) -> dict:
         rows = self.delivery_earnings()

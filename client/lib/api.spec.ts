@@ -81,6 +81,32 @@ describe("finance payment reconciliation", () => {
     expect(init.method).toBe("GET");
     expect(init.body).toBeUndefined();
   });
+
+  it("lists and creates external receipt reconciliation with idempotency", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [], total_count: 0 }), { headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "reconciliation-1", acquirer_confirmed: false }), { status: 201, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await financeApi.listPaymentReconciliationSettlements(25, "payment/1");
+    await financeApi.createPaymentReconciliationSettlement({
+      payment_id: "payment/1",
+      external_reference: "provider-settlement-1",
+      fee_amount: 2.5,
+      net_amount: 97.5,
+    }, "receipt-key-1");
+    const [listUrl, listInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [createUrl, createInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(listUrl).toMatch(/\/api\/gestao\/finance\/payments\/reconciliation\/settlements\?limit=25&payment_id=payment%2F1$/);
+    expect(listInit.method).toBe("GET");
+    expect(createUrl).toMatch(/\/api\/gestao\/finance\/payments\/reconciliation\/settlements$/);
+    expect(new Headers(createInit.headers).get("Idempotency-Key")).toBe("receipt-key-1");
+    expect(JSON.parse(String(createInit.body))).toEqual({
+      payment_id: "payment/1",
+      external_reference: "provider-settlement-1",
+      fee_amount: 2.5,
+      net_amount: 97.5,
+    });
+  });
 });
 
 describe("finance fiscal obligations", () => {

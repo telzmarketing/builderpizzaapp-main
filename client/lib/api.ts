@@ -2849,6 +2849,40 @@ export interface FinancePaymentReconciliation {
   total_linked_net_amount: number;
 }
 
+export interface FinancePaymentReconciliationSettlement {
+  id: string;
+  tenant_id: string;
+  payment_id: string;
+  transaction_id: string;
+  method: string;
+  gateway: string;
+  provider: string;
+  provider_payment_id?: string | null;
+  external_reference: string;
+  gross_amount: number;
+  fee_amount: number;
+  net_amount: number;
+  settled_at: string;
+  recorded_at: string;
+  evidence_status: "recorded_not_acquirer_confirmed";
+  acquirer_confirmed: false;
+  notes?: string | null;
+}
+
+export interface FinancePaymentReconciliationSettlements {
+  items: FinancePaymentReconciliationSettlement[];
+  total_count: number;
+}
+
+export interface FinancePaymentReconciliationSettlementInput {
+  payment_id: string;
+  external_reference: string;
+  fee_amount: number;
+  net_amount: number;
+  settled_at?: string | null;
+  notes?: string | null;
+}
+
 export interface FinanceDeliveryEarningSummary {
   delivery_person_id: string;
   delivery_person_name: string;
@@ -7006,6 +7040,9 @@ export const financeApi = {
   overview: () => get<FinanceOverview>("/gestao/finance/overview"),
   paymentOverview: () => get<FinancePaymentOverview>("/gestao/finance/payments/overview"),
   paymentReconciliation: (limit = 500) => get<FinancePaymentReconciliation>(`/gestao/finance/payments/reconciliation?limit=${limit}`),
+  listPaymentReconciliationSettlements: (limit = 500, paymentId?: string) => get<FinancePaymentReconciliationSettlements>(`/gestao/finance/payments/reconciliation/settlements?limit=${limit}${paymentId ? `&payment_id=${encodeURIComponent(paymentId)}` : ""}`),
+  createPaymentReconciliationSettlement: (data: FinancePaymentReconciliationSettlementInput, idempotencyKey: string) =>
+    request<FinancePaymentReconciliationSettlement>("POST", "/gestao/finance/payments/reconciliation/settlements", data, { "Idempotency-Key": idempotencyKey }),
   listObligations: () => get<FinanceObligation[]>("/gestao/finance/obligations"),
   createObligationFromFiscalDocument: (documentId: string, data: FinanceObligationFromFiscalInput, idempotencyKey: string) =>
     request<FinanceObligation>("POST", `/gestao/finance/fiscal-documents/${encodeURIComponent(documentId)}/obligation`, data, { "Idempotency-Key": idempotencyKey }),

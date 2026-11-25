@@ -223,6 +223,47 @@ class FinanceSettlementIn(BaseModel):
     notes: str | None = None
 
 
+class FinancePaymentReconciliationIn(BaseModel):
+    """External receipt data recorded against an existing payment projection.
+
+    The API deliberately does not expose an acquirer-confirmed flag: an
+    external reference is evidence supplied by an operator/import, not proof
+    that the acquirer settled the amount.
+    """
+
+    payment_id: str = Field(min_length=1, max_length=160)
+    external_reference: str = Field(min_length=1, max_length=120)
+    fee_amount: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=20, decimal_places=2)
+    net_amount: Decimal = Field(gt=0, max_digits=20, decimal_places=2)
+    settled_at: datetime | None = None
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class FinancePaymentReconciliationSettlementOut(BaseModel):
+    id: str
+    tenant_id: str
+    payment_id: str
+    transaction_id: str
+    method: str
+    gateway: str
+    provider: str
+    provider_payment_id: str | None = None
+    external_reference: str
+    gross_amount: Decimal
+    fee_amount: Decimal
+    net_amount: Decimal
+    settled_at: datetime
+    recorded_at: datetime
+    evidence_status: Literal["recorded_not_acquirer_confirmed"]
+    acquirer_confirmed: bool = False
+    notes: str | None = None
+
+
+class FinancePaymentReconciliationsOut(BaseModel):
+    items: list[FinancePaymentReconciliationSettlementOut]
+    total_count: int
+
+
 class FinanceTransactionOut(FinanceTransactionIn):
     id: str
     tenant_id: str
