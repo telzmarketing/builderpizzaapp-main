@@ -71,6 +71,13 @@ class GestaoModuleNotFound(DomainError):
         super().__init__("Modulo de Gestao nao encontrado.", code="GestaoModuleNotFound")
 
 
+class GestaoInvalidFinanceSetting(DomainError):
+    http_status = 422
+
+    def __init__(self, key: str):
+        super().__init__(f"Configuracao financeira invalida: {key}.", code="GestaoInvalidFinanceSetting")
+
+
 class GestaoService:
     def __init__(self, db: Session, tenant_id: str = TENANT_ID):
         self._db = db
@@ -170,6 +177,16 @@ class GestaoService:
 
     def _merge_settings(self, module_key: str, patch: dict) -> dict:
         settings = deepcopy(MODULE_DEFAULTS[module_key]["settings"])
+        if module_key == "finance":
+            boolean_keys = {key for key, value in settings.items() if isinstance(value, bool)}
+            nullable_id_keys = {"default_receivable_account_id", "default_payable_account_id"}
+            for key, value in patch.items():
+                if key not in settings:
+                    raise GestaoInvalidFinanceSetting(key)
+                if key in boolean_keys and not isinstance(value, bool):
+                    raise GestaoInvalidFinanceSetting(key)
+                if key in nullable_id_keys and value is not None and not isinstance(value, str):
+                    raise GestaoInvalidFinanceSetting(key)
         settings.update(patch)
         return settings
 
