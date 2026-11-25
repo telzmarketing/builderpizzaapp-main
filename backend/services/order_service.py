@@ -936,6 +936,14 @@ class OrderService:
         payment = self._tenant_query(Payment).filter(Payment.order_id == order.id).populate_existing().with_for_update().first()
         if order.payment is not None and (payment is None or order.payment.tenant_id != order.tenant_id):
             raise OrderAmendmentBlocked("Pagamento inconsistente com o estabelecimento do pedido.")
+        if payment and (
+            payment.status in {PaymentStatus.approved, PaymentStatus.paid}
+            or any((payment.provider_payment_id, payment.pix_payload, payment.payment_url, payment.transaction_id))
+        ):
+            raise OrderAmendmentBlocked(
+                "Pagamento liquidado ou emitido nao permite alterar a composicao.",
+                code="OrderAmendmentPaymentLocked",
+            )
         source_ids = [order.id] + [item.id for item in order.items]
         dependencies = [
             (OrderCmvSnapshot, OrderCmvSnapshot.order_id == order.id),
@@ -1053,7 +1061,10 @@ class OrderService:
             target_payment_method = payload.payment_method or ("pay_on_delivery" if payment and payment.pay_on_delivery else None)
             if target_payment_method and target_payment_method not in PaymentMethod._value2member_map_ and target_payment_method != "pay_on_delivery":
                 raise OrderAmendmentBlocked("Forma de pagamento invalida.", code="InvalidPaymentMethod")
-            if target_payment_method == "pay_on_delivery" and payload.delivery_payment_method not in {"cash", "card"}:
+            # Omitting payment_method means "keep the current payment" during
+            # an amendment. Only a new explicit pay-on-delivery selection
+            # requires the delivery method to be supplied.
+            if payload.payment_method == "pay_on_delivery" and payload.delivery_payment_method not in {"cash", "card"}:
                 raise OrderAmendmentBlocked("Escolha se o pagamento na entrega sera em cartao ou dinheiro.", code="InvalidDeliveryPaymentMethod")
             target_cash_change = payload.cash_change_for if payload.cash_needs_change else None
             if target_cash_change is None and payment and payment.cash_needs_change and payload.payment_method is None:
