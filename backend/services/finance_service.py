@@ -771,6 +771,25 @@ class FinanceService:
                 "projected_amount": round(projected, 2),
                 "realized_amount": round(realized, 2),
             })
+        for payment in self._unprojected_confirmed_payments():
+            settled_at = payment.paid_at or payment.created_at
+            if settled_at is None:
+                continue
+            movement_date = settled_at.date()
+            if movement_date < start or movement_date > end:
+                continue
+            amount = round(float(payment.amount or 0.0), 2)
+            lines.append({
+                "id": f"payment:{payment.id}",
+                "movement_date": movement_date,
+                "description": "Venda confirmada",
+                "entry_type": "income",
+                "status": "paid",
+                "account_name": None,
+                "category_name": None,
+                "projected_amount": amount,
+                "realized_amount": amount,
+            })
         opening = round(sum(float(account.get("opening_balance") or 0) for account in accounts), 2)
         realized_income = round(sum(line["realized_amount"] for line in lines if line["entry_type"] == "income"), 2)
         realized_expense = round(-sum(line["realized_amount"] for line in lines if line["entry_type"] == "expense"), 2)
