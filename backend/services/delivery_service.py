@@ -1749,6 +1749,7 @@ class DeliveryService:
         """Mark a list of earnings as paid. Returns count of earnings actually updated."""
         now = datetime.now(timezone.utc)
         paid_count = 0
+        paid_items: list[tuple[str, str]] = []
         for eid in earning_ids:
             earning = (
                 self._scope(self._db.query(DeliveryEarning), DeliveryEarning)
@@ -1766,7 +1767,17 @@ class DeliveryService:
                 earning.paid_at = now
                 earning.paid_by = paid_by
                 paid_count += 1
+                paid_items.append((earning.id, "delivery" if isinstance(earning, DeliveryEarning) else "daily_allowance"))
         if paid_count > 0:
+            self._db.flush()
+            from backend.services.finance_service import FinanceService
+            finance = FinanceService(self._db, self._tenant_id, self._tenant_context)
+            for earning_id, earning_type in paid_items:
+                finance.sync_delivery_payment(
+                    earning_id=earning_id,
+                    earning_type=earning_type,
+                    paid_by=paid_by,
+                )
             self._db.commit()
         return paid_count
 

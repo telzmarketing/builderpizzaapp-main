@@ -30,9 +30,9 @@ class PagarmeGateway:
     def retrieve(self, provider_order_id: str) -> dict[str, Any]:
         return self.client.get_order(provider_order_id)
 
-    def cancel_or_refund(self, charge_id: str, *, amount: float | None = None) -> dict[str, Any]:
+    def cancel_or_refund(self, charge_id: str, *, amount: float | None = None, idempotency_key: str | None = None) -> dict[str, Any]:
         cents = int(round(amount * 100)) if amount is not None else None
-        return self.client.cancel_charge(charge_id, amount_cents=cents)
+        return self.client.cancel_charge(charge_id, amount_cents=cents, idempotency_key=idempotency_key)
 
     def create_incremental_pix_charge(
         self,

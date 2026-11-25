@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, Request
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
@@ -42,7 +42,35 @@ from backend.schemas.finance import (
 )
 from backend.services.finance_service import FinanceService
 
-router = APIRouter(prefix="/gestao/finance", tags=["gestao-finance"])
+def require_finance_authorization(request: Request, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)) -> AuthorizedTenantActor:
+    """Apply the finance permission contract to every legacy finance endpoint.
+
+    A few newer obligation endpoints already declare a more specific RBAC
+    dependency. Keeping this router guard makes the older routes fail closed
+    as well, without changing their public handler signatures or response
+    contracts.
+    """
+    path = request.url.path.rstrip("/")
+    method = request.method.upper()
+    permission = "view"
+    if method == "POST":
+        permission = "manage" if path.endswith(("/sales/backfill", "/payments/backfill-reversals", "/purchases/backfill-payables", "/delivery/backfill-expenses", "/cmv/backfill-snapshots")) else "create"
+        if "/match" in path or "/unmatch" in path or "/ignore" in path or "/reconcile" in path or path.endswith(("/settle", "/close", "/reopen")):
+            permission = "edit"
+        if path.endswith("/sales/backfill"):
+            permission = "manage"
+    elif method == "PUT":
+        permission = "edit"
+    elif method == "DELETE":
+        permission = "manage"
+    return require_rbac_permission("finance", permission)(request, db, admin)
+
+
+router = APIRouter(
+    prefix="/gestao/finance",
+    tags=["gestao-finance"],
+    dependencies=[Depends(require_finance_authorization)],
+)
 
 
 def service(db: Session, tenant_context: TenantContext | None) -> FinanceService:
@@ -57,6 +85,46 @@ def overview(db: Session = Depends(get_db), _admin: AdminUser = Depends(get_curr
 @router.get("/payments/overview", response_model=FinancePaymentOverviewOut)
 def payment_overview(db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
     return service(db, tenant_context).payment_overview()
+
+
+@router.post("/sales/backfill", response_model=dict)
+def backfill_sales(limit: int = Query(default=5000, ge=1, le=10000), db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).backfill_sales(limit)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/payments/backfill-reversals", response_model=dict)
+def backfill_payment_reversals(limit: int = Query(default=5000, ge=1, le=10000), db: Session = Depends(get_db), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).backfill_payment_reversals(limit)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/purchases/backfill-payables", response_model=dict)
+def backfill_purchase_payables(limit: int = Query(default=5000, ge=1, le=10000), db: Session = Depends(get_db), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).backfill_purchase_payables(limit)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/delivery/backfill-expenses", response_model=dict)
+def backfill_delivery_expenses(limit: int = Query(default=5000, ge=1, le=10000), db: Session = Depends(get_db), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).backfill_delivery_payments(limit)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/cmv/backfill-snapshots", response_model=dict)
+def backfill_cmv_snapshots(limit: int = Query(default=5000, ge=1, le=10000), db: Session = Depends(get_db), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).backfill_cmv_snapshots(limit)
+    except DomainError as exc:
+        return err(exc)
 
 
 @router.get("/delivery/overview", response_model=FinanceDeliveryOverviewOut)
@@ -160,6 +228,22 @@ def list_bank_statement_lines(statement_id: str, db: Session = Depends(get_db), 
 def list_bank_reconciliation(statement_id: str, db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
     try:
         return service(db, tenant_context).list_bank_reconciliation(statement_id)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/bank-statements/{statement_id}/close", response_model=FinanceBankStatementOut)
+def close_bank_statement(statement_id: str, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).close_bank_statement(statement_id, admin.id)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/bank-statements/{statement_id}/reopen", response_model=FinanceBankStatementOut)
+def reopen_bank_statement(statement_id: str, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).reopen_bank_statement(statement_id, admin.id)
     except DomainError as exc:
         return err(exc)
 

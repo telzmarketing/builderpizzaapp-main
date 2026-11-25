@@ -8,6 +8,7 @@ Or directly:
     python -m backend.main
 """
 import asyncio
+import json
 import logging
 import os
 import re
@@ -197,17 +198,59 @@ async def lifespan(app: FastAPI):
             },
         )
 
+    def _record_finance_projection_failure(event_name: str, event, exc: Exception, **identifiers):
+        """Persist a redacted tenant-scoped failure for recovery visibility."""
+        try:
+            with SessionLocal() as failure_db:
+                from backend.services.platform_errors_service import PlatformErrorService
+                from backend.services.finance_projection_queue import FinanceProjectionQueue
+
+                PlatformErrorService(failure_db).capture_exception(
+                    exc,
+                    source="finance_projection",
+                    tenant_id=getattr(event, "tenant_id", None),
+                    severity="critical",
+                    error_code="FinanceProjectionFailed",
+                    context={"component": "finance", "operation": event_name, **identifiers},
+                )
+                tenant_id = getattr(event, "tenant_id", None)
+                if tenant_id:
+                    FinanceProjectionQueue(failure_db, tenant_id).enqueue(
+                        event_type=event_name,
+                        dedupe_key=f"{event_name}:{getattr(event, 'payment_id', None) or getattr(event, 'purchase_id', None) or identifiers.get('order_id') or identifiers.get('purchase_id')}",
+                        aggregate_type="payment" if getattr(event, "payment_id", None) else "purchase" if getattr(event, "purchase_id", None) else "order",
+                        aggregate_id=getattr(event, "payment_id", None) or getattr(event, "purchase_id", None) or identifiers.get("order_id"),
+                        source_type="domain_event",
+                        source_id=getattr(event, "payment_id", None) or getattr(event, "purchase_id", None) or identifiers.get("order_id"),
+                        payload={
+                            "event": event_name,
+                            **{key: value for key, value in vars(event).items() if key != "tenant_id"},
+                            **identifiers,
+                            "error": str(exc)[:500],
+                        },
+                        correlation_id=getattr(event, "correlation_id", None),
+                    )
+                    failure_db.commit()
+        except Exception:
+            _logger.exception("Could not persist finance projection failure event=%s", event_name)
+
     def _finance_payment_confirmed_handler(event: PaymentConfirmed):
         try:
             with SessionLocal() as db:
-                _finance_event_service(db, event).sync_payment_confirmed(
+                outcome = _finance_event_service(db, event).sync_payment_confirmed(
                     payment_id=event.payment_id,
                     order_id=event.order_id,
                     amount=event.amount,
                     gateway=event.gateway,
                     transaction_id=event.transaction_id,
                 )
+                if outcome.get("reason") not in {"ok", "already_synced", "disabled"}:
+                    raise RuntimeError(f"Projecao PaymentConfirmed nao concluida: {outcome.get('reason')}")
         except TenantContextError:
+            _record_finance_projection_failure(
+                "PaymentConfirmed", event, TenantContextError("Contexto de tenant ausente na projeção financeira."),
+                payment_id=event.payment_id, order_id=event.order_id,
+            )
             _log_finance_tenant_context_failure(
                 "PaymentConfirmed",
                 event,
@@ -215,7 +258,11 @@ async def lifespan(app: FastAPI):
                 order_id=event.order_id,
             )
             raise
-        except Exception:
+        except Exception as exc:
+            _record_finance_projection_failure(
+                "PaymentConfirmed", event, exc,
+                payment_id=event.payment_id, order_id=event.order_id,
+            )
             _logger.exception(
                 "Finance projection failed for PaymentConfirmed payment_id=%s order_id=%s tenant_id=%s",
                 event.payment_id,
@@ -228,7 +275,7 @@ async def lifespan(app: FastAPI):
     def _finance_payment_reversed_handler(event: PaymentReversed):
         try:
             with SessionLocal() as db:
-                _finance_event_service(db, event).sync_payment_reversed(
+                outcome = _finance_event_service(db, event).sync_payment_reversed(
                     payment_id=event.payment_id,
                     order_id=event.order_id,
                     amount=event.amount,
@@ -236,7 +283,13 @@ async def lifespan(app: FastAPI):
                     transaction_id=event.transaction_id,
                     reason=event.reason,
                 )
+                if outcome.get("reason") not in {"ok", "already_reversed", "no_receivable", "no_settlement", "already_synced", "partial_reversal_requires_reconciliation"}:
+                    raise RuntimeError(f"Projecao PaymentReversed nao concluida: {outcome.get('reason')}")
         except TenantContextError:
+            _record_finance_projection_failure(
+                "PaymentReversed", event, TenantContextError("Contexto de tenant ausente na projeção financeira."),
+                payment_id=event.payment_id, order_id=event.order_id,
+            )
             _log_finance_tenant_context_failure(
                 "PaymentReversed",
                 event,
@@ -244,7 +297,11 @@ async def lifespan(app: FastAPI):
                 order_id=event.order_id,
             )
             raise
-        except Exception:
+        except Exception as exc:
+            _record_finance_projection_failure(
+                "PaymentReversed", event, exc,
+                payment_id=event.payment_id, order_id=event.order_id,
+            )
             _logger.exception(
                 "Finance projection failed for PaymentReversed payment_id=%s order_id=%s tenant_id=%s",
                 event.payment_id,
@@ -257,15 +314,25 @@ async def lifespan(app: FastAPI):
     def _finance_purchase_confirmed_handler(event: InventoryPurchaseConfirmed):
         try:
             with SessionLocal() as db:
-                _finance_event_service(db, event).sync_purchase_confirmed(purchase_id=event.purchase_id)
+                outcome = _finance_event_service(db, event).sync_purchase_confirmed(purchase_id=event.purchase_id)
+                if outcome.get("reason") not in {"ok", "already_synced", "disabled", "purchase_not_confirmed", "purchase_receipt_requires_reconciliation"}:
+                    raise RuntimeError(f"Projecao InventoryPurchaseConfirmed nao concluida: {outcome.get('reason')}")
         except TenantContextError:
+            _record_finance_projection_failure(
+                "InventoryPurchaseConfirmed", event, TenantContextError("Contexto de tenant ausente na projeção financeira."),
+                purchase_id=event.purchase_id,
+            )
             _log_finance_tenant_context_failure(
                 "InventoryPurchaseConfirmed",
                 event,
                 purchase_id=event.purchase_id,
             )
             raise
-        except Exception:
+        except Exception as exc:
+            _record_finance_projection_failure(
+                "InventoryPurchaseConfirmed", event, exc,
+                purchase_id=event.purchase_id,
+            )
             _logger.exception(
                 "Finance projection failed for InventoryPurchaseConfirmed purchase_id=%s tenant_id=%s",
                 event.purchase_id,
@@ -273,6 +340,55 @@ async def lifespan(app: FastAPI):
             )
 
     bus.subscribe(InventoryPurchaseConfirmed, _finance_purchase_confirmed_handler)
+
+    async def _finance_projection_worker() -> None:
+        """Retry failed financial projections without blocking request flows."""
+        while True:
+            try:
+                with SessionLocal() as db:
+                    from backend.models.finance_projection import FinanceProjectionEvent
+                    from backend.services.finance_projection_queue import FinanceProjectionQueue
+                    from sqlalchemy import distinct
+
+                    tenant_ids = [tenant_id for tenant_id, in db.query(distinct(FinanceProjectionEvent.tenant_id)).filter(
+                        FinanceProjectionEvent.status.in_(("pending", "failed", "processing")),
+                    ).all() if tenant_id]
+
+                    def handle(row):
+                        payload = json.loads(row.payload_json or "{}")
+                        with SessionLocal() as event_db:
+                            from backend.core.tenant_context import TenantContext, TenantSource
+                            from backend.services.finance_service import FinanceService
+
+                            finance = FinanceService(
+                                event_db,
+                                row.tenant_id,
+                                TenantContext(tenant_id=row.tenant_id, source=TenantSource.JOB),
+                            )
+                            if row.event_type == "PaymentConfirmed":
+                                finance.sync_payment_confirmed(
+                                    payment_id=payload["payment_id"], order_id=payload["order_id"],
+                                    amount=float(payload["amount"]), gateway=payload.get("gateway") or "unknown",
+                                    transaction_id=payload.get("transaction_id"),
+                                )
+                            elif row.event_type == "PaymentReversed":
+                                finance.sync_payment_reversed(
+                                    payment_id=payload["payment_id"], order_id=payload["order_id"],
+                                    amount=float(payload["amount"]), gateway=payload.get("gateway") or "unknown",
+                                    transaction_id=payload.get("transaction_id"), reason=payload.get("reason"),
+                                )
+                            elif row.event_type == "InventoryPurchaseConfirmed":
+                                finance.sync_purchase_confirmed(purchase_id=payload["purchase_id"])
+                            else:
+                                raise ValueError(f"Evento financeiro nao suportado: {row.event_type}")
+
+                    for tenant_id in tenant_ids:
+                        FinanceProjectionQueue(db, tenant_id).process_pending(handle, limit=25)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                _logger.exception("Falha no worker de projecao financeira")
+            await asyncio.sleep(30)
 
     # AGENTE WHATSAPP Phase 6: queue order status messages without sending externally.
     def _agente_whatsapp_status_handler(event):
@@ -338,6 +454,7 @@ async def lifespan(app: FastAPI):
     # to kitchen status changes.
 
     agente_whatsapp_worker_task = None
+    finance_projection_worker_task = asyncio.create_task(_finance_projection_worker())
     if settings.AGENTE_WHATSAPP_WORKER_ENABLED:
         from backend.services.agente_whatsapp_worker import run_agente_whatsapp_outbox_worker
 
@@ -356,6 +473,9 @@ async def lifespan(app: FastAPI):
             agente_whatsapp_worker_task.cancel()
             with suppress(asyncio.CancelledError):
                 await agente_whatsapp_worker_task
+        finance_projection_worker_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await finance_projection_worker_task
     # ── Shutdown ──────────────────────────────────────────────────────────────
 
 

@@ -26,6 +26,7 @@ from backend.models import (  # noqa: F401
     delivery,
     exit_popup,
     finance,
+    finance_projection,
     fiscal,
     gestao,
     gestor,

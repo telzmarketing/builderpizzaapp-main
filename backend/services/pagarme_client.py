@@ -62,9 +62,9 @@ class PagarmeClient:
     def get_order(self, order_id: str) -> dict[str, Any]:
         return self.request("GET", f"/orders/{order_id}")
 
-    def cancel_charge(self, charge_id: str, *, amount_cents: int | None = None) -> dict[str, Any]:
+    def cancel_charge(self, charge_id: str, *, amount_cents: int | None = None, idempotency_key: str | None = None) -> dict[str, Any]:
         body = {"amount": amount_cents} if amount_cents is not None else None
-        return self.request("DELETE", f"/charges/{charge_id}", body=body)
+        return self.request("DELETE", f"/charges/{charge_id}", body=body, idempotency_key=idempotency_key)
 
     def request(self, method: str, path: str, *, body: dict[str, Any] | None = None, idempotency_key: str | None = None) -> dict[str, Any]:
         if not self.secret_key:

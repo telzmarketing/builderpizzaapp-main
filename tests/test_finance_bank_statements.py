@@ -123,3 +123,30 @@ def test_reconciliation_suggests_and_confirms_same_account_movement(db):
     events = svc.list_reconciliation_events(reconciliation[0]["id"])
     assert [event["action"] for event in events] == ["unmatched", "matched"]
     assert events[0]["reason"] == "Valor confirmado em outro comprovante."
+
+
+def test_statement_can_be_closed_only_after_all_lines_are_resolved(db):
+    svc = service(db)
+    statement = svc.import_bank_statement(payload())
+    line_id = statement["id"]
+
+    with pytest.raises(FinanceInvalidReference, match="sem conciliar"):
+        svc.close_bank_statement(line_id, "admin-a")
+
+    svc.ignore_bank_statement_line(
+        svc.list_bank_statement_lines(line_id)[0]["id"],
+        FinanceBankReconciliationReasonIn(reason="Movimento identificado como tarifa nao conciliavel."),
+        admin_id="admin-a",
+    )
+    closed = svc.close_bank_statement(line_id, "admin-a")
+    assert closed["status"] == "closed"
+
+    with pytest.raises(FinanceInvalidReference, match="fechado"):
+        svc.ignore_bank_statement_line(
+            svc.list_bank_statement_lines(line_id)[0]["id"],
+            FinanceBankReconciliationReasonIn(reason="Tentativa de alteracao."),
+            admin_id="admin-a",
+        )
+
+    reopened = svc.reopen_bank_statement(line_id, "admin-a")
+    assert reopened["status"] == "reconciled"

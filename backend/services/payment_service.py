@@ -247,8 +247,13 @@ def _pagarme_status_to_payment(status: str | None) -> PaymentStatus:
         return PaymentStatus.rejected
     if normalized in {"canceled", "cancelled"}:
         return PaymentStatus.cancelled
-    if normalized in {"refunded", "partial_canceled"}:
+    if normalized == "refunded":
         return PaymentStatus.refunded
+    if normalized == "partial_canceled":
+        # Partial refunds are not represented by PaymentStatus yet. Keep the
+        # original payment approved so a partial provider operation cannot
+        # cancel the entire financial receivable.
+        return PaymentStatus.approved
     return PaymentStatus.pending
 
 
@@ -370,7 +375,7 @@ class PaymentService:
         query = self._db.query(Payment).filter(Payment.order_id == order_id)
         if self._tenant_id:
             query = query.filter(Payment.tenant_id == self._tenant_id)
-        payment = query.first()
+        payment = query.with_for_update().first()
         if not payment:
             raise PaymentNotFound(order_id)
         return payment
@@ -1764,24 +1769,62 @@ class PaymentService:
         if not self._cfg().accept_cash:
             raise DomainError("Pagamento em dinheiro esta desativado no painel de pagamentos.", code="PaymentMethodDisabled")
         order = self._get_order(order_id)
-        if order.payment and order.payment.method != PaymentMethod.cash:
+        payment = order.payment
+        if payment and payment.method != PaymentMethod.cash:
             raise DomainError("Este pedido ja possui pagamento Mercado Pago vinculado.", code="PaymentMethodMismatch")
-        payment = order.payment or Payment(
-            id=str(uuid.uuid4()),
-            tenant_id=self._tenant_id or order.tenant_id,
-            order_id=order.id,
-            method=PaymentMethod.cash,
-            status=PaymentStatus.pending,
-            amount=order.total,
-            gateway="cash",
-            provider="cash",
-            transaction_id=f"CASH-{uuid.uuid4().hex[:8].upper()}",
-            external_reference=order.external_reference or order.id,
-            currency="BRL",
-        )
+
+        # Repeated confirmations are intentionally idempotent: the original
+        # PaymentConfirmed event already projected the receivable and must not
+        # be emitted again.  ``paid`` is a legacy/publicly exposed status that
+        # also represents a confirmed payment.
+        if payment and payment.status in {PaymentStatus.approved, PaymentStatus.paid}:
+            if payment.tenant_id not in {None, order.tenant_id}:
+                raise PaymentNotFound(order_id)
+            return PaymentOut.model_validate(payment)
+
+        if payment and payment.status != PaymentStatus.pending:
+            raise DomainError(
+                "Somente pagamentos pendentes podem ser confirmados em dinheiro.",
+                code="PaymentNotPending",
+            )
+
+        if payment is None:
+            payment = Payment(
+                id=str(uuid.uuid4()),
+                tenant_id=self._tenant_id or order.tenant_id,
+                order_id=order.id,
+                method=PaymentMethod.cash,
+                status=PaymentStatus.pending,
+                amount=order.total,
+                gateway="cash",
+                provider="cash",
+                transaction_id=f"CASH-{uuid.uuid4().hex[:8].upper()}",
+                external_reference=order.external_reference or order.id,
+                currency="BRL",
+            )
+        else:
+            # Keep the existing payment identity and history while normalizing
+            # the cash attributes used by the financial projection.
+            if payment.tenant_id is None:
+                payment.tenant_id = order.tenant_id
+            if payment.tenant_id != order.tenant_id:
+                raise PaymentNotFound(order_id)
+            payment.method = PaymentMethod.cash
+            payment.amount = order.total
+            payment.gateway = "cash"
+            payment.provider = "cash"
+            payment.transaction_id = payment.transaction_id or f"CASH-{uuid.uuid4().hex[:8].upper()}"
+            payment.external_reference = payment.external_reference or order.external_reference or order.id
+            payment.currency = payment.currency or "BRL"
+
         self._db.add(payment)
         self._db.flush()
-        self._apply_status(payment, PaymentStatus.approved, source="cash")
+        confirmed = self._apply_status(payment, PaymentStatus.approved, source="cash")
+        if not confirmed or payment.status != PaymentStatus.approved:
+            raise DomainError(
+                "Nao foi possivel confirmar o pagamento em dinheiro.",
+                code="PaymentConfirmationFailed",
+            )
         self._db.refresh(payment)
         return PaymentOut.model_validate(payment)
 
@@ -1916,6 +1959,7 @@ class PaymentService:
             refund_response = AsaasGateway(self._db, config=self._cfg()).refund_payment(
                 str(provider_payment_id),
                 description=reason or "Estorno solicitado pelo administrador",
+                idempotency_key=hashlib.sha256(f"{payment.id}:refund:{refund_value:.2f}".encode()).hexdigest(),
             )
             try:
                 payment_response = AsaasGateway(self._db, config=self._cfg()).retrieve_payment(str(provider_payment_id))
@@ -1935,7 +1979,11 @@ class PaymentService:
             charge_id = payment.transaction_id
             if not charge_id:
                 raise GatewayError("pagarme", "charge id ausente")
-            payment_response = PagarmeGateway(self._cfg()).cancel_or_refund(charge_id, amount=refund_value)
+            payment_response = PagarmeGateway(self._cfg()).cancel_or_refund(
+                charge_id,
+                amount=refund_value,
+                idempotency_key=hashlib.sha256(f"{payment.id}:refund:{refund_value:.2f}".encode()).hexdigest(),
+            )
             payment.provider_status = payment_response.get("status") or "refunded"
             status = _pagarme_status_to_payment(payment.provider_status)
 

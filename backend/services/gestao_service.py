@@ -41,7 +41,7 @@ MODULE_DEFAULTS: dict[str, dict] = {
         "notes": "Nao substitui PaymentService nesta fase.",
         "settings": {
             "auto_create_receivables": True,
-            "auto_create_payables_from_purchases": False,
+            "auto_create_payables_from_purchases": True,
             "default_receivable_account_id": None,
             "default_payable_account_id": None,
             "cash_basis_enabled": True,
@@ -152,14 +152,15 @@ class GestaoService:
             )
             if item:
                 continue
+            finance_enabled = module_key == "finance"
             self._db.add(GestaoModuleSettings(
                 id=f"gestao-{self._tenant_id}-{module_key}",
                 tenant_id=self._tenant_id,
                 module_key=module_key,
                 title=defaults["title"],
                 description=defaults["description"],
-                enabled=False,
-                status="disabled",
+                enabled=finance_enabled,
+                status="active" if finance_enabled else "disabled",
                 settings_json=json.dumps(defaults["settings"], ensure_ascii=False),
                 notes=defaults["notes"],
             ))

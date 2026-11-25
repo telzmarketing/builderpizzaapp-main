@@ -99,7 +99,7 @@ const financeModuleGroups: Array<{ id: string; title: string; modules: FinanceMo
     { id: "bi", title: "BI Financeiro", description: "Distribuição dos valores por período, origem, canal, categoria e centro de custo.", status: "Base disponível", icon: TrendingUp },
   ] },
   { id: "treasury", title: "Tesouraria", modules: [
-    { id: "banks", title: "Bancos e Conciliação", description: "Contas bancárias cadastradas. Importação de extratos, conciliação e tratamento de divergências ainda não estão disponíveis.", status: "Cobertura parcial", icon: Landmark },
+    { id: "banks", title: "Bancos e Conciliação", description: "Contas bancárias cadastradas, importação de extratos, conciliação e tratamento de divergências.", status: "Base disponível", icon: Landmark },
     { id: "cards", title: "Cartões e Pix", description: "Forma de pagamento, referência e tarifa podem ser informadas na baixa. Agenda de repasses e conciliação por adquirente ainda não estão disponíveis.", status: "Cobertura parcial", icon: CreditCard },
     { id: "delivery", title: "Aplicativos de Delivery", description: "Valores agrupados por canal. Comissões, lotes de repasse e conciliação por aplicativo ainda não estão disponíveis.", status: "Cobertura parcial", icon: ShoppingBag },
     { id: "couriers", title: "Gestão Financeira de Entregadores", description: "Diárias, adiantamentos e acertos integrados ao caixa ainda não estão disponíveis neste Financeiro. Consulte a operação existente em Logística.", status: "Não disponível", icon: Route },
@@ -245,6 +245,11 @@ function FinancePanel() {
   const [deliveryOverview, setDeliveryOverview] = useState<FinanceDeliveryOverview | null>(null);
   const [deliveryEarnings, setDeliveryEarnings] = useState<FinanceDeliveryEarning[]>([]);
   const [deliveryLoading, setDeliveryLoading] = useState(false);
+  const [deliveryBackfillLoading, setDeliveryBackfillLoading] = useState(false);
+  const [cmvBackfillLoading, setCmvBackfillLoading] = useState(false);
+  const [salesBackfillLoading, setSalesBackfillLoading] = useState(false);
+  const [refundBackfillLoading, setRefundBackfillLoading] = useState(false);
+  const [purchasePayablesLoading, setPurchasePayablesLoading] = useState(false);
   const [cashFlow, setCashFlow] = useState<FinanceCashFlow | null>(null);
   const [cashFlowLoading, setCashFlowLoading] = useState(false);
   const [forecast, setForecast] = useState<FinanceForecast | null>(null);
@@ -327,7 +332,7 @@ function FinancePanel() {
     setDeliveryLoading(true);
     Promise.all([financeApi.deliveryOverview(), financeApi.deliveryEarnings()])
       .then(([overview, earnings]) => { setDeliveryOverview(overview); setDeliveryEarnings(earnings); })
-      .catch((err) => setBankError(err instanceof Error ? err.message : "Nao foi possivel carregar os repasses dos entregadores."))
+      .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar os repasses dos entregadores."))
       .finally(() => setDeliveryLoading(false));
   }, [activeModule]);
 
@@ -344,6 +349,71 @@ function FinancePanel() {
       .then(setData)
       .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar Financeiro."))
       .finally(() => setLoading(false));
+  };
+
+  const backfillSales = async () => {
+    setSalesBackfillLoading(true);
+    setError("");
+    try {
+      await financeApi.backfillSales();
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel sincronizar as vendas.");
+    } finally {
+      setSalesBackfillLoading(false);
+    }
+  };
+
+  const backfillPaymentReversals = async () => {
+    setRefundBackfillLoading(true);
+    setError("");
+    try {
+      await financeApi.backfillPaymentReversals();
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel sincronizar os estornos.");
+    } finally {
+      setRefundBackfillLoading(false);
+    }
+  };
+
+  const backfillPurchasePayables = async () => {
+    setPurchasePayablesLoading(true);
+    setError("");
+    try {
+      await financeApi.backfillPurchasePayables();
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel sincronizar as compras a pagar.");
+    } finally {
+      setPurchasePayablesLoading(false);
+    }
+  };
+
+  const backfillDeliveryExpenses = async () => {
+    setDeliveryBackfillLoading(true);
+    setError("");
+    try {
+      await financeApi.backfillDeliveryExpenses();
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel sincronizar os repasses de entrega.");
+    } finally {
+      setDeliveryBackfillLoading(false);
+    }
+  };
+
+  const backfillCmvSnapshots = async () => {
+    setCmvBackfillLoading(true);
+    setError("");
+    try {
+      await financeApi.backfillCmvSnapshots();
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel reconstruir os snapshots de CMV.");
+    } finally {
+      setCmvBackfillLoading(false);
+    }
   };
 
   const loadBankStatements = () => {
@@ -396,6 +466,21 @@ function FinancePanel() {
     }
   };
 
+  const changeStatementStatus = async (statement: FinanceBankStatement) => {
+    const action = statement.status === "closed" ? "reopen" : "close";
+    setSaving(`${action}-${statement.id}`);
+    setBankError("");
+    try {
+      if (action === "close") await financeApi.closeBankStatement(statement.id);
+      else await financeApi.reopenBankStatement(statement.id);
+      loadBankStatements();
+    } catch (err) {
+      setBankError(err instanceof Error ? err.message : "Nao foi possivel atualizar o fechamento do extrato.");
+    } finally {
+      setSaving("");
+    }
+  };
+
   useEffect(() => {
     load();
   }, []);
@@ -409,7 +494,7 @@ function FinancePanel() {
     setPaymentLoading(true);
     financeApi.paymentOverview()
       .then(setPaymentOverview)
-      .catch((err) => setBankError(err instanceof Error ? err.message : "Nao foi possivel carregar pagamentos."))
+      .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar pagamentos."))
       .finally(() => setPaymentLoading(false));
   }, [activeModule]);
 
@@ -835,7 +920,13 @@ function FinancePanel() {
                         <span className="text-stone">{statement.line_count}</span>
                         <span className={statement.unmatched_count ? "font-bold text-amber-300" : "text-emerald-300"}>{statement.unmatched_count}</span>
                         <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[10px] font-black uppercase text-amber-300">{statement.status}</span>
-                        <button type="button" onClick={() => loadReconciliation(statement.id)} className={mutedButtonClass}>Revisar</button>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <button type="button" onClick={() => loadReconciliation(statement.id)} className={mutedButtonClass}>Revisar</button>
+                          <button type="button" onClick={() => void changeStatementStatus(statement)} disabled={saving === `${statement.status === "closed" ? "reopen" : "close"}-${statement.id}`} className={mutedButtonClass}>
+                            {saving === `${statement.status === "closed" ? "reopen" : "close"}-${statement.id}` && <Loader2 size={13} className="animate-spin" />}
+                            {statement.status === "closed" ? "Reabrir" : "Fechar"}
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -931,6 +1022,26 @@ function FinancePanel() {
 
               <FinanceModules />
 
+              <div className="grid gap-4 md:grid-cols-3">
+                <Metric title="Vendas confirmadas" value={String(data.sales.total_count)} subtitle="Pedidos com pagamento aprovado ou pago" icon={ShoppingBag} tone="success" />
+                <Metric title="Faturamento bruto" value={currency(data.sales.gross_amount)} subtitle="Pagamentos confirmados" icon={ReceiptText} tone="success" />
+                <Metric title="Saúde da integração" value={data.projection_health.status === "healthy" ? "OK" : "Atenção"} subtitle={data.projection_health.status === "healthy" ? "Vendas, estornos, compras, delivery e CMV projetados" : `${data.projection_health.missing_sales_count + data.projection_health.missing_purchase_payables_count + data.projection_health.missing_delivery_count + data.projection_health.missing_cmv_count + data.projection_health.missing_refund_count} projeções pendentes`} icon={data.projection_health.status === "healthy" ? CheckCircle2 : AlertTriangle} tone={data.projection_health.status === "healthy" ? "success" : "warn"} />
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" onClick={() => void backfillSales()} disabled={salesBackfillLoading} className={mutedButtonClass}>
+                  <RefreshCw size={16} className={salesBackfillLoading ? "animate-spin" : ""} />
+                  {salesBackfillLoading ? "Sincronizando vendas..." : "Sincronizar vendas antigas"}
+                </button>
+                <button type="button" onClick={() => void backfillPaymentReversals()} disabled={refundBackfillLoading} className={mutedButtonClass}>
+                  <RefreshCw size={16} className={refundBackfillLoading ? "animate-spin" : ""} />
+                  {refundBackfillLoading ? "Sincronizando estornos..." : "Sincronizar estornos"}
+                </button>
+                <button type="button" onClick={() => void backfillPurchasePayables()} disabled={purchasePayablesLoading} className={mutedButtonClass}>
+                  <RefreshCw size={16} className={purchasePayablesLoading ? "animate-spin" : ""} />
+                  {purchasePayablesLoading ? "Sincronizando compras..." : "Sincronizar compras a pagar"}
+                </button>
+              </div>
+
               <div className="grid gap-5 xl:grid-cols-[1.15fr_1fr_1fr]">
                 <DimensionList title="DRE por grupo" icon={BarChart3} featured rows={data.management.dre_lines.map((item) => ({ label: item.group, entry_type: item.entry_type, amount: item.amount, count: 1 }))} />
                 <DimensionList title="Por canal" icon={Landmark} rows={data.management.by_channel} />
@@ -1011,7 +1122,13 @@ function FinancePanel() {
                     </div>
                   </div>
                   <div className={`${panelClass} overflow-x-auto`}>
-                    <CardHeading icon={ReceiptText} title="Repasses detalhados" description="Valores operacionais originados na logística. O status pago representa o repasse registrado; não cria lançamento financeiro duplicado." />
+                    <CardHeading icon={ReceiptText} title="Repasses detalhados" description="Valores operacionais originados na logística. O status pago também pode ser projetado como despesa no caixa." />
+                    <div className="mt-4 flex justify-end">
+                      <button type="button" onClick={() => void backfillDeliveryExpenses()} disabled={deliveryBackfillLoading} className={mutedButtonClass}>
+                        <RefreshCw size={16} className={deliveryBackfillLoading ? "animate-spin" : ""} />
+                        {deliveryBackfillLoading ? "Sincronizando repasses..." : "Sincronizar repasses no caixa"}
+                      </button>
+                    </div>
                     <div className="mt-4">
                       {deliveryEarnings.length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhum repasse registrado.</p> : <table className="w-full min-w-[720px] text-left text-sm"><thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Entregador</th><th className="px-3 py-3">Período</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Entrega</th><th className="px-3 py-3 text-right">Valor</th></tr></thead><tbody>{deliveryEarnings.map((earning) => <tr key={earning.id} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{earning.delivery_person_name}</td><td className="px-3 py-3 text-stone">{earning.period_date}</td><td className="px-3 py-3 text-stone">{earning.status}</td><td className="px-3 py-3 text-stone">{earning.delivery_id}</td><td className="px-3 py-3 text-right font-black text-cream">{currency(earning.amount)}</td></tr>)}</tbody></table>}
                     </div>
@@ -1057,6 +1174,12 @@ function FinancePanel() {
               </div>
               <div className={panelClass}>
                 <CardHeading icon={BarChart3} title="DRE e CMV operacional" description="A DRE mantém competência financeira separada do CMV operacional. O custo é exibido apenas quando existe snapshot histórico; nenhuma estimativa atual de ficha técnica é lançada automaticamente na DRE." />
+                <div className="mt-4 flex justify-end">
+                  <button type="button" onClick={() => void backfillCmvSnapshots()} disabled={cmvBackfillLoading} className={mutedButtonClass}>
+                    <RefreshCw size={16} className={cmvBackfillLoading ? "animate-spin" : ""} />
+                    {cmvBackfillLoading ? "Reconstruindo CMV..." : "Reconstruir CMV histórico"}
+                  </button>
+                </div>
                 <div className="mt-4 grid gap-3 md:grid-cols-3">
                   <div className="rounded-xl border border-surface-03 bg-surface-01 p-4"><p className="text-xs font-black uppercase tracking-wide text-stone">Status da DRE</p><p className="mt-2 text-lg font-black text-gold">{data.management.dre_label}</p></div>
                   <div className="rounded-xl border border-surface-03 bg-surface-01 p-4"><p className="text-xs font-black uppercase tracking-wide text-stone">Receita dos snapshots</p><p className="mt-2 text-lg font-black text-cream">{currency(data.management.operational_cmv.sale_total)}</p></div>

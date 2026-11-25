@@ -283,7 +283,9 @@ schema_pair_is_compatible() {
     "20261117_combo_landing:20261121_payment_amendment_settlement" | \
     "20261121_print_center:20261121_payment_amendment_settlement" | \
     "20261121_payment_amendment_settlement:20261121_print_center" | \
-    "20261121_print_center:20261122_print_agent_protocol")
+    "20261121_print_center:20261122_print_agent_protocol" | \
+    "20261122_print_agent_protocol:20261124_finance_operational_enablement" | \
+    "20261124_finance_operational_enablement:20261124_finance_projection_queue")
       return 0
       ;;
     *)

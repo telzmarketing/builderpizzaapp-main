@@ -2840,7 +2840,7 @@ export interface FinanceDeliveryOverview {
 
 export interface FinanceDeliveryEarning {
   id: string;
-  delivery_id: string;
+  delivery_id?: string | null;
   delivery_person_id: string;
   delivery_person_name: string;
   amount: number;
@@ -3167,6 +3167,40 @@ export interface FinanceOverview {
   categories: FinanceCategory[];
   counterparties: FinanceCounterparty[];
   transactions: FinanceTransaction[];
+  sales: {
+    total_count: number;
+    gross_amount: number;
+    by_day: Array<{ date: string; gross_amount: number; order_count: number }>;
+  };
+  projection_health: FinanceProjectionHealth;
+}
+
+export interface FinanceProjectionHealth {
+  status: "healthy" | "degraded";
+  checked_payments: number;
+  checked_purchases: number;
+  checked_delivery: number;
+  checked_cmv: number;
+  missing_sales_count: number;
+  missing_purchase_payables_count: number;
+  missing_delivery_count: number;
+  missing_cmv_count: number;
+  missing_refund_count: number;
+  missing_sales_ids: string[];
+  missing_purchase_ids: string[];
+  missing_delivery_ids: string[];
+  missing_cmv_order_ids: string[];
+  missing_refund_payment_ids: string[];
+}
+
+export interface FinanceBackfillResult {
+  status: string;
+  scanned: number;
+  created: number;
+  already_synced: number;
+  skipped: number;
+  failed: number;
+  failures: Array<{ payment_id?: string; purchase_id?: string; earning_id?: string; error?: string; reason?: string }>;
 }
 
 export type FinanceAccountInput = Omit<FinanceAccount, "id" | "tenant_id" | "current_balance" | "created_at" | "updated_at">;
@@ -6882,6 +6916,11 @@ export const appFinanceApi = {
 export const financeApi = {
   overview: () => get<FinanceOverview>("/gestao/finance/overview"),
   paymentOverview: () => get<FinancePaymentOverview>("/gestao/finance/payments/overview"),
+  backfillSales: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/sales/backfill?limit=${limit}`, {}),
+  backfillPaymentReversals: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/payments/backfill-reversals?limit=${limit}`, {}),
+  backfillPurchasePayables: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/purchases/backfill-payables?limit=${limit}`, {}),
+  backfillDeliveryExpenses: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/delivery/backfill-expenses?limit=${limit}`, {}),
+  backfillCmvSnapshots: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/cmv/backfill-snapshots?limit=${limit}`, {}),
   deliveryOverview: () => get<FinanceDeliveryOverview>("/gestao/finance/delivery/overview"),
   deliveryEarnings: (params?: { date_from?: string; date_to?: string; status?: string }) => {
     const query = new URLSearchParams();
@@ -6911,6 +6950,8 @@ export const financeApi = {
   listBankStatements: () => get<FinanceBankStatement[]>("/gestao/finance/bank-statements"),
   listBankStatementLines: (id: string) => get<FinanceBankStatementLine[]>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/lines`),
   listBankReconciliation: (id: string) => get<FinanceBankReconciliationLine[]>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/reconciliation`),
+  closeBankStatement: (id: string) => post<FinanceBankStatement>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/close`, {}),
+  reopenBankStatement: (id: string) => post<FinanceBankStatement>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/reopen`, {}),
   matchBankStatementLine: (lineId: string, transactionId: string) => post<FinanceBankStatementLine>(`/gestao/finance/bank-statement-lines/${encodeURIComponent(lineId)}/match`, { transaction_id: transactionId }),
   unmatchBankStatementLine: (lineId: string, reason: string) => post<FinanceBankStatementLine>(`/gestao/finance/bank-statement-lines/${encodeURIComponent(lineId)}/unmatch`, { reason }),
   ignoreBankStatementLine: (lineId: string, reason: string) => post<FinanceBankStatementLine>(`/gestao/finance/bank-statement-lines/${encodeURIComponent(lineId)}/ignore`, { reason }),

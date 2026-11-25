@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, DecimalException, ROUND_HALF_UP
 
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.exceptions import DomainError
@@ -87,7 +87,256 @@ class FinanceService:
             "categories": self.list_categories(),
             "counterparties": self.list_counterparties(),
             "transactions": self.list_transactions(),
+            "sales": self.sales_overview(),
+            "projection_health": self.projection_health(),
         }
+
+    def sales_overview(self) -> dict:
+        """Read confirmed sales directly from the canonical payment records."""
+        payments = (
+            self._db.query(Payment)
+            .filter(
+                Payment.tenant_id == self._tenant_id,
+                Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
+            )
+            .all()
+        )
+        by_day: dict[date, dict[str, float | int]] = {}
+        for payment in payments:
+            settled_at = payment.paid_at or payment.created_at
+            if settled_at is None:
+                continue
+            day = settled_at.date()
+            item = by_day.setdefault(day, {"gross_amount": 0.0, "order_count": 0})
+            item["gross_amount"] = round(float(item["gross_amount"]) + float(payment.amount or 0), 2)
+            item["order_count"] = int(item["order_count"]) + 1
+        rows = [{"date": day, **values} for day, values in sorted(by_day.items())]
+        return {
+            "total_count": sum(int(item["order_count"]) for item in by_day.values()),
+            "gross_amount": round(sum(float(item["gross_amount"]) for item in by_day.values()), 2),
+            "by_day": rows,
+        }
+
+    def projection_health(self, limit: int = 100) -> dict:
+        """Detect payment/purchase facts that lack their finance projection."""
+        bounded_limit = max(1, min(int(limit), 500))
+        payments = (
+            self._db.query(Payment.id)
+            .filter(
+                Payment.tenant_id == self._tenant_id,
+                Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
+            )
+            .order_by(Payment.created_at.asc(), Payment.id.asc())
+            .limit(5000)
+            .all()
+        )
+        payment_ids = [payment_id for payment_id, in payments]
+        linked_payment_ids = set()
+        if payment_ids:
+            linked_payment_ids = {
+                payment_id
+                for payment_id, in self._db.query(FinanceTransaction.payment_id).filter(
+                    FinanceTransaction.tenant_id == self._tenant_id,
+                    FinanceTransaction.payment_id.in_(payment_ids),
+                ).all()
+                if payment_id
+            }
+        missing_sales = [payment_id for payment_id in payment_ids if payment_id not in linked_payment_ids]
+
+        purchases = (
+            self._db.query(InventoryPurchase.id)
+            .filter(
+                InventoryPurchase.tenant_id == self._tenant_id,
+                InventoryPurchase.status == "confirmed",
+            )
+            .order_by(InventoryPurchase.created_at.asc(), InventoryPurchase.id.asc())
+            .limit(5000)
+            .all()
+        )
+        purchase_ids = [purchase_id for purchase_id, in purchases]
+        linked_purchase_ids = set()
+        if purchase_ids:
+            linked_purchase_ids = {
+                origin_id
+                for origin_id, in self._db.query(FinanceTransaction.origin_id).filter(
+                    FinanceTransaction.tenant_id == self._tenant_id,
+                    FinanceTransaction.origin_type == "inventory_purchase_payable",
+                    FinanceTransaction.origin_id.in_(purchase_ids),
+                    FinanceTransaction.status != "cancelled",
+                ).all()
+                if origin_id
+            }
+            # A validated fiscal receipt supersedes the preliminary purchase
+            # payable. Its receipt-origin transactions are the authoritative
+            # projection and must satisfy the same health check.
+            linked_purchase_ids.update(
+                purchase_id for purchase_id, in self._db.query(InventoryReceiptDocument.purchase_id)
+                .join(FinanceObligation, FinanceObligation.receipt_document_id == InventoryReceiptDocument.id)
+                .join(FinanceTransaction, and_(
+                    FinanceTransaction.tenant_id == self._tenant_id,
+                    FinanceTransaction.origin_type == "inventory_receipt_payable",
+                    FinanceTransaction.origin_id == InventoryReceiptDocument.id,
+                    FinanceTransaction.status != "cancelled",
+                ))
+                .filter(
+                    InventoryReceiptDocument.tenant_id == self._tenant_id,
+                    InventoryReceiptDocument.purchase_id.in_(purchase_ids),
+                    FinanceObligation.tenant_id == self._tenant_id,
+                    FinanceObligation.status != "cancelled",
+                ).all() if purchase_id
+            )
+        missing_purchases = [purchase_id for purchase_id in purchase_ids if purchase_id not in linked_purchase_ids]
+        delivery_items = [
+            (earning_id, "delivery")
+            for earning_id, in self._db.query(DeliveryEarning.id).filter(
+                DeliveryEarning.tenant_id == self._tenant_id,
+                DeliveryEarning.status == "paid",
+            ).limit(5000).all()
+        ]
+        delivery_items.extend(
+            (earning_id, "daily_allowance")
+            for earning_id, in self._db.query(DeliveryDailyAllowance.id).filter(
+                DeliveryDailyAllowance.tenant_id == self._tenant_id,
+                DeliveryDailyAllowance.status == "paid",
+            ).limit(5000).all()
+        )
+        delivery_ids = [earning_id for earning_id, _ in delivery_items]
+        linked_delivery_ids = set()
+        if delivery_ids:
+            linked_delivery_ids = {
+                origin_id
+                for origin_id, in self._db.query(FinanceTransaction.origin_id).filter(
+                    FinanceTransaction.tenant_id == self._tenant_id,
+                    FinanceTransaction.origin_type.in_(["delivery_earning", "delivery_daily_allowance"]),
+                    FinanceTransaction.origin_id.in_(delivery_ids),
+                    FinanceTransaction.status != "cancelled",
+                ).all()
+                if origin_id
+            }
+        missing_delivery = [earning_id for earning_id in delivery_ids if earning_id not in linked_delivery_ids]
+        checked_cmv = self._db.query(Order.id).join(Payment, Payment.order_id == Order.id).filter(
+            Order.tenant_id == self._tenant_id,
+            Payment.tenant_id == self._tenant_id,
+            Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
+        ).distinct().count()
+        cmv_orders = (
+            self._db.query(Order.id)
+            .join(Payment, Payment.order_id == Order.id)
+            .outerjoin(OrderCmvSnapshot, (OrderCmvSnapshot.order_id == Order.id) & (OrderCmvSnapshot.tenant_id == self._tenant_id))
+            .filter(
+                Order.tenant_id == self._tenant_id,
+                Payment.tenant_id == self._tenant_id,
+                Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
+                OrderCmvSnapshot.id.is_(None),
+            ).distinct().limit(5000).all()
+        )
+        missing_cmv_orders = [order_id for order_id, in cmv_orders]
+        refunded_payments = self._db.query(Payment.id).filter(
+            Payment.tenant_id == self._tenant_id,
+            Payment.status == PaymentStatus.refunded,
+        ).limit(5000).all()
+        refunded_ids = [payment_id for payment_id, in refunded_payments]
+        linked_refunds = set()
+        if refunded_ids:
+            linked_refunds = {
+                payment_id for payment_id, in self._db.query(FinanceTransaction.payment_id).filter(
+                    FinanceTransaction.tenant_id == self._tenant_id,
+                    FinanceTransaction.payment_id.in_(refunded_ids),
+                    FinanceTransaction.status == "cancelled",
+                ).all() if payment_id
+            }
+        missing_refunds = [payment_id for payment_id in refunded_ids if payment_id not in linked_refunds]
+        return {
+            "status": "healthy" if not missing_sales and not missing_purchases and not missing_delivery and not missing_cmv_orders and not missing_refunds else "degraded",
+            "checked_payments": len(payment_ids),
+            "checked_purchases": len(purchase_ids),
+            "checked_delivery": len(delivery_ids),
+            "checked_cmv": checked_cmv,
+            "missing_sales_count": len(missing_sales),
+            "missing_purchase_payables_count": len(missing_purchases),
+            "missing_delivery_count": len(missing_delivery),
+            "missing_cmv_count": len(missing_cmv_orders),
+            "missing_refund_count": len(missing_refunds),
+            "missing_sales_ids": missing_sales[:bounded_limit],
+            "missing_purchase_ids": missing_purchases[:bounded_limit],
+            "missing_delivery_ids": missing_delivery[:bounded_limit],
+            "missing_cmv_order_ids": missing_cmv_orders[:bounded_limit],
+            "missing_refund_payment_ids": missing_refunds[:bounded_limit],
+        }
+
+    def backfill_sales(self, limit: int = 5000) -> dict:
+        """Project approved payments that missed the synchronous event."""
+        if limit < 1 or limit > 10000:
+            raise FinanceInvalidReference("Limite de backfill financeiro invalido.")
+        if not self._module_settings().get("auto_create_receivables"):
+            return {"status": "disabled", "scanned": 0, "created": 0, "already_synced": 0, "skipped": 0, "failed": 0, "failures": []}
+        payments = (
+            self._db.query(Payment)
+            .filter(
+                Payment.tenant_id == self._tenant_id,
+                Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
+            )
+            .order_by(Payment.created_at.asc(), Payment.id.asc())
+            .limit(limit)
+            .all()
+        )
+        result = {"status": "ok", "scanned": len(payments), "created": 0, "already_synced": 0, "skipped": 0, "failed": 0, "failures": []}
+        for payment in payments:
+            try:
+                outcome = self.sync_payment_confirmed(
+                    payment_id=payment.id,
+                    order_id=payment.order_id,
+                    amount=float(payment.amount),
+                    gateway=payment.gateway or "unknown",
+                    transaction_id=payment.transaction_id,
+                )
+                reason = outcome.get("reason")
+                if outcome.get("created"):
+                    result["created"] += 1
+                elif reason == "already_synced":
+                    result["already_synced"] += 1
+                else:
+                    result["skipped"] += 1
+            except Exception as exc:
+                self._db.rollback()
+                result["failed"] += 1
+                if len(result["failures"]) < 20:
+                    result["failures"].append({"payment_id": payment.id, "reason": str(exc)})
+        return result
+
+    def backfill_payment_reversals(self, limit: int = 5000) -> dict:
+        if limit < 1 or limit > 10000:
+            raise FinanceInvalidReference("Limite de backfill financeiro invalido.")
+        payments = (
+            self._db.query(Payment)
+            .filter(Payment.tenant_id == self._tenant_id, Payment.status == PaymentStatus.refunded)
+            .order_by(Payment.updated_at.asc(), Payment.id.asc())
+            .limit(limit)
+            .all()
+        )
+        result = {"status": "completed", "scanned": len(payments), "created": 0, "already_synced": 0, "skipped": 0, "failed": 0, "failures": []}
+        for payment in payments:
+            try:
+                outcome = self.sync_payment_reversed(
+                    payment_id=payment.id,
+                    order_id=payment.order_id,
+                    amount=float(payment.amount or 0),
+                    gateway=payment.gateway or "unknown",
+                    transaction_id=payment.transaction_id,
+                    reason="Backfill de estorno financeiro",
+                )
+                if outcome.get("reversed"):
+                    result["created"] += 1
+                elif outcome.get("reason") in {"already_reversed", "no_settlement"}:
+                    result["already_synced"] += 1
+                else:
+                    result["skipped"] += 1
+            except Exception as exc:
+                self._db.rollback()
+                result["failed"] += 1
+                if len(result["failures"]) < 20:
+                    result["failures"].append({"payment_id": payment.id, "error": str(exc)[:240]})
+        return result
 
     def payment_overview(self) -> dict:
         rows = (
@@ -646,6 +895,8 @@ class FinanceService:
         )
         if not line:
             raise FinanceNotFound("Linha do extrato")
+        if line.statement and line.statement.status == "closed":
+            raise FinanceInvalidReference("O extrato esta fechado; reabra-o antes de alterar a conciliacao.")
         transaction = self._get_transaction(payload.transaction_id, for_update=True)
         if transaction.account_id != line.account_id:
             raise FinanceInvalidReference("O lancamento precisa pertencer a mesma conta do extrato.")
@@ -672,12 +923,15 @@ class FinanceService:
         line.matched_at = datetime.now(timezone.utc)
         line.matched_by_admin_id = admin_id
         self._record_reconciliation_event(line, "matched", transaction.id, admin_id, None)
+        self._refresh_bank_statement_status(line.statement)
         self._db.commit()
         self._db.refresh(line)
         return self._serialize_bank_statement_line(line)
 
     def unmatch_bank_statement_line(self, line_id: str, payload: FinanceBankReconciliationReasonIn, admin_id: str | None = None) -> dict:
         line = self._get_bank_statement_line(line_id, for_update=True)
+        if line.statement and line.statement.status == "closed":
+            raise FinanceInvalidReference("O extrato esta fechado; reabra-o antes de alterar a conciliacao.")
         if line.reconciliation_status != "matched" or not line.matched_transaction_id:
             raise FinanceInvalidReference("A linha nao esta conciliada.")
         previous_transaction_id = line.matched_transaction_id
@@ -686,19 +940,48 @@ class FinanceService:
         line.matched_at = None
         line.matched_by_admin_id = None
         self._record_reconciliation_event(line, "unmatched", previous_transaction_id, admin_id, payload.reason)
+        self._refresh_bank_statement_status(line.statement)
         self._db.commit()
         self._db.refresh(line)
         return self._serialize_bank_statement_line(line)
 
     def ignore_bank_statement_line(self, line_id: str, payload: FinanceBankReconciliationReasonIn, admin_id: str | None = None) -> dict:
         line = self._get_bank_statement_line(line_id, for_update=True)
+        if line.statement and line.statement.status == "closed":
+            raise FinanceInvalidReference("O extrato esta fechado; reabra-o antes de alterar a conciliacao.")
         if line.reconciliation_status == "matched":
             raise FinanceInvalidReference("Desconcilie a linha antes de ignora-la.")
         line.reconciliation_status = "ignored"
         self._record_reconciliation_event(line, "ignored", None, admin_id, payload.reason)
+        self._refresh_bank_statement_status(line.statement)
         self._db.commit()
         self._db.refresh(line)
         return self._serialize_bank_statement_line(line)
+
+    def close_bank_statement(self, statement_id: str, admin_id: str | None = None) -> dict:
+        statement = self._get_bank_statement(statement_id, for_update=True)
+        if statement.status == "closed":
+            return self._serialize_bank_statement(statement)
+        unresolved = [line for line in statement.lines if line.reconciliation_status not in {"matched", "ignored"}]
+        if unresolved:
+            raise FinanceInvalidReference("O extrato possui linhas sem conciliar ou justificar.")
+        statement.status = "closed"
+        for line in statement.lines:
+            self._record_reconciliation_event(line, "statement_closed", line.matched_transaction_id, admin_id, "Extrato fechado.")
+        self._db.commit()
+        self._db.refresh(statement)
+        return self._serialize_bank_statement(statement)
+
+    def reopen_bank_statement(self, statement_id: str, admin_id: str | None = None) -> dict:
+        statement = self._get_bank_statement(statement_id, for_update=True)
+        if statement.status != "closed":
+            return self._serialize_bank_statement(statement)
+        statement.status = "reconciled" if all(line.reconciliation_status in {"matched", "ignored"} for line in statement.lines) else "imported"
+        for line in statement.lines:
+            self._record_reconciliation_event(line, "statement_reopened", line.matched_transaction_id, admin_id, "Extrato reaberto.")
+        self._db.commit()
+        self._db.refresh(statement)
+        return self._serialize_bank_statement(statement)
 
     def list_reconciliation_events(self, line_id: str) -> list[dict]:
         self._get_bank_statement_line(line_id)
@@ -709,6 +992,13 @@ class FinanceService:
             .all()
         )
         return [self._serialize_reconciliation_event(row) for row in rows]
+
+    @staticmethod
+    def _refresh_bank_statement_status(statement: FinanceBankStatement | None) -> None:
+        if statement and statement.status != "closed":
+            statement.status = "reconciled" if statement.lines and all(
+                line.reconciliation_status in {"matched", "ignored"} for line in statement.lines
+            ) else "imported"
 
     def import_bank_statement(self, payload: FinanceBankStatementImportIn, admin_id: str | None = None) -> dict:
         account = self._get_account(payload.account_id)
@@ -723,6 +1013,7 @@ class FinanceService:
                     FinanceBankStatement.account_id == account.id,
                     FinanceBankStatement.file_hash == payload.file_hash,
                 )
+                .with_for_update()
                 .first()
             )
             if existing:
@@ -757,7 +1048,19 @@ class FinanceService:
                 amount=payload_line.amount,
                 balance=payload_line.balance,
             ))
-        self._db.commit()
+        try:
+            self._db.commit()
+        except IntegrityError:
+            self._db.rollback()
+            if payload.file_hash:
+                existing = self._db.query(FinanceBankStatement).filter(
+                    FinanceBankStatement.tenant_id == self._tenant_id,
+                    FinanceBankStatement.account_id == account.id,
+                    FinanceBankStatement.file_hash == payload.file_hash,
+                ).first()
+                if existing:
+                    return self._serialize_bank_statement(existing)
+            raise FinanceInvalidReference("O extrato ja foi importado ou possui identificadores duplicados.")
         self._db.refresh(statement)
         return self._serialize_bank_statement(statement)
 
@@ -1224,12 +1527,21 @@ class FinanceService:
             .options(joinedload(FinanceTransaction.settlements))
             .filter(
                 FinanceTransaction.tenant_id == self._tenant_id,
-                FinanceTransaction.origin_type == "payment_receivable",
-                FinanceTransaction.origin_id == payment_id,
+                or_(
+                    FinanceTransaction.payment_id == payment_id,
+                    and_(
+                        FinanceTransaction.origin_type == "payment_receivable",
+                        FinanceTransaction.origin_id == payment_id,
+                    ),
+                ),
             )
+            .with_for_update()
             .first()
         )
         if existing and any(item.idempotency_key == f"payment-confirmed:{payment_id}" for item in existing.settlements):
+            if not existing.account_id:
+                existing.account_id = self._ensure_default_account("default_receivable_account_id", "Conta principal de recebimentos")
+                self._db.commit()
             return {"created": False, "reason": "already_synced", "transaction_id": existing.id}
         paid_at = payment.paid_at if payment and payment.paid_at else datetime.now(timezone.utc)
         receivable_amount = self._money(fact.amount, "valor recebido")
@@ -1244,12 +1556,12 @@ class FinanceService:
             # payment. Do not create a distorted financial projection.
             return {"created": False, "reason": "order_financial_composition_invalid"}
 
-        account_id = settings.get("default_receivable_account_id") or None
-        if account_id:
-            self._get_account(str(account_id))
+        account_id = self._ensure_default_account("default_receivable_account_id", "Conta principal de recebimentos")
 
         if existing:
             row = existing
+            if not row.account_id:
+                row.account_id = account_id
         else:
             order_label = order.order_code or order.id
             row = FinanceTransaction(
@@ -1351,13 +1663,46 @@ class FinanceService:
             .options(joinedload(FinanceTransaction.settlements))
             .filter(
                 FinanceTransaction.tenant_id == self._tenant_id,
-                FinanceTransaction.origin_type == "payment_receivable",
-                FinanceTransaction.origin_id == payment_id,
+                or_(
+                    FinanceTransaction.payment_id == payment_id,
+                    and_(
+                        FinanceTransaction.origin_type == "payment_receivable",
+                        FinanceTransaction.origin_id == payment_id,
+                    ),
+                ),
             )
+            .with_for_update()
             .first()
         )
         if not row:
-            return {"reversed": False, "reason": "no_receivable"}
+            # A lost confirmation event must not make a later refund
+            # financially invisible. Rebuild the historical receivable from
+            # the canonical payment/order pair, then apply the reversal.
+            self.sync_payment_confirmed(
+                payment_id=payment_id,
+                order_id=order_id,
+                amount=amount,
+                gateway=gateway,
+                transaction_id=transaction_id,
+            )
+            row = (
+                self._db.query(FinanceTransaction)
+                .options(joinedload(FinanceTransaction.settlements))
+                .filter(
+                    FinanceTransaction.tenant_id == self._tenant_id,
+                    or_(
+                        FinanceTransaction.payment_id == payment_id,
+                        and_(
+                            FinanceTransaction.origin_type == "payment_receivable",
+                            FinanceTransaction.origin_id == payment_id,
+                        ),
+                    ),
+                )
+                .with_for_update()
+                .first()
+            )
+            if not row:
+                return {"reversed": False, "reason": "no_receivable"}
 
         idempotency_key = f"payment-reversed:{payment_id}"
         if any(item.idempotency_key == idempotency_key for item in row.settlements):
@@ -1372,6 +1717,21 @@ class FinanceService:
         ]
         if not original_settlements:
             return {"reversed": False, "reason": "no_settlement", "transaction_id": row.id}
+
+        try:
+            reversal_amount = self._money(amount, "valor do estorno")
+        except FinanceInvalidReference:
+            return {"reversed": False, "reason": "invalid_reversal_amount", "transaction_id": row.id}
+        settled_principal = sum(
+            (self._money(item.principal_amount, "valor liquidado") for item in original_settlements),
+            Decimal("0.00"),
+        )
+        if abs(reversal_amount - settled_principal) > Decimal("0.01"):
+            return {
+                "reversed": False,
+                "reason": "partial_reversal_requires_reconciliation",
+                "transaction_id": row.id,
+            }
 
         now = datetime.now(timezone.utc)
         account_id = next((item.account_id for item in original_settlements if item.account_id), row.account_id)
@@ -1469,14 +1829,17 @@ class FinanceService:
             .first()
         )
         if existing:
+            if not existing.account_id:
+                existing.account_id = self._ensure_default_account("default_payable_account_id", "Conta principal de pagamentos")
+                self._db.commit()
             return {"created": False, "reason": "already_synced", "transaction_id": existing.id}
 
         supplier = purchase.supplier
         counterparty_id = self._ensure_supplier_counterparty(supplier) if supplier else None
-        account_id = settings.get("default_payable_account_id") or None
-        if account_id:
-            self._get_account(str(account_id))
-        due_date = purchase.expected_date or date.today()
+        account_id = self._ensure_default_account("default_payable_account_id", "Conta principal de pagamentos")
+        # An absent supplier deadline is unknown; do not invent today's date
+        # and report a false overdue obligation.
+        due_date = purchase.expected_date
         row = FinanceTransaction(
             id=f"fin-trx-{uuid.uuid4().hex[:12]}",
             tenant_id=self._tenant_id,
@@ -1491,7 +1854,7 @@ class FinanceService:
             status="pending",
             description=f"Compra de estoque {purchase.title or purchase.invoice_number or purchase.id}",
             amount=amount,
-            competence_date=due_date,
+            competence_date=purchase.purchase_date or date.today(),
             due_date=due_date,
             document_number=purchase.invoice_number,
             document_date=due_date,
@@ -1508,6 +1871,195 @@ class FinanceService:
             return {"created": False, "reason": "already_synced", "transaction_id": None}
         self._db.refresh(row)
         return {"created": True, "reason": "ok", "transaction_id": row.id}
+
+    def backfill_purchase_payables(self, limit: int = 5000) -> dict:
+        """Project already-confirmed purchases into payables idempotently."""
+        if limit < 1 or limit > 10000:
+            raise FinanceInvalidReference("O limite deve estar entre 1 e 10000.")
+        settings = self._module_settings()
+        if not settings or not settings.get("auto_create_payables_from_purchases"):
+            return {"status": "disabled", "scanned": 0, "created": 0, "already_synced": 0, "skipped": 0, "failed": 0, "failures": []}
+        purchases = (
+            self._db.query(InventoryPurchase)
+            .filter(
+                InventoryPurchase.tenant_id == self._tenant_id,
+                InventoryPurchase.status == "confirmed",
+            )
+            .order_by(InventoryPurchase.created_at.asc(), InventoryPurchase.id.asc())
+            .limit(limit)
+            .all()
+        )
+        result = {"status": "completed", "scanned": len(purchases), "created": 0, "already_synced": 0, "skipped": 0, "failed": 0, "failures": []}
+        for purchase in purchases:
+            try:
+                outcome = self.sync_purchase_confirmed(purchase_id=purchase.id)
+                reason = outcome.get("reason")
+                if outcome.get("created"):
+                    result["created"] += 1
+                elif reason == "already_synced":
+                    result["already_synced"] += 1
+                else:
+                    result["skipped"] += 1
+                self._db.rollback()
+            except Exception as exc:
+                self._db.rollback()
+                result["failed"] += 1
+                if len(result["failures"]) < 20:
+                    result["failures"].append({"purchase_id": purchase.id, "error": str(exc)[:240]})
+        return result
+
+    def sync_delivery_payment(self, *, earning_id: str, earning_type: str, paid_by: str | None = None) -> dict:
+        """Create the paid delivery expense without duplicating the logistics ledger."""
+        if not self._module_settings():
+            return {"created": False, "reason": "disabled", "earning_id": earning_id}
+        if earning_type == "delivery":
+            earning = self._db.query(DeliveryEarning).options(joinedload(DeliveryEarning.delivery_person)).filter(
+                DeliveryEarning.tenant_id == self._tenant_id,
+                DeliveryEarning.id == earning_id,
+            ).with_for_update().first()
+        elif earning_type == "daily_allowance":
+            earning = self._db.query(DeliveryDailyAllowance).options(joinedload(DeliveryDailyAllowance.delivery_person)).filter(
+                DeliveryDailyAllowance.tenant_id == self._tenant_id,
+                DeliveryDailyAllowance.id == earning_id,
+            ).with_for_update().first()
+        else:
+            raise FinanceInvalidReference("Tipo de repasse de entrega invalido.")
+        if not earning:
+            raise FinanceNotFound("Repasse de entrega")
+        if earning.status != "paid":
+            return {"created": False, "reason": "earning_not_paid", "earning_id": earning_id}
+        origin_type = "delivery_earning" if earning_type == "delivery" else "delivery_daily_allowance"
+        existing = self._db.query(FinanceTransaction).filter(
+            FinanceTransaction.tenant_id == self._tenant_id,
+            FinanceTransaction.origin_type == origin_type,
+            FinanceTransaction.origin_id == earning_id,
+        ).with_for_update().first()
+        if existing:
+            return {"created": False, "reason": "already_synced", "transaction_id": existing.id}
+        amount = self._money(earning.amount, "valor do repasse")
+        if amount <= 0:
+            return {"created": False, "reason": "invalid_amount", "earning_id": earning_id}
+        person_name = earning.delivery_person.name if earning.delivery_person else "Entregador nao informado"
+        paid_at = earning.paid_at or datetime.now(timezone.utc)
+        category_id = self._ensure_category("Repasses de entrega", "expense", "delivery")
+        account_id = self._ensure_default_account("default_payable_account_id", "Conta principal de pagamentos")
+        row = FinanceTransaction(
+            id=f"fin-trx-{uuid.uuid4().hex[:12]}",
+            tenant_id=self._tenant_id,
+            account_id=account_id,
+            category_id=category_id,
+            counterparty_name=person_name,
+            counterparty_type="employee",
+            cost_center="delivery",
+            entry_type="expense",
+            status="paid",
+            description=("Repasse de entrega" if earning_type == "delivery" else "Diaria de entregador") + f" - {person_name}",
+            amount=float(amount),
+            paid_amount=float(amount),
+            net_amount=float(amount),
+            competence_date=earning.period_date,
+            due_date=earning.period_date,
+            paid_at=paid_at,
+            payment_method="pix",
+            payment_reference=paid_by or earning.paid_by,
+            origin_type=origin_type,
+            origin_id=earning_id,
+            notes=earning.notes,
+        )
+        self._db.add(row)
+        self._db.flush()
+        self._db.add(FinanceSettlement(
+            id=f"fin-set-{uuid.uuid4().hex[:12]}",
+            tenant_id=self._tenant_id,
+            transaction_id=row.id,
+            settled_at=paid_at,
+            principal_amount=float(amount),
+            net_amount=float(amount),
+            payment_method="pix",
+            payment_reference=paid_by or earning.paid_by,
+            origin_type=origin_type,
+            origin_id=earning_id,
+            idempotency_key=f"{origin_type}:{earning_id}",
+            notes="Liquidacao automatica do repasse de entrega.",
+        ))
+        try:
+            self._db.commit()
+        except IntegrityError:
+            self._db.rollback()
+            existing = self._db.query(FinanceTransaction).filter(
+                FinanceTransaction.tenant_id == self._tenant_id,
+                FinanceTransaction.origin_type == origin_type,
+                FinanceTransaction.origin_id == earning_id,
+            ).first()
+            return {"created": False, "reason": "already_synced", "transaction_id": existing.id if existing else None}
+        return {"created": True, "reason": "ok", "transaction_id": row.id}
+
+    def backfill_delivery_payments(self, limit: int = 5000) -> dict:
+        if limit < 1 or limit > 10000:
+            raise FinanceInvalidReference("Limite de backfill financeiro invalido.")
+        earnings = self._db.query(DeliveryEarning.id).filter(
+            DeliveryEarning.tenant_id == self._tenant_id,
+            DeliveryEarning.status == "paid",
+        ).order_by(DeliveryEarning.paid_at.asc(), DeliveryEarning.id.asc()).limit(limit).all()
+        allowances = self._db.query(DeliveryDailyAllowance.id).filter(
+            DeliveryDailyAllowance.tenant_id == self._tenant_id,
+            DeliveryDailyAllowance.status == "paid",
+        ).order_by(DeliveryDailyAllowance.paid_at.asc(), DeliveryDailyAllowance.id.asc()).limit(limit).all()
+        items = [(earning_id, "delivery") for earning_id, in earnings]
+        items.extend((earning_id, "daily_allowance") for earning_id, in allowances)
+        items = items[:limit]
+        result = {"status": "completed", "scanned": len(items), "created": 0, "already_synced": 0, "skipped": 0, "failed": 0, "failures": []}
+        for earning_id, earning_type in items:
+            try:
+                outcome = self.sync_delivery_payment(earning_id=earning_id, earning_type=earning_type)
+                if outcome.get("created"):
+                    result["created"] += 1
+                elif outcome.get("reason") == "already_synced":
+                    result["already_synced"] += 1
+                else:
+                    result["skipped"] += 1
+            except Exception as exc:
+                self._db.rollback()
+                result["failed"] += 1
+                if len(result["failures"]) < 20:
+                    result["failures"].append({"earning_id": earning_id, "error": str(exc)[:240]})
+        return result
+
+    def backfill_cmv_snapshots(self, limit: int = 5000) -> dict:
+        """Rebuild missing historical CMV snapshots for confirmed sales."""
+        if limit < 1 or limit > 10000:
+            raise FinanceInvalidReference("Limite de backfill financeiro invalido.")
+        orders = (
+            self._db.query(Order)
+            .join(Payment, Payment.order_id == Order.id)
+            .outerjoin(OrderCmvSnapshot, (OrderCmvSnapshot.order_id == Order.id) & (OrderCmvSnapshot.tenant_id == self._tenant_id))
+            .filter(
+                Order.tenant_id == self._tenant_id,
+                Payment.tenant_id == self._tenant_id,
+                Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
+                OrderCmvSnapshot.id.is_(None),
+            )
+            .order_by(Order.created_at.asc(), Order.id.asc())
+            .limit(limit)
+            .all()
+        )
+        result = {"status": "completed", "scanned": len(orders), "created": 0, "skipped": 0, "failed": 0, "failures": []}
+        from backend.services.cmv_snapshot_service import OrderCmvSnapshotService
+        cmv = OrderCmvSnapshotService(self._db, self._tenant_id, self._tenant_context)
+        for order in orders:
+            try:
+                snapshot = cmv.create_for_order(order, source="finance_backfill")
+                if snapshot is None:
+                    result["skipped"] += 1
+                else:
+                    result["created"] += 1
+                self._db.commit()
+            except Exception as exc:
+                self._db.rollback()
+                result["failed"] += 1
+                if len(result["failures"]) < 20:
+                    result["failures"].append({"order_id": order.id, "error": str(exc)[:240]})
+        return result
 
     def settle_transaction(self, transaction_id: str, payload: FinanceSettlementIn, admin_id: str | None = None) -> dict:
         row = self._get_transaction(transaction_id, for_update=True)
@@ -1656,12 +2208,71 @@ class FinanceService:
             )
             .first()
         )
+        if not item:
+            # A newly created tenant may not have visited the Gestao settings
+            # screen yet. Materialize the tenant defaults before deciding that
+            # the financial projection is disabled.
+            from backend.services.gestao_service import GestaoService
+
+            GestaoService(self._db, self._tenant_id).list_settings()
+            item = (
+                self._db.query(GestaoModuleSettings)
+                .filter(
+                    GestaoModuleSettings.tenant_id == self._tenant_id,
+                    GestaoModuleSettings.module_key == "finance",
+                )
+                .first()
+            )
         if not item or not item.enabled or item.status == "disabled":
             return {}
         try:
             return json.loads(item.settings_json or "{}")
         except json.JSONDecodeError:
             return {}
+
+    def _ensure_default_account(self, setting_key: str, name: str) -> str:
+        """Return a tenant-owned account for automatic projections.
+
+        A receivable without an account cannot be matched to a bank statement.
+        New tenants therefore receive a neutral bank account lazily on the
+        first projection, while an explicitly configured account remains the
+        source of truth.
+        """
+        item = self._db.query(GestaoModuleSettings).filter(
+            GestaoModuleSettings.tenant_id == self._tenant_id,
+            GestaoModuleSettings.module_key == "finance",
+        ).first()
+        if not item or not item.enabled or item.status == "disabled":
+            raise FinanceInvalidReference("O modulo financeiro esta desabilitado.")
+        try:
+            settings = json.loads(item.settings_json or "{}")
+        except json.JSONDecodeError:
+            settings = {}
+        configured_id = settings.get(setting_key)
+        if configured_id:
+            self._get_account(str(configured_id))
+            return str(configured_id)
+        account = self._db.query(FinanceAccount).filter(
+            FinanceAccount.tenant_id == self._tenant_id,
+            FinanceAccount.account_type.in_(["bank", "cash"]),
+            FinanceAccount.active == True,  # noqa: E712
+        ).order_by(FinanceAccount.created_at.asc(), FinanceAccount.id.asc()).first()
+        if not account:
+            account = FinanceAccount(
+                id=f"fin-acc-{uuid.uuid4().hex[:12]}",
+                tenant_id=self._tenant_id,
+                name="Conta principal",
+                account_type="bank",
+                opening_balance=0.0,
+                notes="Criada automaticamente para projeções financeiras.",
+                active=True,
+            )
+            self._db.add(account)
+            self._db.flush()
+        settings[setting_key] = account.id
+        item.settings_json = json.dumps(settings, ensure_ascii=False)
+        self._db.flush()
+        return account.id
 
     def _payment_and_order(self, *, payment_id: str, order_id: str) -> tuple[Payment | None, Order | None]:
         payment = (
@@ -1803,13 +2414,15 @@ class FinanceService:
             } for item in row.installments],
         }
 
-    def _get_bank_statement(self, statement_id: str) -> FinanceBankStatement:
-        row = (
+    def _get_bank_statement(self, statement_id: str, *, for_update: bool = False) -> FinanceBankStatement:
+        query = (
             self._db.query(FinanceBankStatement)
             .options(joinedload(FinanceBankStatement.account), joinedload(FinanceBankStatement.lines))
             .filter(FinanceBankStatement.tenant_id == self._tenant_id, FinanceBankStatement.id == statement_id)
-            .first()
         )
+        if for_update:
+            query = query.with_for_update()
+        row = query.first()
         if not row:
             raise FinanceNotFound("Extrato bancario")
         return row

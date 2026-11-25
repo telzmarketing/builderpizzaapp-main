@@ -124,13 +124,14 @@ class AsaasClient:
         *,
         value: float | None = None,
         description: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {}
         if value is not None:
             body["value"] = round(float(value), 2)
         if description:
             body["description"] = description
-        return self.request("POST", f"/payments/{payment_id}/refund", body=body or None)
+        return self.request("POST", f"/payments/{payment_id}/refund", body=body or None, idempotency_key=idempotency_key)
 
     def request(
         self,
@@ -139,6 +140,7 @@ class AsaasClient:
         *,
         query: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         if not self.api_key:
             raise GatewayNotConfigured("asaas", "ASAAS_API_KEY")
@@ -158,6 +160,7 @@ class AsaasClient:
                 "Accept": "application/json",
                 "Content-Type": "application/json",
                 "access_token": self.api_key,
+                **({"Idempotency-Key": idempotency_key} if idempotency_key else {}),
             },
         )
 

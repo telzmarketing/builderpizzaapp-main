@@ -19,7 +19,7 @@ EXPECTED_TARGET_FILES = {
 }
 REVISION_PATTERN = re.compile(r"202\d{5}_[a-z0-9_]+")
 EXPECTED_OPERATIONAL_HEAD = "20261117_combo_landing"
-EXPECTED_REPOSITORY_HEAD = "20261122_print_agent_protocol"
+EXPECTED_REPOSITORY_HEAD = "20261124_finance_projection_queue"
 
 
 def _migration_heads() -> set[str]:
@@ -147,6 +147,8 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20261121_print_center:20261121_payment_amendment_settlement",
         "20261121_payment_amendment_settlement:20261121_print_center",
         "20261121_print_center:20261122_print_agent_protocol",
+        "20261122_print_agent_protocol:20261124_finance_operational_enablement",
+        "20261124_finance_operational_enablement:20261124_finance_projection_queue",
     }
 
     sources = {

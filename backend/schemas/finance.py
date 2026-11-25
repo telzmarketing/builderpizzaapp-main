@@ -262,6 +262,36 @@ class FinanceManagementOut(BaseModel):
     by_channel: list[FinanceDimensionSummaryOut]
 
 
+class FinanceSalesDayOut(BaseModel):
+    date: date
+    gross_amount: float
+    order_count: int
+
+
+class FinanceSalesOverviewOut(BaseModel):
+    total_count: int
+    gross_amount: float
+    by_day: list[FinanceSalesDayOut]
+
+
+class FinanceProjectionHealthOut(BaseModel):
+    status: Literal["healthy", "degraded"]
+    checked_payments: int
+    checked_purchases: int
+    checked_delivery: int
+    checked_cmv: int
+    missing_sales_count: int
+    missing_purchase_payables_count: int
+    missing_delivery_count: int
+    missing_cmv_count: int
+    missing_refund_count: int
+    missing_sales_ids: list[str] = Field(default_factory=list)
+    missing_purchase_ids: list[str] = Field(default_factory=list)
+    missing_delivery_ids: list[str] = Field(default_factory=list)
+    missing_cmv_order_ids: list[str] = Field(default_factory=list)
+    missing_refund_payment_ids: list[str] = Field(default_factory=list)
+
+
 class FinanceBiOut(BaseModel):
     date_from: date
     date_to: date
@@ -289,6 +319,8 @@ class FinanceOverviewOut(BaseModel):
     categories: list[FinanceCategoryOut]
     counterparties: list[FinanceCounterpartyOut]
     transactions: list[FinanceTransactionOut]
+    sales: FinanceSalesOverviewOut
+    projection_health: FinanceProjectionHealthOut
 
 
 class FinancePaymentSummaryOut(BaseModel):
@@ -326,7 +358,7 @@ class FinanceDeliveryOverviewOut(BaseModel):
 
 class FinanceDeliveryEarningOut(BaseModel):
     id: str
-    delivery_id: str
+    delivery_id: str | None = None
     delivery_person_id: str
     delivery_person_name: str
     amount: float

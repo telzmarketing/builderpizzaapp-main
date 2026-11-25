@@ -71,7 +71,13 @@ class OrderCmvSnapshotService:
         except (ValueError, TypeError):
             return False
 
-    def create_for_order(self, order: Order, contexts: list[CmvOrderItemContext] | None = None) -> OrderCmvSnapshot | None:
+    def create_for_order(
+        self,
+        order: Order,
+        contexts: list[CmvOrderItemContext] | None = None,
+        *,
+        source: str = "order_created",
+    ) -> OrderCmvSnapshot | None:
         if not self.module_enabled():
             return None
         if self._db.query(OrderCmvSnapshot).filter(
@@ -94,7 +100,7 @@ class OrderCmvSnapshotService:
             id=str(uuid.uuid4()),
             tenant_id=self._tenant_id,
             order_id=order.id,
-            source="order_created",
+            source=source,
             status="complete",
             sale_total=0.0,
             cost_total=0.0,

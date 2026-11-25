@@ -4,8 +4,10 @@ import uuid
 import hashlib
 from types import SimpleNamespace
 from decimal import Decimal
+from datetime import date
 from sqlalchemy.orm import Session, joinedload
 from backend.core.exceptions import DomainError
+from backend.core.tenant_context import TenantContext, TenantSource
 from backend.models.inventory_receipts import InventoryReceiptDocument, InventoryReceiptDocumentLine
 from backend.models.finance import FinanceObligation, FinanceObligationInstallment, FinanceTransaction
 from backend.services.fiscal_receipt_xml import parse_receipt_xml, ReceiptXmlError
@@ -20,8 +22,9 @@ class ReceiptDocumentError(DomainError):
     def __init__(self, message: str): super().__init__(message, code="ReceiptDocumentError")
 
 class InventoryReceiptService:
-    def __init__(self, db: Session, tenant_id: str, admin_id: str | None = None):
+    def __init__(self, db: Session, tenant_id: str, admin_id: str | None = None, tenant_context: TenantContext | None = None):
         self.db, self.tenant_id, self.admin_id = db, tenant_id, admin_id
+        self.tenant_context = tenant_context or TenantContext(tenant_id=tenant_id, source=TenantSource.JOB, actor_id=admin_id)
 
     def _out(self, row):
         return {"id": row.id, "tenant_id": row.tenant_id, "purchase_id": row.purchase_id, "supplier_id": row.supplier_id,
@@ -178,34 +181,60 @@ class InventoryReceiptService:
             ))
 
     def reconcile(self, document_id, body, key):
-        row = self.db.query(InventoryReceiptDocument).filter(InventoryReceiptDocument.tenant_id == self.tenant_id, InventoryReceiptDocument.id == document_id).first()
+        row = self.db.query(InventoryReceiptDocument).filter(InventoryReceiptDocument.tenant_id == self.tenant_id, InventoryReceiptDocument.id == document_id).with_for_update().first()
         if not row: raise ReceiptDocumentError("Documento de entrada nao encontrado.")
         if row.status != "validated": raise ReceiptDocumentError("O documento precisa ser aprovado antes da obrigacao financeira.")
         installments = body.get("installments") or []
         total = sum((Decimal(str(x["amount"])) for x in installments), Decimal("0"))
         if total <= 0: raise ReceiptDocumentError("Informe parcelas explicitas com valor positivo.")
         claim = IdempotencyService(self.db, self.tenant_id).claim(key, "inventory_receipt_reconcile", {"document_id": document_id, "body": body})
-        existing = self.db.query(FinanceObligation).filter(FinanceObligation.tenant_id == self.tenant_id, FinanceObligation.receipt_document_id == row.id).first()
+        existing = self.db.query(FinanceObligation).filter(FinanceObligation.tenant_id == self.tenant_id, FinanceObligation.receipt_document_id == row.id).with_for_update().first()
         if existing:
+            if abs(Decimal(str(existing.total_amount)) - total) > Decimal("0.01"):
+                IdempotencyService(self.db, self.tenant_id).abandon(claim.record)
+                raise ReceiptDocumentError("A distribuicao das parcelas diverge da obrigacao ja reconciliada.")
             result = {"document_id": row.id, "status": "linked", "transaction_ids": [], "obligation_total": str(existing.total_amount), "paid_total": "0"}
             IdempotencyService(self.db, self.tenant_id).complete(claim.record, existing.id)
             return result
+        extracted = row.extracted_json if isinstance(row.extracted_json, dict) else {}
+        expected_total = extracted.get("total_document")
+        if expected_total is None and row.purchase_id:
+            expected_total = self.db.query(InventoryPurchase.total_amount).filter(
+                InventoryPurchase.tenant_id == self.tenant_id,
+                InventoryPurchase.id == row.purchase_id,
+            ).scalar()
+        if expected_total is not None and abs(Decimal(str(expected_total)) - total) > Decimal("0.01"):
+            IdempotencyService(self.db, self.tenant_id).abandon(claim.record)
+            raise ReceiptDocumentError("A soma das parcelas diverge do valor fiscal ou da compra vinculada.")
+        superseded_purchase_transaction = None
         if row.purchase_id:
             purchase_transaction = self.db.query(FinanceTransaction).filter(
                 FinanceTransaction.tenant_id == self.tenant_id,
                 FinanceTransaction.inventory_purchase_id == row.purchase_id,
                 FinanceTransaction.origin_type == "inventory_purchase_payable",
-            ).first()
+            ).with_for_update().first()
             if purchase_transaction:
-                IdempotencyService(self.db, self.tenant_id).abandon(claim.record)
-                raise ReceiptDocumentError(
-                    "A compra ja possui obrigacao financeira; reconcilie a origem antes de vincular o recebimento."
+                if purchase_transaction.status != "pending" or float(purchase_transaction.paid_amount or 0) > 0 or any(
+                    settlement.cancelled_at is None for settlement in purchase_transaction.settlements
+                ):
+                    IdempotencyService(self.db, self.tenant_id).abandon(claim.record)
+                    raise ReceiptDocumentError(
+                        "A conta a pagar da compra ja possui liquidacao e nao pode ser substituida pelo recebimento."
+                    )
+                superseded_purchase_transaction = purchase_transaction
+                purchase_transaction.status = "cancelled"
+                purchase_transaction.notes = (
+                    (purchase_transaction.notes or "")
+                    + f"\nSubstituida pela obrigacao do recebimento {row.id}; historico preservado."
                 )
         ob = FinanceObligation(id=f"fin-obg-{uuid.uuid4().hex[:12]}", tenant_id=self.tenant_id, receipt_document_id=row.id, idempotency_key=key, total_amount=total, product_amount=total, status="pending", created_by_admin_id=self.admin_id)
         self.db.add(ob); self.db.flush(); txids=[]
-        fs = FinanceService(self.db, self.tenant_id)
+        fs = FinanceService(self.db, self.tenant_id, self.tenant_context)
+        competence_date = row.received_at or row.issued_at or date.today()
+        if hasattr(competence_date, "date"):
+            competence_date = competence_date.date()
         for idx, item in enumerate(installments, 1):
-            tx = FinanceTransaction(id=f"fin-trx-{uuid.uuid4().hex[:12]}", tenant_id=self.tenant_id, category_id=fs._ensure_category("Compras de estoque", "expense", "inventory_purchases"), counterparty_type="supplier", counterparty_name="Fornecedor", entry_type="expense", status="pending", description=f"Obrigacao NF-e {row.access_key or row.id}", amount=float(item["amount"]), due_date=item.get("due_date"), competence_date=item.get("due_date"), obligation_id=ob.id, origin_type="inventory_receipt_payable", origin_id=row.id, created_by_admin_id=self.admin_id)
+            tx = FinanceTransaction(id=f"fin-trx-{uuid.uuid4().hex[:12]}", tenant_id=self.tenant_id, category_id=fs._ensure_category("Compras de estoque", "expense", "inventory_purchases"), inventory_purchase_id=row.purchase_id, counterparty_type="supplier", counterparty_name="Fornecedor", entry_type="expense", status="pending", description=f"Obrigacao NF-e {row.access_key or row.id}", amount=float(item["amount"]), due_date=item.get("due_date"), competence_date=competence_date, obligation_id=ob.id, origin_type="inventory_receipt_payable", origin_id=row.id, created_by_admin_id=self.admin_id)
             self.db.add(tx); self.db.flush(); txids.append(tx.id); self.db.add(FinanceObligationInstallment(id=f"fin-obg-itm-{uuid.uuid4().hex[:12]}", tenant_id=self.tenant_id, obligation_id=ob.id, finance_transaction_id=tx.id, installment_number=idx, amount=Decimal(str(item["amount"])), due_date=item.get("due_date")))
         try:
             self.db.commit()

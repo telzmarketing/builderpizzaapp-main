@@ -133,11 +133,13 @@ class AsaasGateway:
         *,
         value: float | None = None,
         description: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         return self._client_or_default().refund_payment(
             payment_id,
             value=value,
             description=description,
+            idempotency_key=idempotency_key,
         )
 
     def create_incremental_pix_payment(
