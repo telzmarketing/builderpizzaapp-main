@@ -137,7 +137,7 @@ validate_operational_config
 BRANCH="${BRANCH:-main}"
 RUN_TESTS="${RUN_TESTS:-false}"
 EXPECTED_COMMIT="${TELZ_EXPECTED_COMMIT:-}"
-ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261124_finance_projection_queue}"
+ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261125_finance_contracts}"
 FORWARD_ONLY_CUTOVER="${TELZ_FORWARD_ONLY_CUTOVER:-false}"
 FORWARD_ONLY_CUTOVER_CONFIRM="${TELZ_FORWARD_ONLY_CUTOVER_CONFIRM:-}"
 EXPLICIT_RECOVERY="${TELZ_EXPLICIT_RECOVERY:-false}"
@@ -668,7 +668,8 @@ schema_is_rollback_pair_compatible() {
     "20261122_print_agent_protocol:20261124_finance_operational_enablement" | \
     "20261124_purchase_receipt_foundation:20261124_finance_operational_enablement" | \
     "20261124_purchase_receipt_foundation:20261124_finance_projection_queue" | \
-    "20261124_finance_operational_enablement:20261124_finance_projection_queue")
+    "20261124_finance_operational_enablement:20261124_finance_projection_queue" | \
+    "20261124_finance_projection_queue:20261125_finance_contracts")
       return 0
       ;;
     *)
@@ -730,6 +731,7 @@ schema_is_rollback_compatible() {
     "20261124_purchase_receipt_foundation:20261124_finance_operational_enablement"
     "20261124_purchase_receipt_foundation:20261124_finance_projection_queue"
     "20261124_finance_operational_enablement:20261124_finance_projection_queue"
+    "20261124_finance_projection_queue:20261125_finance_contracts"
   )
 
   while ((${#frontier[@]})); do

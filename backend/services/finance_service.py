@@ -14,7 +14,7 @@ from backend.core.exceptions import DomainError
 from backend.core.tenant_context import TenantContext, TenantContextMissing
 from backend.core.wave7_tenant_orm import wave7_orm_enabled
 from backend.models.finance import (
-    FinanceAccount, FinanceBudget, FinanceBudgetLine, FinanceCategory, FinanceCounterparty, FinanceObligation,
+    FinanceAccount, FinanceBudget, FinanceBudgetLine, FinanceCategory, FinanceCounterparty, FinanceContract, FinanceObligation,
     FinanceBankReconciliationEvent, FinanceBankStatement, FinanceBankStatementLine, FinanceObligationInstallment,
     FinanceSettlement, FinanceTransaction,
 )
@@ -27,7 +27,7 @@ from backend.models.order import Order, OrderStatus
 from backend.models.payment import Payment, PaymentStatus
 from backend.models.delivery import DeliveryDailyAllowance, DeliveryEarning, DeliveryPerson
 from backend.schemas.finance import (
-    FinanceAccountIn, FinanceBudgetIn, FinanceCategoryIn, FinanceCounterpartyIn,
+    FinanceAccountIn, FinanceBudgetIn, FinanceCategoryIn, FinanceCounterpartyIn, FinanceContractIn,
     FinanceBankMatchIn, FinanceBankReconciliationReasonIn, FinanceBankStatementImportIn, FinanceObligationFromFiscalIn,
     FinanceSettlementIn, FinanceTransactionIn,
 )
@@ -1212,6 +1212,56 @@ class FinanceService:
     def delete_counterparty(self, counterparty_id: str) -> None:
         row = self._get_counterparty(counterparty_id)
         row.active = False
+        self._db.commit()
+
+    def list_contracts(self) -> list[dict]:
+        rows = (
+            self._db.query(FinanceContract)
+            .join(FinanceCounterparty, FinanceCounterparty.id == FinanceContract.counterparty_id)
+            .filter(FinanceContract.tenant_id == self._tenant_id)
+            .order_by(FinanceContract.end_date.is_(None), FinanceContract.end_date, FinanceContract.title)
+            .limit(500)
+            .all()
+        )
+        return [self._serialize_contract(row) for row in rows]
+
+    def create_contract(self, payload: FinanceContractIn, admin_id: str | None = None) -> dict:
+        counterparty = self._get_counterparty(payload.counterparty_id)
+        if counterparty.counterparty_type != "supplier":
+            raise FinanceInvalidReference("O contrato financeiro precisa estar vinculado a um fornecedor.")
+        if payload.end_date and payload.end_date < payload.start_date:
+            raise FinanceInvalidReference("A vigÃªncia final nÃ£o pode ser anterior Ã  inicial.")
+        if payload.renewal_date and payload.renewal_date < payload.start_date:
+            raise FinanceInvalidReference("A data de renovaÃ§Ã£o nÃ£o pode ser anterior Ã  vigÃªncia inicial.")
+        row = FinanceContract(
+            id=f"fin-contract-{uuid.uuid4().hex[:12]}",
+            tenant_id=self._tenant_id,
+            created_by_admin_id=admin_id,
+            **payload.model_dump(),
+        )
+        row.amount = self._money(payload.amount, "valor do contrato", allow_negative=False)
+        self._db.add(row)
+        self._db.commit()
+        self._db.refresh(row)
+        return self._serialize_contract(row)
+
+    def update_contract(self, contract_id: str, payload: FinanceContractIn) -> dict:
+        row = self._get_contract(contract_id)
+        counterparty = self._get_counterparty(payload.counterparty_id)
+        if counterparty.counterparty_type != "supplier":
+            raise FinanceInvalidReference("O contrato financeiro precisa estar vinculado a um fornecedor.")
+        if payload.end_date and payload.end_date < payload.start_date:
+            raise FinanceInvalidReference("A vigÃªncia final nÃ£o pode ser anterior Ã  inicial.")
+        for key, value in payload.model_dump().items():
+            setattr(row, key, value)
+        row.amount = self._money(payload.amount, "valor do contrato", allow_negative=False)
+        self._db.commit()
+        self._db.refresh(row)
+        return self._serialize_contract(row)
+
+    def delete_contract(self, contract_id: str) -> None:
+        row = self._get_contract(contract_id)
+        row.status = "cancelled"
         self._db.commit()
 
     def list_transactions(self) -> list[dict]:
@@ -2629,6 +2679,16 @@ class FinanceService:
             raise FinanceNotFound("Favorecido")
         return row
 
+    def _get_contract(self, contract_id: str) -> FinanceContract:
+        row = (
+            self._db.query(FinanceContract)
+            .filter(FinanceContract.tenant_id == self._tenant_id, FinanceContract.id == contract_id)
+            .first()
+        )
+        if not row:
+            raise FinanceNotFound("Contrato")
+        return row
+
     def _get_transaction(self, transaction_id: str, *, for_update: bool = False) -> FinanceTransaction:
         query = (
             self._db.query(FinanceTransaction)
@@ -2781,6 +2841,27 @@ class FinanceService:
             "notes": row.notes,
             "active": row.active,
             "open_amount": round(float(open_amount or 0.0), 2),
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
+
+    @staticmethod
+    def _serialize_contract(row: FinanceContract) -> dict:
+        return {
+            "id": row.id,
+            "tenant_id": row.tenant_id,
+            "counterparty_id": row.counterparty_id,
+            "counterparty_name": row.counterparty.name if row.counterparty else "",
+            "title": row.title,
+            "contract_number": row.contract_number,
+            "start_date": row.start_date,
+            "end_date": row.end_date,
+            "renewal_date": row.renewal_date,
+            "amount": row.amount,
+            "billing_period": row.billing_period,
+            "status": row.status,
+            "notes": row.notes,
+            "created_by_admin_id": row.created_by_admin_id,
             "created_at": row.created_at,
             "updated_at": row.updated_at,
         }

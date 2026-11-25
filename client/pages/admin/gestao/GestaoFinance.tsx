@@ -57,6 +57,8 @@ import {
   type FinanceEntryType,
   type FinanceOverview,
   type FinanceObligation,
+  type FinanceContract,
+  type FinanceContractInput,
   type FinanceSettlementInput,
   type FinanceTransaction,
   type FinanceTransactionInput,
@@ -262,6 +264,20 @@ function FinancePanel() {
   const [bi, setBi] = useState<FinanceBi | null>(null);
   const [fiscalOverview, setFiscalOverview] = useState<FiscalOverview | null>(null);
   const [obligations, setObligations] = useState<FinanceObligation[]>([]);
+  const [contracts, setContracts] = useState<FinanceContract[]>([]);
+  const [contractSaving, setContractSaving] = useState(false);
+  const [contractDraft, setContractDraft] = useState<FinanceContractInput>({
+    counterparty_id: "",
+    title: "",
+    contract_number: "",
+    start_date: today(),
+    end_date: null,
+    renewal_date: null,
+    amount: 0,
+    billing_period: "monthly",
+    status: "draft",
+    notes: "",
+  });
   const [gestaoSettings, setGestaoSettings] = useState<GestaoModuleSettings | null>(null);
   const [adminLoading, setAdminLoading] = useState(false);
   const [biLoading, setBiLoading] = useState(false);
@@ -304,6 +320,28 @@ function FinancePanel() {
   useEffect(() => {
     headingRef.current?.focus({ preventScroll: true });
   }, [activeModule]);
+
+  useEffect(() => {
+    if (activeModule !== "suppliers") return;
+    financeApi.listContracts()
+      .then(setContracts)
+      .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar os contratos."));
+  }, [activeModule]);
+
+  const createContract = async () => {
+    if (!contractDraft.counterparty_id || !contractDraft.title.trim()) return;
+    setContractSaving(true);
+    setError("");
+    try {
+      await financeApi.createContract({ ...contractDraft, amount: Number(contractDraft.amount || 0) });
+      setContractDraft((draft) => ({ ...draft, title: "", contract_number: "", amount: 0, notes: "" }));
+      setContracts(await financeApi.listContracts());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel salvar o contrato.");
+    } finally {
+      setContractSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (activeModule !== "bi") return;
@@ -876,11 +914,27 @@ function FinancePanel() {
           )}
 
           {activeModule === "suppliers" && data && (
+            <div className="space-y-5">
             <div className={panelClass}>
               <CardHeading icon={Users} title="Fornecedores e favorecidos" description="Cadastro financeiro utilizado por contas a pagar, compras e lanÃ§amentos." />
               <div className="mt-4 overflow-x-auto">
                 {data.counterparties.filter((item) => item.counterparty_type === "supplier").length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhum fornecedor cadastrado. Use Cadastros para incluir o primeiro favorecido.</p> : <table className="w-full min-w-[620px] text-left text-sm"><thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Fornecedor</th><th className="px-3 py-3">Documento</th><th className="px-3 py-3 text-right">Em aberto</th></tr></thead><tbody>{data.counterparties.filter((item) => item.counterparty_type === "supplier").map((item) => <tr key={item.id} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{item.name}</td><td className="px-3 py-3 text-stone">{item.document || "-"}</td><td className="px-3 py-3 text-right font-black text-amber-200">{currency(item.open_amount)}</td></tr>)}</tbody></table>}
               </div>
+            </div>
+            <div className={panelClass}>
+              <CardHeading icon={FileText} title="Contratos de fornecedores" description="VigÃªncia, renovaÃ§Ã£o e valor contratual por empresa e fornecedor." />
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <select aria-label="Fornecedor do contrato" className={inputClass} value={contractDraft.counterparty_id} onChange={(event) => setContractDraft({ ...contractDraft, counterparty_id: event.target.value })}><option value="">Fornecedor</option>{data.counterparties.filter((item) => item.counterparty_type === "supplier").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+                <input aria-label="Titulo do contrato" className={inputClass} placeholder="TÃ­tulo do contrato" value={contractDraft.title} onChange={(event) => setContractDraft({ ...contractDraft, title: event.target.value })} />
+                <input aria-label="Numero do contrato" className={inputClass} placeholder="NÃºmero" value={contractDraft.contract_number || ""} onChange={(event) => setContractDraft({ ...contractDraft, contract_number: event.target.value })} />
+                <input aria-label="Valor do contrato" className={inputClass} type="number" min="0" step="0.01" placeholder="Valor" value={contractDraft.amount} onChange={(event) => setContractDraft({ ...contractDraft, amount: Number(event.target.value) })} />
+                <input aria-label="Inicio do contrato" className={inputClass} type="date" value={contractDraft.start_date} onChange={(event) => setContractDraft({ ...contractDraft, start_date: event.target.value })} />
+                <input aria-label="Fim do contrato" className={inputClass} type="date" value={contractDraft.end_date || ""} onChange={(event) => setContractDraft({ ...contractDraft, end_date: event.target.value || null })} />
+                <input aria-label="Renovacao do contrato" className={inputClass} type="date" value={contractDraft.renewal_date || ""} onChange={(event) => setContractDraft({ ...contractDraft, renewal_date: event.target.value || null })} />
+                <button type="button" className={buttonClass} onClick={() => void createContract()} disabled={contractSaving}>{contractSaving ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Salvar contrato</button>
+              </div>
+              <div className="mt-5 overflow-x-auto">{contracts.length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhum contrato cadastrado.</p> : <table className="w-full min-w-[860px] text-left text-sm"><thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Contrato</th><th className="px-3 py-3">Fornecedor</th><th className="px-3 py-3">VigÃªncia</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Valor</th></tr></thead><tbody>{contracts.map((item) => <tr key={item.id} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{item.title}<span className="ml-2 text-xs font-normal text-stone">{item.contract_number || ""}</span></td><td className="px-3 py-3 text-stone">{item.counterparty_name}</td><td className="px-3 py-3 text-stone">{item.start_date} a {item.end_date || "indeterminado"}</td><td className="px-3 py-3 text-stone">{item.status}</td><td className="px-3 py-3 text-right font-black text-cream">{currency(Number(item.amount))}</td></tr>)}</tbody></table>}</div>
+            </div>
             </div>
           )}
 

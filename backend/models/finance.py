@@ -179,6 +179,7 @@ class FinanceCounterparty(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     transactions = relationship("FinanceTransaction", back_populates="counterparty")
+    contracts = relationship("FinanceContract", back_populates="counterparty")
     __table_args__ = (Index("uq_finance_counterparties_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
@@ -235,6 +236,34 @@ class FinanceTransaction(Base):
     inventory_purchase = relationship("InventoryPurchase")
     obligation = relationship("FinanceObligation", foreign_keys=[obligation_id])
     __table_args__ = (Index("uq_finance_transactions_tenant_id_id", "tenant_id", "id", unique=True),)
+
+
+class FinanceContract(Base):
+    __tablename__ = "finance_contracts"
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_finance_contracts_tenant"), nullable=False)
+    counterparty_id = Column(String, ForeignKey("finance_counterparties.id", ondelete="RESTRICT"), nullable=False, index=True)
+    title = Column(String(180), nullable=False)
+    contract_number = Column(String(100), nullable=True)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=True)
+    renewal_date = Column(Date, nullable=True)
+    amount = Column(Numeric(20, 2), nullable=False, default=0)
+    billing_period = Column(String(30), nullable=True)
+    status = Column(String(20), nullable=False, default="draft", index=True)
+    notes = Column(Text, nullable=True)
+    created_by_admin_id = Column(String, ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    counterparty = relationship("FinanceCounterparty", back_populates="contracts")
+    __table_args__ = (
+        Index("uq_finance_contracts_tenant_id_id", "tenant_id", "id", unique=True),
+        CheckConstraint("status IN ('draft','active','expired','cancelled')", name="ck_finance_contracts_status"),
+        CheckConstraint("amount >= 0", name="ck_finance_contracts_amount"),
+        CheckConstraint("end_date IS NULL OR end_date >= start_date", name="ck_finance_contracts_period"),
+    )
 
 
 class FinanceSettlement(Base):

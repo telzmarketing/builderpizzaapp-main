@@ -28,6 +28,8 @@ from backend.schemas.finance import (
     FinanceCategoryOut,
     FinanceCounterpartyIn,
     FinanceCounterpartyOut,
+    FinanceContractIn,
+    FinanceContractOut,
     FinanceOverviewOut,
     FinancePaymentOverviewOut,
     FinanceDeliveryOverviewOut,
@@ -357,6 +359,36 @@ def update_counterparty(counterparty_id: str, body: FinanceCounterpartyIn, db: S
 def delete_counterparty(counterparty_id: str, db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
     try:
         service(db, tenant_context).delete_counterparty(counterparty_id)
+        return no_content()
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.get("/contracts", response_model=list[FinanceContractOut])
+def list_contracts(db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    return service(db, tenant_context).list_contracts()
+
+
+@router.post("/contracts", response_model=FinanceContractOut, status_code=201)
+def create_contract(body: FinanceContractIn, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).create_contract(body, admin.id)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.put("/contracts/{contract_id}", response_model=FinanceContractOut)
+def update_contract(contract_id: str, body: FinanceContractIn, db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).update_contract(contract_id, body)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.delete("/contracts/{contract_id}", status_code=204)
+def delete_contract(contract_id: str, db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        service(db, tenant_context).delete_contract(contract_id)
         return no_content()
     except DomainError as exc:
         return err(exc)

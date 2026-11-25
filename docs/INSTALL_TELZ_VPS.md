@@ -49,7 +49,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Defina explicitamente:
 
 ```env
-ALEMBIC_TARGET=20261124_finance_projection_queue
+ALEMBIC_TARGET=20261125_finance_contracts
 INSTALL_SSL=false
 ```
 

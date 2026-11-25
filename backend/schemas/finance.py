@@ -10,6 +10,7 @@ FinanceTransactionStatus = Literal["pending", "partial", "paid", "cancelled"]
 FinanceCounterpartyType = Literal["supplier", "customer", "employee", "partner", "other"]
 FinanceBankStatementStatus = Literal["imported", "reconciled", "closed"]
 FinanceBankStatementLineStatus = Literal["unmatched", "suggested", "matched", "ignored", "divergent"]
+FinanceContractStatus = Literal["draft", "active", "expired", "cancelled"]
 
 
 class FinanceAccountIn(BaseModel):
@@ -139,6 +140,28 @@ class FinanceCounterpartyOut(FinanceCounterpartyIn):
     id: str
     tenant_id: str
     open_amount: float = 0.0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class FinanceContractIn(BaseModel):
+    counterparty_id: str
+    title: str = Field(min_length=1, max_length=180)
+    contract_number: str | None = Field(default=None, max_length=100)
+    start_date: date
+    end_date: date | None = None
+    renewal_date: date | None = None
+    amount: Decimal = Field(default=0, ge=0, max_digits=20, decimal_places=2)
+    billing_period: str | None = Field(default=None, max_length=30)
+    status: FinanceContractStatus = "draft"
+    notes: str | None = None
+
+
+class FinanceContractOut(FinanceContractIn):
+    id: str
+    tenant_id: str
+    counterparty_name: str
+    created_by_admin_id: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

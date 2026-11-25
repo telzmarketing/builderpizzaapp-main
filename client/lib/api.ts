@@ -3224,6 +3224,26 @@ export interface FinanceObligation {
   installments: FinanceObligationInstallment[];
 }
 
+export interface FinanceContract {
+  id: string;
+  tenant_id: string;
+  counterparty_id: string;
+  counterparty_name: string;
+  title: string;
+  contract_number?: string | null;
+  start_date: string;
+  end_date?: string | null;
+  renewal_date?: string | null;
+  amount: number | string;
+  billing_period?: string | null;
+  status: "draft" | "active" | "expired" | "cancelled";
+  notes?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export type FinanceContractInput = Omit<FinanceContract, "id" | "tenant_id" | "counterparty_name" | "created_at" | "updated_at">;
+
 export interface FinanceBackfillResult {
   status: string;
   scanned: number;
@@ -6948,6 +6968,10 @@ export const financeApi = {
   overview: () => get<FinanceOverview>("/gestao/finance/overview"),
   paymentOverview: () => get<FinancePaymentOverview>("/gestao/finance/payments/overview"),
   listObligations: () => get<FinanceObligation[]>("/gestao/finance/obligations"),
+  listContracts: () => get<FinanceContract[]>("/gestao/finance/contracts"),
+  createContract: (data: FinanceContractInput) => post<FinanceContract>("/gestao/finance/contracts", data),
+  updateContract: (id: string, data: FinanceContractInput) => put<FinanceContract>(`/gestao/finance/contracts/${encodeURIComponent(id)}`, data),
+  removeContract: (id: string) => del<void>(`/gestao/finance/contracts/${encodeURIComponent(id)}`),
   backfillSales: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/sales/backfill?limit=${limit}`, {}),
   backfillPaymentReversals: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/payments/backfill-reversals?limit=${limit}`, {}),
   backfillPurchasePayables: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/purchases/backfill-payables?limit=${limit}`, {}),

@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 env:
-  TELZ_ALEMBIC_TARGET: 20261124_finance_projection_queue
+  TELZ_ALEMBIC_TARGET: 20261125_finance_contracts
   TELZ_PUBLIC_HEALTH_URL: https://app.telz.com.br/health
 
 jobs:
