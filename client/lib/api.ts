@@ -2822,6 +2822,33 @@ export interface FinancePaymentOverview {
   total_linked_fee_amount: number;
 }
 
+export interface FinancePaymentReconciliationItem {
+  payment_id: string;
+  method: string;
+  gateway: string;
+  provider: string;
+  provider_payment_id?: string | null;
+  external_reference?: string | null;
+  status: string;
+  gross_amount: number;
+  finance_transaction_ids: string[];
+  finance_status?: string | null;
+  linked_fee_amount: number;
+  linked_net_amount: number;
+  readiness: "not_confirmed" | "projected" | "missing_projection";
+}
+
+export interface FinancePaymentReconciliation {
+  items: FinancePaymentReconciliationItem[];
+  total_count: number;
+  confirmed_count: number;
+  projected_count: number;
+  missing_projection_count: number;
+  total_gross_amount: number;
+  total_linked_fee_amount: number;
+  total_linked_net_amount: number;
+}
+
 export interface FinanceDeliveryEarningSummary {
   delivery_person_id: string;
   delivery_person_name: string;
@@ -6978,6 +7005,7 @@ export const appFinanceApi = {
 export const financeApi = {
   overview: () => get<FinanceOverview>("/gestao/finance/overview"),
   paymentOverview: () => get<FinancePaymentOverview>("/gestao/finance/payments/overview"),
+  paymentReconciliation: (limit = 500) => get<FinancePaymentReconciliation>(`/gestao/finance/payments/reconciliation?limit=${limit}`),
   listObligations: () => get<FinanceObligation[]>("/gestao/finance/obligations"),
   createObligationFromFiscalDocument: (documentId: string, data: FinanceObligationFromFiscalInput, idempotencyKey: string) =>
     request<FinanceObligation>("POST", `/gestao/finance/fiscal-documents/${encodeURIComponent(documentId)}/obligation`, data, { "Idempotency-Key": idempotencyKey }),

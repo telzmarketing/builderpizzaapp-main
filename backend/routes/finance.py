@@ -33,6 +33,7 @@ from backend.schemas.finance import (
     FinanceContractPayablesOut,
     FinanceOverviewOut,
     FinancePaymentOverviewOut,
+    FinancePaymentReconciliationOut,
     FinanceDeliveryOverviewOut,
     FinanceDeliveryEarningOut,
     FinanceCashFlowOut,
@@ -88,6 +89,16 @@ def overview(db: Session = Depends(get_db), _admin: AdminUser = Depends(get_curr
 @router.get("/payments/overview", response_model=FinancePaymentOverviewOut)
 def payment_overview(db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
     return service(db, tenant_context).payment_overview()
+
+
+@router.get("/payments/reconciliation", response_model=FinancePaymentReconciliationOut)
+def payment_reconciliation(
+    limit: int = Query(default=500, ge=1, le=2000),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+    tenant_context: TenantContext | None = Depends(panel_operation_context),
+):
+    return service(db, tenant_context).payment_reconciliation_readiness(limit)
 
 
 @router.post("/sales/backfill", response_model=dict)

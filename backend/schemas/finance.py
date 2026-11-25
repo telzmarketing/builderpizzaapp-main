@@ -371,6 +371,33 @@ class FinancePaymentOverviewOut(BaseModel):
     total_linked_fee_amount: float
 
 
+class FinancePaymentReconciliationItemOut(BaseModel):
+    payment_id: str
+    method: str
+    gateway: str
+    provider: str
+    provider_payment_id: str | None = None
+    external_reference: str | None = None
+    status: str
+    gross_amount: float
+    finance_transaction_ids: list[str]
+    finance_status: str | None = None
+    linked_fee_amount: float
+    linked_net_amount: float
+    readiness: str
+
+
+class FinancePaymentReconciliationOut(BaseModel):
+    items: list[FinancePaymentReconciliationItemOut]
+    total_count: int
+    confirmed_count: int
+    projected_count: int
+    missing_projection_count: int
+    total_gross_amount: float
+    total_linked_fee_amount: float
+    total_linked_net_amount: float
+
+
 class FinanceDeliveryEarningSummaryOut(BaseModel):
     delivery_person_id: str
     delivery_person_name: str

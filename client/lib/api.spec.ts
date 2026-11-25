@@ -64,6 +64,25 @@ describe("buildApiBases", () => {
   });
 });
 
+describe("finance payment reconciliation", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    vi.stubGlobal("sessionStorage", memoryStorage());
+    vi.stubGlobal("window", { location: { pathname: "/painel/gestao/financeiro", replace: vi.fn() } });
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  it("loads the read-only payment reconciliation endpoint without mutations", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [], total_count: 0, confirmed_count: 0, projected_count: 0, missing_projection_count: 0, total_gross_amount: 0, total_linked_fee_amount: 0, total_linked_net_amount: 0 }), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await financeApi.paymentReconciliation(25);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/gestao\/finance\/payments\/reconciliation\?limit=25$/);
+    expect(init.method).toBe("GET");
+    expect(init.body).toBeUndefined();
+  });
+});
+
 describe("finance fiscal obligations", () => {
   beforeEach(() => {
     vi.stubGlobal("localStorage", memoryStorage());

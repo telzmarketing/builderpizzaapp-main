@@ -442,6 +442,77 @@ class FinanceService:
             "total_linked_fee_amount": round(sum(item["linked_fee_amount"] for item in summaries), 2),
         }
 
+    def payment_reconciliation_readiness(self, limit: int = 500) -> dict:
+        """Expose only the finance projection state of checkout payments.
+
+        This is intentionally not an acquirer settlement reconciliation: no
+        provider settlement file or unsupported provider data is inferred.
+        """
+        payments = self._tenant_payments().order_by(Payment.created_at.desc(), Payment.id.desc()).limit(limit).all()
+        payment_ids = [payment.id for payment in payments]
+        transactions = []
+        if payment_ids:
+            transactions = self._db.query(FinanceTransaction).filter(
+                FinanceTransaction.tenant_id == self._tenant_id,
+                FinanceTransaction.status != "cancelled",
+                or_(
+                    FinanceTransaction.payment_id.in_(payment_ids),
+                    and_(
+                        FinanceTransaction.origin_type == "payment_receivable",
+                        FinanceTransaction.origin_id.in_(payment_ids),
+                    ),
+                ),
+            ).order_by(FinanceTransaction.created_at.asc(), FinanceTransaction.id.asc()).all()
+        by_payment: dict[str, list[FinanceTransaction]] = {}
+        for transaction in transactions:
+            payment_id = transaction.payment_id or (
+                transaction.origin_id if transaction.origin_type == "payment_receivable" else None
+            )
+            if payment_id:
+                by_payment.setdefault(payment_id, []).append(transaction)
+
+        items = []
+        for payment in payments:
+            method = str(getattr(payment.method, "value", payment.method) or "unknown")
+            status = str(getattr(payment.status, "value", payment.status) or "unknown")
+            linked = by_payment.get(payment.id, [])
+            confirmed = status in {PaymentStatus.approved.value, PaymentStatus.paid.value}
+            if not confirmed:
+                readiness = "not_confirmed"
+            elif linked:
+                readiness = "projected"
+            else:
+                readiness = "missing_projection"
+            statuses = {str(row.status) for row in linked}
+            items.append({
+                "payment_id": payment.id,
+                "method": method,
+                "gateway": payment.gateway or "unknown",
+                "provider": payment.provider or "unknown",
+                "provider_payment_id": payment.provider_payment_id,
+                "external_reference": payment.external_reference,
+                "status": status,
+                "gross_amount": round(float(payment.amount or 0), 2),
+                "finance_transaction_ids": [row.id for row in linked],
+                "finance_status": next(iter(statuses)) if len(statuses) == 1 else ("mixed" if statuses else None),
+                "linked_fee_amount": round(sum(float(row.fee_amount or 0) for row in linked), 2),
+                "linked_net_amount": round(sum(float(row.net_amount or 0) for row in linked), 2),
+                "readiness": readiness,
+            })
+        confirmed_count = sum(1 for item in items if item["status"] in {PaymentStatus.approved.value, PaymentStatus.paid.value})
+        projected_count = sum(1 for item in items if item["readiness"] == "projected")
+        missing_projection_count = sum(1 for item in items if item["readiness"] == "missing_projection")
+        return {
+            "items": items,
+            "total_count": len(items),
+            "confirmed_count": confirmed_count,
+            "projected_count": projected_count,
+            "missing_projection_count": missing_projection_count,
+            "total_gross_amount": round(sum(item["gross_amount"] for item in items), 2),
+            "total_linked_fee_amount": round(sum(item["linked_fee_amount"] for item in items), 2),
+            "total_linked_net_amount": round(sum(item["linked_net_amount"] for item in items), 2),
+        }
+
     def delivery_finance_overview(self) -> dict:
         rows = self.delivery_earnings()
         grouped = {}
