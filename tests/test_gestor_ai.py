@@ -1,4 +1,6 @@
 from uuid import uuid4
+from importlib import import_module
+from pkgutil import iter_modules
 
 import pytest
 from sqlalchemy import create_engine
@@ -6,22 +8,29 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.database import Base
+from backend.models import coupon, order, product  # noqa: F401
 from backend.models.admin import AdminUser
 from backend.models.gestor import GestorAISettings, GestorOperation
+from backend.models.ai_credentials import TenantAICredential
 from backend.models.tenant import Tenant
 from backend.schemas.gestor import GestorAIPlanIn, GestorAISettingsUpdate
 from backend.services.ai.base import AIResponse
 from backend.services.gestor_service import GestorAIUnavailable, GestorOperationInvalid, GestorService
+import backend.models
+
+for _module in iter_modules(backend.models.__path__):
+    import_module(f"backend.models.{_module.name}")
 
 
 @pytest.fixture()
 def gestor_ai_db():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[Tenant.__table__, AdminUser.__table__, GestorOperation.__table__, GestorAISettings.__table__])
+    Base.metadata.create_all(engine, tables=[Tenant.__table__, AdminUser.__table__, TenantAICredential.__table__, GestorOperation.__table__, GestorAISettings.__table__])
     db = sessionmaker(bind=engine)()
     tenant_id, admin_id = str(uuid4()), str(uuid4())
     db.add(Tenant(id=tenant_id, slug=f"ai-{tenant_id[:8]}", name="AI Teste", status="active"))
     db.add(AdminUser(id=admin_id, email=f"ai-{tenant_id[:8]}@test.invalid", name="AI Teste", password_hash="not-used", active=True))
+    db.add(TenantAICredential(tenant_id=tenant_id, provider="openai", api_key="configured-secret"))
     db.commit()
     try:
         yield db, tenant_id, admin_id

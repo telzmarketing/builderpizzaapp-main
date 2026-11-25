@@ -16,7 +16,7 @@ def test_final_checkout_geocodes_full_street_and_blocks_outside_radius_before_pe
     service = OrderService.__new__(OrderService)
     service._db, service._tenant_context = db, None
     service._get_config = lambda: S()
-    service._validate_item = lambda *_: (50, [], S(blocks_other_coupons=False, free_shipping=False), None, None)
+    service._validate_item = lambda *_args, **_kwargs: (50, [], S(blocks_other_coupons=False, free_shipping=False), None, None)
     service._validate_inventory_items = lambda *_: None
     service._collect_promotion_gifts = lambda *_: []
     monkeypatch.setattr(StoreOperationService, "validate_order_allowed", lambda *_args, **_kwargs: None)

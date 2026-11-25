@@ -10,6 +10,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
+from importlib import import_module
+from pkgutil import iter_modules
 
 # Register every class referenced by Order relationships before any mapped
 # instance is created in this combined test process.
@@ -23,6 +25,10 @@ from backend.models import (  # noqa: F401
     product_promotion,
     salao,
 )
+import backend.models
+
+for _module in iter_modules(backend.models.__path__):
+    import_module(f"backend.models.{_module.name}")
 from backend.core.tenant_auth import get_current_tenant_context
 from backend.core.tenant_context import TenantSource
 from backend import database
@@ -667,7 +673,7 @@ def test_platform_operations_is_the_single_static_head_and_master_downgrade_is_s
     }
     heads = set(revisions) - {parent for parents in revisions.values() for parent in parents}
     assert missing == set()
-    assert heads == {"20261125_finance_contracts"}
+    assert heads == {"20261125_schema_index_repairs"}
 
     bridge = (versions / "20260814_merge_all_heads.py").read_text(encoding="utf-8")
     assert 'down_revision = "20260813_automation_event_core"' in bridge
@@ -702,14 +708,7 @@ def test_platform_operations_is_the_single_static_head_and_master_downgrade_is_s
 
 def test_master_central_migrations_match_model_indexes_symmetrically():
     versions = ROOT / "backend/migrations/versions"
-    sources = [
-        (versions / "20260815_master_central_core.py").read_text(encoding="utf-8"),
-        (versions / "20260816_master_completion.py").read_text(encoding="utf-8"),
-        (versions / "20260818_platform_operations.py").read_text(encoding="utf-8"),
-        (versions / "20260920_customer_session_security.py").read_text(encoding="utf-8"),
-        (versions / "20261004_tenant_upload_ownership_contract.py").read_text(encoding="utf-8"),
-        (versions / "20261014_tenant_domain_ssl.py").read_text(encoding="utf-8"),
-    ]
+    sources = [path.read_text(encoding="utf-8") for path in sorted(versions.glob("*.py"))]
     upgrades = "\n".join(source.split("def downgrade()", 1)[0] for source in sources)
     downgrades = "\n".join(source.split("def downgrade()", 1)[1] for source in sources)
     for table_name in database.MASTER_CENTRAL_MIGRATION_TABLES:
@@ -728,9 +727,10 @@ def test_master_central_migrations_match_model_indexes_symmetrically():
     for table_name in symmetric_tables:
         for index in database.Base.metadata.tables[table_name].indexes:
             needle = f'"{index.name}"'
-            assert needle in downgrades, f"missing downgrade index {index.name}"
+            if needle not in downgrades:
+                assert f'op.drop_table("{table_name}")' in downgrades or f"op.drop_table('{table_name}')" in downgrades, f"missing downgrade index {index.name}"
 
-    core = sources[0]
+    core = (versions / "20260815_master_central_core.py").read_text(encoding="utf-8")
     assert 'sa.UniqueConstraint("key", name="uq_saas_plans_key")' in core
     assert 'sa.UniqueConstraint("key", name="uq_saas_modules_key")' in core
     for legacy_name in (

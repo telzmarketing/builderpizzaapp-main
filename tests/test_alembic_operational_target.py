@@ -18,8 +18,8 @@ EXPECTED_TARGET_FILES = {
     "docs/UPDATE_TELZ_VPS.md",
 }
 REVISION_PATTERN = re.compile(r"202\d{5}_[a-z0-9_]+")
-EXPECTED_OPERATIONAL_HEAD = "20261125_finance_contracts"
-EXPECTED_REPOSITORY_HEAD = "20261125_finance_contracts"
+EXPECTED_OPERATIONAL_HEAD = "20261125_schema_index_repairs"
+EXPECTED_REPOSITORY_HEAD = "20261125_schema_index_repairs"
 
 
 def _migration_heads() -> set[str]:
@@ -151,7 +151,7 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20261124_purchase_receipt_foundation:20261124_finance_operational_enablement",
         "20261124_purchase_receipt_foundation:20261124_finance_projection_queue",
         "20261124_finance_operational_enablement:20261124_finance_projection_queue",
-        "20261124_finance_projection_queue:20261125_finance_contracts",
+        "20261124_finance_projection_queue:20261125_schema_index_repairs",
     }
 
     sources = {
@@ -244,7 +244,7 @@ def test_schema_predicates_allow_reviewed_recovery_and_reject_unknown_pairs():
             ("20261121_print_center", "20261122_print_agent_protocol", 0),
             ("20261122_print_agent_protocol", "20261121_print_center", 1),
             ("20261124_purchase_receipt_foundation", "20261124_finance_projection_queue", 0),
-            ("20261124_finance_projection_queue", "20261125_finance_contracts", 0),
+            ("20261124_finance_projection_queue", "20261125_schema_index_repairs", 0),
             ("unknown", "20261017_runtime_schema", 1),
         )
         for code, database, expected in cases:
