@@ -1,6 +1,6 @@
 """Focused regressions for the recent finance projection changes."""
 
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from importlib import import_module
 from pkgutil import iter_modules
@@ -116,6 +116,65 @@ def test_incomplete_finance_settings_enable_idempotent_sales_projection_for_tena
     assert len(rows) == 1
     assert rows[0].tenant_id == TENANT
     assert rows[0].amount == 100.0
+
+
+def test_summary_includes_unprojected_confirmed_payments_without_duplicate_projection(db):
+    settled_at = datetime(2026, 11, 25, 12, tzinfo=timezone.utc)
+    orders = [
+        Order(
+            id="overview-order-approved", tenant_id=TENANT, status="paid",
+            order_origin="own", fulfillment_type="delivery", sales_channel="delivery",
+            subtotal=10.0, total=10.0, discount=0.0,
+            created_at=settled_at,
+        ),
+        Order(
+            id="overview-order-paid", tenant_id=TENANT, status="paid",
+            order_origin="own", fulfillment_type="delivery", sales_channel="delivery",
+            subtotal=20.0, total=20.0, discount=0.0,
+            created_at=settled_at,
+        ),
+        Order(
+            id="overview-order-projected", tenant_id=TENANT, status="paid",
+            order_origin="own", fulfillment_type="delivery", sales_channel="delivery",
+            subtotal=30.0, total=30.0, discount=0.0,
+            created_at=settled_at,
+        ),
+    ]
+    payments = [
+        Payment(
+            id="overview-payment-approved", tenant_id=TENANT,
+            order_id=orders[0].id, method=PaymentMethod.pix,
+            status=PaymentStatus.approved, amount=10.0, paid_at=settled_at,
+        ),
+        Payment(
+            id="overview-payment-paid", tenant_id=TENANT,
+            order_id=orders[1].id, method=PaymentMethod.pix,
+            status=PaymentStatus.paid, amount=20.0, paid_at=settled_at,
+        ),
+        Payment(
+            id="overview-payment-projected", tenant_id=TENANT,
+            order_id=orders[2].id, method=PaymentMethod.pix,
+            status=PaymentStatus.paid, amount=30.0, paid_at=settled_at,
+        ),
+    ]
+    projection = FinanceTransaction(
+        id="overview-finance-projection", tenant_id=TENANT,
+        entry_type="income", status="paid", description="Venda projetada",
+        amount=30.0, paid_amount=30.0, net_amount=30.0,
+        payment_id=payments[2].id, origin_type="payment_receivable",
+        origin_id=payments[2].id,
+    )
+    db.add_all([*orders, *payments, projection])
+    db.commit()
+
+    service = finance_service(db)
+    summary = service.summary()
+    sales = service.sales_overview()
+
+    assert summary["income_paid"] == 60.0
+    assert summary["balance"] == 60.0
+    assert sales["total_count"] == 3
+    assert sales["gross_amount"] == 60.0
 
 
 def test_incompatible_partial_reversal_keeps_receivable_and_settlement_active(db):
