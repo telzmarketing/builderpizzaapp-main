@@ -211,7 +211,10 @@ def test_full_mobile_projection_on_migrated_postgresql():
                 assert data["comparison"]["revenue"] == {"difference": 50, "percent": 100}
                 assert sum(point["revenue"] for point in data["sales"]) == 100
                 assert sum(point["previous_revenue"] or 0 for point in data["sales"]) == 50
-                assert data["payments"] == [{"method": "pix", "orders": 1, "revenue": 100}]
+                assert data["payments"] == [{
+                    "method": "pix", "orders": 1, "revenue": 100,
+                    "gross_sales": 100, "app_deductions": 0,
+                }]
                 assert data["monthly"][-1]["revenue"] == 100
                 assert data["attendance"]["visitors_online"] == 1
                 assert data["attendance"]["unique_visitors"] == 1
