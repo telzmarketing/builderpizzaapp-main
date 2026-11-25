@@ -14,7 +14,12 @@ def upgrade() -> None:
     op.create_table(
         "finance_contracts",
         sa.Column("id", sa.String(), primary_key=True),
-        sa.Column("tenant_id", sa.String(), sa.ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False),
+        sa.Column(
+            "tenant_id",
+            sa.String(),
+            sa.ForeignKey("tenants.id", name="fk_finance_contracts_tenant", ondelete="RESTRICT"),
+            nullable=False,
+        ),
         sa.Column("counterparty_id", sa.String(), sa.ForeignKey("finance_counterparties.id", ondelete="RESTRICT"), nullable=False),
         sa.Column("title", sa.String(length=180), nullable=False),
         sa.Column("contract_number", sa.String(length=100), nullable=True),
@@ -31,13 +36,19 @@ def upgrade() -> None:
         sa.CheckConstraint("status IN ('draft','active','expired','cancelled')", name="ck_finance_contracts_status"),
         sa.CheckConstraint("amount >= 0", name="ck_finance_contracts_amount"),
         sa.CheckConstraint("end_date IS NULL OR end_date >= start_date", name="ck_finance_contracts_period"),
-        sa.UniqueConstraint("tenant_id", "id", name="uq_finance_contracts_tenant_id_id"),
+    )
+    op.create_index(
+        "uq_finance_contracts_tenant_id_id",
+        "finance_contracts",
+        ["tenant_id", "id"],
+        unique=True,
     )
     op.create_index("ix_finance_contracts_counterparty_id", "finance_contracts", ["counterparty_id"])
     op.create_index("ix_finance_contracts_status", "finance_contracts", ["status"])
 
 
 def downgrade() -> None:
+    op.drop_index("uq_finance_contracts_tenant_id_id", table_name="finance_contracts")
     op.drop_index("ix_finance_contracts_status", table_name="finance_contracts")
     op.drop_index("ix_finance_contracts_counterparty_id", table_name="finance_contracts")
     op.drop_table("finance_contracts")
