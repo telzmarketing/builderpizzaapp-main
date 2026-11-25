@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import uuid
+import calendar
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, DecimalException, ROUND_HALF_UP
 
@@ -1269,6 +1270,97 @@ class FinanceService:
         row = self._get_contract(contract_id)
         row.status = "cancelled"
         self._db.commit()
+
+    @staticmethod
+    def _contract_due_dates(contract: FinanceContract) -> list[date]:
+        """Expand one active contract into finite, explicit payable dates."""
+        period = (contract.billing_period or "once").strip().lower()
+        month_steps = {"monthly": 1, "quarterly": 3, "yearly": 12, "annual": 12}
+        if period == "once":
+            return [contract.start_date]
+        if period not in month_steps:
+            raise FinanceInvalidReference("Periodicidade de contrato nao suportada.")
+        if not contract.end_date:
+            raise FinanceInvalidReference("Contrato recorrente exige data final para gerar parcelas.")
+        dates: list[date] = []
+        current = contract.start_date
+        step = month_steps[period]
+        while current <= contract.end_date:
+            dates.append(current)
+            if len(dates) > 1200:
+                raise FinanceInvalidReference("Contrato excede o limite seguro de parcelas.")
+            month_index = current.month - 1 + step
+            year = current.year + month_index // 12
+            month = month_index % 12 + 1
+            day = min(current.day, calendar.monthrange(year, month)[1])
+            current = date(year, month, day)
+        return dates
+
+    def generate_contract_payables(self, contract_id: str, admin_id: str | None = None) -> dict:
+        """Materialize contract installments through the canonical payable ledger."""
+        row = (
+            self._db.query(FinanceContract)
+            .filter(FinanceContract.tenant_id == self._tenant_id, FinanceContract.id == contract_id)
+            .with_for_update()
+            .first()
+        )
+        if not row:
+            raise FinanceNotFound("Contrato")
+        if row.status != "active":
+            raise FinanceInvalidReference("Somente contratos ativos geram contas a pagar.")
+        amount = self._money(row.amount, "valor do contrato", allow_negative=False)
+        if amount <= 0:
+            raise FinanceInvalidReference("Contrato precisa ter valor positivo para gerar parcelas.")
+        due_dates = self._contract_due_dates(row)
+        origin_prefix = f"{row.id}:"
+        existing = {
+            item[0]
+            for item in self._db.query(FinanceTransaction.origin_id).filter(
+                FinanceTransaction.tenant_id == self._tenant_id,
+                FinanceTransaction.origin_type == "finance_contract_payable",
+                FinanceTransaction.origin_id.like(f"{origin_prefix}%"),
+                FinanceTransaction.status != "cancelled",
+            ).all()
+            if item[0]
+        }
+        account_id = self._ensure_default_account("default_payable_account_id", "Conta principal de pagamentos")
+        category_id = self._ensure_category("Contratos de fornecedores", "expense", "supplier_contracts")
+        created_ids: list[str] = []
+        already_synced = 0
+        total = len(due_dates)
+        for installment_number, due_date in enumerate(due_dates, start=1):
+            origin_id = f"{row.id}:{installment_number}:{due_date.isoformat()}"
+            if origin_id in existing:
+                already_synced += 1
+                continue
+            transaction = FinanceTransaction(
+                id=f"fin-trx-{uuid.uuid4().hex[:12]}",
+                tenant_id=self._tenant_id,
+                account_id=account_id,
+                category_id=category_id,
+                counterparty_id=row.counterparty_id,
+                counterparty_type="supplier",
+                counterparty_name=row.counterparty.name if row.counterparty else None,
+                entry_type="expense",
+                status="pending",
+                description=f"Contrato {row.title} - parcela {installment_number}/{total}",
+                amount=float(amount),
+                competence_date=due_date,
+                due_date=due_date,
+                document_number=row.contract_number,
+                document_date=row.start_date,
+                installment_group_id=f"finance-contract:{row.id}",
+                installment_number=installment_number,
+                installment_total=total,
+                origin_type="finance_contract_payable",
+                origin_id=origin_id,
+                created_by_admin_id=admin_id,
+                notes=row.notes or "Conta a pagar gerada por contrato de fornecedor.",
+            )
+            self._db.add(transaction)
+            created_ids.append(transaction.id)
+        self._db.commit()
+        return {"contract_id": row.id, "created": len(created_ids), "already_synced": already_synced, "total": total, "transaction_ids": created_ids}
 
     def list_transactions(self) -> list[dict]:
         rows = (

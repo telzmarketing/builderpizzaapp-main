@@ -266,6 +266,7 @@ function FinancePanel() {
   const [obligations, setObligations] = useState<FinanceObligation[]>([]);
   const [contracts, setContracts] = useState<FinanceContract[]>([]);
   const [contractSaving, setContractSaving] = useState(false);
+  const [contractPayableSaving, setContractPayableSaving] = useState<string | null>(null);
   const [contractDraft, setContractDraft] = useState<FinanceContractInput>({
     counterparty_id: "",
     title: "",
@@ -340,6 +341,20 @@ function FinancePanel() {
       setError(err instanceof Error ? err.message : "Nao foi possivel salvar o contrato.");
     } finally {
       setContractSaving(false);
+    }
+  };
+
+  const generateContractPayables = async (contract: FinanceContract) => {
+    setContractPayableSaving(contract.id);
+    setError("");
+    try {
+      const result = await financeApi.generateContractPayables(contract.id);
+      setError(`Contas a pagar: ${result.created} criadas, ${result.already_synced} ja existentes.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel gerar as contas a pagar.");
+    } finally {
+      setContractPayableSaving(null);
     }
   };
 
@@ -931,9 +946,11 @@ function FinancePanel() {
                 <input aria-label="Inicio do contrato" className={inputClass} type="date" value={contractDraft.start_date} onChange={(event) => setContractDraft({ ...contractDraft, start_date: event.target.value })} />
                 <input aria-label="Fim do contrato" className={inputClass} type="date" value={contractDraft.end_date || ""} onChange={(event) => setContractDraft({ ...contractDraft, end_date: event.target.value || null })} />
                 <input aria-label="Renovacao do contrato" className={inputClass} type="date" value={contractDraft.renewal_date || ""} onChange={(event) => setContractDraft({ ...contractDraft, renewal_date: event.target.value || null })} />
+                <select aria-label="Periodicidade do contrato" className={inputClass} value={contractDraft.billing_period || "once"} onChange={(event) => setContractDraft({ ...contractDraft, billing_period: event.target.value })}><option value="once">Parcela única</option><option value="monthly">Mensal</option><option value="quarterly">Trimestral</option><option value="yearly">Anual</option></select>
+                <select aria-label="Status do contrato" className={inputClass} value={contractDraft.status} onChange={(event) => setContractDraft({ ...contractDraft, status: event.target.value as FinanceContractInput["status"] })}><option value="draft">Rascunho</option><option value="active">Ativo</option><option value="expired">Expirado</option><option value="cancelled">Cancelado</option></select>
                 <button type="button" className={buttonClass} onClick={() => void createContract()} disabled={contractSaving}>{contractSaving ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Salvar contrato</button>
               </div>
-              <div className="mt-5 overflow-x-auto">{contracts.length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhum contrato cadastrado.</p> : <table className="w-full min-w-[860px] text-left text-sm"><thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Contrato</th><th className="px-3 py-3">Fornecedor</th><th className="px-3 py-3">VigÃªncia</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Valor</th></tr></thead><tbody>{contracts.map((item) => <tr key={item.id} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{item.title}<span className="ml-2 text-xs font-normal text-stone">{item.contract_number || ""}</span></td><td className="px-3 py-3 text-stone">{item.counterparty_name}</td><td className="px-3 py-3 text-stone">{item.start_date} a {item.end_date || "indeterminado"}</td><td className="px-3 py-3 text-stone">{item.status}</td><td className="px-3 py-3 text-right font-black text-cream">{currency(Number(item.amount))}</td></tr>)}</tbody></table>}</div>
+              <div className="mt-5 overflow-x-auto">{contracts.length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhum contrato cadastrado.</p> : <table className="w-full min-w-[980px] text-left text-sm"><thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Contrato</th><th className="px-3 py-3">Fornecedor</th><th className="px-3 py-3">VigÃªncia</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Valor</th><th className="px-3 py-3">Acao</th></tr></thead><tbody>{contracts.map((item) => <tr key={item.id} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{item.title}<span className="ml-2 text-xs font-normal text-stone">{item.contract_number || ""}</span></td><td className="px-3 py-3 text-stone">{item.counterparty_name}</td><td className="px-3 py-3 text-stone">{item.start_date} a {item.end_date || "indeterminado"}</td><td className="px-3 py-3 text-stone">{item.status}</td><td className="px-3 py-3 text-right font-black text-cream">{currency(Number(item.amount))}</td><td className="px-3 py-3"><button type="button" className={mutedButtonClass} onClick={() => void generateContractPayables(item)} disabled={item.status !== "active" || contractPayableSaving === item.id}>{contractPayableSaving === item.id ? <Loader2 size={14} className="animate-spin" /> : <ReceiptText size={14} />} Gerar contas a pagar</button></td></tr>)}</tbody></table>}</div>
             </div>
             </div>
           )}

@@ -27,6 +27,7 @@ from backend.models import (  # noqa: F401
     exit_popup,
     finance,
     finance_projection,
+    app_finance,
     fiscal,
     gestao,
     gestor,
@@ -81,6 +82,8 @@ from backend.models import (  # noqa: F401
     print_order,
     print_center,
     print_agent,
+    marketplace_settlement,
+    customer_review,
 )
 
 config = context.config

@@ -6972,6 +6972,7 @@ export const financeApi = {
   createContract: (data: FinanceContractInput) => post<FinanceContract>("/gestao/finance/contracts", data),
   updateContract: (id: string, data: FinanceContractInput) => put<FinanceContract>(`/gestao/finance/contracts/${encodeURIComponent(id)}`, data),
   removeContract: (id: string) => del<void>(`/gestao/finance/contracts/${encodeURIComponent(id)}`),
+  generateContractPayables: (id: string) => post<{ contract_id: string; created: number; already_synced: number; total: number; transaction_ids: string[] }>(`/gestao/finance/contracts/${encodeURIComponent(id)}/payables`, {}),
   backfillSales: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/sales/backfill?limit=${limit}`, {}),
   backfillPaymentReversals: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/payments/backfill-reversals?limit=${limit}`, {}),
   backfillPurchasePayables: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/purchases/backfill-payables?limit=${limit}`, {}),

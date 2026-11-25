@@ -166,6 +166,14 @@ class FinanceContractOut(FinanceContractIn):
     updated_at: datetime | None = None
 
 
+class FinanceContractPayablesOut(BaseModel):
+    contract_id: str
+    created: int
+    already_synced: int
+    total: int
+    transaction_ids: list[str] = Field(default_factory=list)
+
+
 class FinanceTransactionIn(BaseModel):
     account_id: str | None = None
     category_id: str | None = None

@@ -30,6 +30,7 @@ from backend.schemas.finance import (
     FinanceCounterpartyOut,
     FinanceContractIn,
     FinanceContractOut,
+    FinanceContractPayablesOut,
     FinanceOverviewOut,
     FinancePaymentOverviewOut,
     FinanceDeliveryOverviewOut,
@@ -390,6 +391,14 @@ def delete_contract(contract_id: str, db: Session = Depends(get_db), _admin: Adm
     try:
         service(db, tenant_context).delete_contract(contract_id)
         return no_content()
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/contracts/{contract_id}/payables", response_model=FinanceContractPayablesOut)
+def generate_contract_payables(contract_id: str, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).generate_contract_payables(contract_id, admin.id)
     except DomainError as exc:
         return err(exc)
 
