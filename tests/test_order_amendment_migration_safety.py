@@ -111,4 +111,4 @@ def test_new_objective_migrations_form_one_chain_to_current_head():
     for revision, down_revision in expected.items():
         assert script.get_revision(revision).down_revision == down_revision
 
-    assert script.get_heads() == ["20261121_payment_amendment_settlement"]
+    assert script.get_heads() == ["20261125_finance_contracts"]
