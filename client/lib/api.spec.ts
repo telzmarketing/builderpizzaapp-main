@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildApiBases, campaignsApi, companyDomainsApi, deliveryApi, financeApi, inventoryFoundationApi, inventoryReceiptApi, kdsApi, manualOrdersApi, marketplaceSettlementsApi, platformDomainsApi, platformTenantsApi, preparationApi, productRecipesApi, type ManualOrderIn, type PreparationInputAllocation, type PreparationOrder } from "./api";
+import { buildApiBases, campaignsApi, companyDomainsApi, deliveryApi, financeApi, inventoryFoundationApi, inventoryReceiptApi, kdsApi, manualOrdersApi, marketplaceSettlementsApi, platformDomainsApi, platformTenantsApi, preparationApi, productRecipesApi, appFinanceApi, DELIVERY_APPS_FINANCE_PATH, type ManualOrderIn, type PreparationInputAllocation, type PreparationOrder } from "./api";
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -106,6 +106,27 @@ describe("finance payment reconciliation", () => {
       fee_amount: 2.5,
       net_amount: 97.5,
     });
+  });
+});
+
+describe("finance delivery apps integration", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    vi.stubGlobal("sessionStorage", memoryStorage());
+    vi.stubGlobal("window", { location: { pathname: "/painel/gestao/financeiro", replace: vi.fn() } });
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  it("keeps the operational destination and lists tenant app rules through the existing contract", async () => {
+    expect(DELIVERY_APPS_FINANCE_PATH).toBe("/painel/operacoes/apps-finance");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([
+      { id: "config-1", app_key: "ifood", app_name: "iFood", active: true, rules: [{ id: "rule-1", name: "Comissão", rule_type: "commission", calculation_type: "percentage", value: "12.00", sort_order: 0, active: true }] },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(appFinanceApi.list()).resolves.toHaveLength(1);
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/operations\/apps-finance$/);
+    expect(fetchMock.mock.calls[0][1].method).toBe("GET");
   });
 });
 

@@ -7026,6 +7026,7 @@ export interface ApiAppFinanceConfig {
 
 export type AppFinanceConfigInput = Omit<ApiAppFinanceConfig, "id" | "rules">;
 export type AppFinanceRuleInput = Omit<ApiAppFinanceRule, "id">;
+export const DELIVERY_APPS_FINANCE_PATH = "/painel/operacoes/apps-finance";
 
 export const appFinanceApi = {
   list: () => get<ApiAppFinanceConfig[]>("/operations/apps-finance"),

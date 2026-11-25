@@ -35,6 +35,7 @@ import {
 import AdminGestao from "./AdminGestao";
 import {
   deliveryApi,
+  DELIVERY_APPS_FINANCE_PATH,
   financeApi,
   fiscalApi,
   gestaoApi,
@@ -1650,7 +1651,12 @@ function FinancePanel() {
                     </div>
                   </div>
                   <div className={panelClass}>
-                    <CardHeading icon={ShoppingBag} title="Settlements de marketplace" description="Consulta os registros manuais ja existentes por pedido e aplicativo. Esta tela nao cria, importa ou infere repasses de provedores." />
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <CardHeading icon={ShoppingBag} title="Aplicativos de Delivery" description="Consulte os settlements manuais por pedido e acesse as configurações e regras financeiras de cada aplicativo." />
+                      <a href={DELIVERY_APPS_FINANCE_PATH} className={mutedButtonClass} aria-label="Abrir configurações financeiras dos aplicativos de delivery">
+                        Configurar aplicativos e regras
+                      </a>
+                    </div>
                     <div className="mt-4 grid gap-4 sm:grid-cols-3">
                       <Metric title="Total esperado" value={currency(marketplaceSettlementTotals.expected)} subtitle="Liquido esperado" icon={CalendarCheck2} tone="success" />
                       <Metric title="Total recebido" value={currency(marketplaceSettlementTotals.received)} subtitle="Liquido recebido" icon={CheckCircle2} tone="success" />
