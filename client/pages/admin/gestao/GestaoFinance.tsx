@@ -35,6 +35,8 @@ import {
 import AdminGestao from "./AdminGestao";
 import {
   financeApi,
+  fiscalApi,
+  gestaoApi,
   type FinanceAccount,
   type FinanceBankStatement,
   type FinanceBankStatementImportInput,
@@ -57,6 +59,8 @@ import {
   type FinanceSettlementInput,
   type FinanceTransaction,
   type FinanceTransactionInput,
+  type FiscalOverview,
+  type GestaoModuleSettings,
 } from "@/lib/api";
 
 type FinanceModuleId = "overview" | "payables" | "receivables" | "cash" | "banks" | "cards" | "delivery" | "couriers" | "cmv" | "cashflow" | "dre" | "budget" | "planning" | "bi" | "intelligence" | "suppliers" | "fiscal" | "settings" | "registries" | "transactions";
@@ -255,6 +259,9 @@ function FinancePanel() {
   const [forecast, setForecast] = useState<FinanceForecast | null>(null);
   const [forecastLoading, setForecastLoading] = useState(false);
   const [bi, setBi] = useState<FinanceBi | null>(null);
+  const [fiscalOverview, setFiscalOverview] = useState<FiscalOverview | null>(null);
+  const [gestaoSettings, setGestaoSettings] = useState<GestaoModuleSettings | null>(null);
+  const [adminLoading, setAdminLoading] = useState(false);
   const [biLoading, setBiLoading] = useState(false);
   const [biPeriod, setBiPeriod] = useState({ date_from: `${today().slice(0, 8)}01`, date_to: today() });
   const [budgets, setBudgets] = useState<FinanceBudget[]>([]);
@@ -282,6 +289,7 @@ function FinancePanel() {
   const hasOperationalPanel = new Set<FinanceModuleId>([
     "overview", "payables", "receivables", "cash", "banks", "cards", "delivery", "couriers",
     "cashflow", "dre", "cmv", "budget", "planning", "bi", "registries", "transactions",
+    "intelligence", "suppliers", "fiscal", "settings",
   ]);
 
   const selectModule = (id: FinanceModuleId) => {
@@ -329,6 +337,17 @@ function FinancePanel() {
       .then(setForecast)
       .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar a previsao financeira."))
       .finally(() => setForecastLoading(false));
+  }, [activeModule]);
+
+  useEffect(() => {
+    if (activeModule !== "fiscal" && activeModule !== "settings") return;
+    setAdminLoading(true);
+    const request = activeModule === "fiscal"
+      ? fiscalApi.overview().then(setFiscalOverview)
+      : gestaoApi.settings().then((response) => setGestaoSettings(response.modules.find((item) => item.module_key === "finance") ?? null));
+    request
+      .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar a administracao financeira."))
+      .finally(() => setAdminLoading(false));
   }, [activeModule]);
 
   useEffect(() => {
@@ -829,6 +848,51 @@ function FinancePanel() {
               <h4 className="mt-4 text-xl font-black text-cream">{currentModule.title}</h4>
               <p className="mt-2 max-w-xl text-sm leading-relaxed text-stone">{currentModule.description}</p>
               <span className={`mt-4 rounded-full border px-3 py-1.5 text-[10px] font-black uppercase tracking-wide ${financeModuleStatuses[currentModule.status].className}`}>{currentModule.status}</span>
+            </div>
+          )}
+
+          {activeModule === "intelligence" && data && (
+            <div className="space-y-5">
+              <div className={panelClass}>
+                <CardHeading icon={BrainCircuit} title="InteligÃªncia financeira" description="Alertas rastreÃ¡veis derivados dos dados reais do Financeiro; nenhum valor Ã© estimado fora das projeÃ§Ãµes existentes." />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <Metric title="Vendas confirmadas" value={String(data.sales.total_count)} subtitle={currency(data.sales.gross_amount)} icon={ShoppingBag} tone="success" />
+                <Metric title="ProjeÃ§Ãµes pendentes" value={String(data.projection_health.missing_sales_count + data.projection_health.missing_purchase_payables_count + data.projection_health.missing_delivery_count + data.projection_health.missing_cmv_count + data.projection_health.missing_refund_count)} subtitle="Itens que precisam de sincronizaÃ§Ã£o" icon={AlertTriangle} tone={data.projection_health.status === "healthy" ? "success" : "warn"} />
+                <Metric title="Resultado de caixa" value={currency(data.management.cash_realized_result)} subtitle="Movimentos liquidados" icon={TrendingUp} tone={data.management.cash_realized_result >= 0 ? "success" : "warn"} />
+                <Metric title="CMV" value={currency(data.management.operational_cmv.cost_total)} subtitle={`${data.management.operational_cmv.pending_count} pendÃªncias de cobertura`} icon={Tags} tone={data.management.operational_cmv.pending_count ? "warn" : "success"} />
+              </div>
+              <div className={panelClass}>
+                <h4 className="font-black text-cream">PrÃ³ximas aÃ§Ãµes</h4>
+                <div className="mt-4 space-y-3 text-sm text-stone">
+                  {data.projection_health.missing_sales_count > 0 && <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">Sincronize as vendas confirmadas para materializar os recebÃ­veis.</p>}
+                  {data.projection_health.missing_cmv_count > 0 && <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">Existem vendas sem snapshot de CMV; revise fichas tÃ©cnicas e execute a sincronizaÃ§Ã£o de CMV.</p>}
+                  {data.projection_health.status === "healthy" && <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-emerald-200">As integraÃ§Ãµes financeiras monitoradas estÃ£o sincronizadas.</p>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeModule === "suppliers" && data && (
+            <div className={panelClass}>
+              <CardHeading icon={Users} title="Fornecedores e favorecidos" description="Cadastro financeiro utilizado por contas a pagar, compras e lanÃ§amentos." />
+              <div className="mt-4 overflow-x-auto">
+                {data.counterparties.filter((item) => item.counterparty_type === "supplier").length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhum fornecedor cadastrado. Use Cadastros para incluir o primeiro favorecido.</p> : <table className="w-full min-w-[620px] text-left text-sm"><thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Fornecedor</th><th className="px-3 py-3">Documento</th><th className="px-3 py-3 text-right">Em aberto</th></tr></thead><tbody>{data.counterparties.filter((item) => item.counterparty_type === "supplier").map((item) => <tr key={item.id} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{item.name}</td><td className="px-3 py-3 text-stone">{item.document || "-"}</td><td className="px-3 py-3 text-right font-black text-amber-200">{currency(item.open_amount)}</td></tr>)}</tbody></table>}
+              </div>
+            </div>
+          )}
+
+          {activeModule === "fiscal" && (
+            <div className={panelClass}>
+              <CardHeading icon={FileText} title="Fiscal e contÃ¡bil" description="Status fiscal da empresa e documentos emitidos. A escrituraÃ§Ã£o contÃ¡bil permanece no mÃ³dulo fiscal prÃ³prio." />
+              {adminLoading ? <div className="mt-5 flex min-h-24 items-center justify-center text-stone"><Loader2 size={20} className="mr-2 animate-spin text-gold" />Carregando status fiscal...</div> : fiscalOverview && <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric title="Documentos fiscais" value={String(fiscalOverview.documents.length)} subtitle="Documentos registrados" icon={FileText} tone="success" /><Metric title="SÃ©ries" value={String(fiscalOverview.series.length)} subtitle="SÃ©ries cadastradas" icon={Tags} /><Metric title="Perfis tributÃ¡rios" value={String(fiscalOverview.product_profiles.length)} subtitle="Produtos configurados" icon={ReceiptText} /><Metric title="Status" value={fiscalOverview.ready_for_homologation ? "Pronto" : "Configurar"} subtitle={fiscalOverview.missing_setup.length ? fiscalOverview.missing_setup.join(", ") : "Sem pendÃªncias de setup"} icon={fiscalOverview.ready_for_homologation ? CheckCircle2 : AlertTriangle} tone={fiscalOverview.ready_for_homologation ? "success" : "warn"} /></div>}
+            </div>
+          )}
+
+          {activeModule === "settings" && (
+            <div className={panelClass}>
+              <CardHeading icon={Settings} title="ConfiguraÃ§Ãµes financeiras" description="ParÃ¢metros efetivos do mÃ³dulo para esta empresa." />
+              {adminLoading ? <div className="mt-5 flex min-h-24 items-center justify-center text-stone"><Loader2 size={20} className="mr-2 animate-spin text-gold" />Carregando configuraÃ§Ãµes...</div> : gestaoSettings && <div className="mt-5 space-y-4"><div className="grid gap-3 sm:grid-cols-3"><Metric title="Status" value={gestaoSettings.status} subtitle={gestaoSettings.enabled ? "MÃ³dulo habilitado" : "MÃ³dulo desabilitado"} icon={Settings} tone={gestaoSettings.enabled ? "success" : "warn"} /><Metric title="RecebÃ­veis automÃ¡ticos" value={Boolean(gestaoSettings.settings.auto_create_receivables) ? "Ativo" : "Inativo"} subtitle="ProjeÃ§Ã£o das vendas confirmadas" icon={ArrowUpCircle} tone={Boolean(gestaoSettings.settings.auto_create_receivables) ? "success" : "warn"} /><Metric title="DRE" value={Boolean(gestaoSettings.settings.dre_enabled) ? "Ativa" : "Inativa"} subtitle="CompetÃªncia financeira" icon={BarChart3} tone={Boolean(gestaoSettings.settings.dre_enabled) ? "success" : "warn"} /></div><p className="text-sm text-stone">As alteraÃ§Ãµes administrativas continuam centralizadas em ConfiguraÃ§Ãµes do ERP para preservar auditoria e isolamento por empresa.</p></div>}
             </div>
           )}
 
