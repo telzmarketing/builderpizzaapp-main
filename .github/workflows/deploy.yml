@@ -111,6 +111,29 @@ jobs:
           python -m pytest -q --junitxml=backend-tests.xml
           python tests/test_inventory_foundation_postgresql.py --verify-pg-report backend-tests.xml
 
+      - name: Publicar resumo de falhas do backend
+        if: failure()
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree
+
+          report = Path("backend-tests.xml")
+          if not report.exists():
+              print("::error::backend-tests.xml nao foi gerado; a falha ocorreu antes da coleta pytest")
+              raise SystemExit(0)
+          root = ElementTree.parse(report).getroot()
+          for case in root.iter("testcase"):
+              failure = case.find("failure") or case.find("error")
+              if failure is None:
+                  continue
+              classname = case.get("classname", "pytest")
+              name = case.get("name", "caso desconhecido")
+              message = (failure.get("message") or (failure.text or "")).splitlines()[0][:500]
+              print(f"::error file={classname}::{name}: {message}")
+          PY
+
       - name: Validar frontend
         run: |
           pnpm run typecheck
