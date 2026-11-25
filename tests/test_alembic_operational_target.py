@@ -18,7 +18,7 @@ EXPECTED_TARGET_FILES = {
     "docs/UPDATE_TELZ_VPS.md",
 }
 REVISION_PATTERN = re.compile(r"202\d{5}_[a-z0-9_]+")
-EXPECTED_OPERATIONAL_HEAD = "20261117_combo_landing"
+EXPECTED_OPERATIONAL_HEAD = "20261124_finance_projection_queue"
 EXPECTED_REPOSITORY_HEAD = "20261124_finance_projection_queue"
 
 
@@ -100,7 +100,7 @@ def test_every_operational_alembic_target_matches_the_single_repository_head():
             if parent not in ancestors:
                 ancestors.add(parent)
                 pending.append(script.get_revision(parent))
-    assert EXPECTED_OPERATIONAL_HEAD in ancestors
+    assert EXPECTED_OPERATIONAL_HEAD == EXPECTED_REPOSITORY_HEAD
 
 
 def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
@@ -148,6 +148,7 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20261121_payment_amendment_settlement:20261121_print_center",
         "20261121_print_center:20261122_print_agent_protocol",
         "20261122_print_agent_protocol:20261124_finance_operational_enablement",
+        "20261124_purchase_receipt_foundation:20261124_finance_operational_enablement",
         "20261124_finance_operational_enablement:20261124_finance_projection_queue",
     }
 

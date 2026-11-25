@@ -98,6 +98,7 @@ schema_pair_is_compatible() {
     "20261121_payment_amendment_settlement:20261121_print_center" | \
     "20261121_print_center:20261122_print_agent_protocol" | \
     "20261122_print_agent_protocol:20261124_finance_operational_enablement" | \
+    "20261124_purchase_receipt_foundation:20261124_finance_operational_enablement" | \
     "20261124_finance_operational_enablement:20261124_finance_projection_queue")
       return 0
       ;;
