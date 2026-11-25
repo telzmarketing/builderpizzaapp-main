@@ -198,6 +198,44 @@ def test_confirm_cash_is_idempotent_and_does_not_republish_projection(cash_servi
     assert db.commits == 0
 
 
+def test_paid_legacy_payment_reconfirms_finance_projection_without_transition(cash_service, monkeypatch):
+    service, db = cash_service
+    payment = _payment(status=PaymentStatus.paid, paid_at=datetime.now(timezone.utc))
+    order = _order(payment)
+    order.status = OrderStatus.paid
+    db.order = order
+
+    producer_calls = []
+    monkeypatch.setattr(
+        "backend.services.automation_event_producer.AutomationEventProducer",
+        lambda *_args: SimpleNamespace(
+            order_status_changed=lambda *_args: None,
+            payment_confirmed=lambda *args: producer_calls.append(args),
+        ),
+    )
+    transitions = []
+    monkeypatch.setattr(
+        payment_module.payment_sm,
+        "transition",
+        lambda *args: transitions.append(args),
+    )
+    published = []
+    monkeypatch.setattr(payment_module.bus, "publish", published.append)
+
+    result = service._apply_status(payment, PaymentStatus.approved, source="legacy_reconcile")
+
+    assert result is True
+    assert payment.status is PaymentStatus.paid
+    assert transitions == []
+    assert len(producer_calls) == 1
+    assert producer_calls[0][0] is payment
+    events = [event for event in published if isinstance(event, PaymentConfirmed)]
+    assert len(events) == 1
+    assert events[0].payment_id == payment.id
+    assert events[0].tenant_id == payment.tenant_id
+    assert db.commits == 1
+
+
 @pytest.mark.parametrize("status", [PaymentStatus.rejected, PaymentStatus.failed, PaymentStatus.cancelled])
 def test_confirm_cash_rejects_non_pending_payment_without_projecting(status, cash_service, monkeypatch):
     service, db = cash_service

@@ -829,7 +829,14 @@ class PaymentService:
         if status == PaymentStatus.cancelled and previous in {PaymentStatus.approved, PaymentStatus.paid}:
             status = PaymentStatus.refunded
         now = datetime.now(timezone.utc)
-        status_changed = previous != status
+        # Legacy rows can already be exposed as ``paid`` even though the
+        # durable finance projection was never materialized.  ``paid ->
+        # approved`` is not a real state transition; it is a re-confirmation
+        # request whose only safe side effect is the idempotent confirmation
+        # event below.  Keep the persisted payment status unchanged and avoid
+        # asking the payment state machine to accept an invalid transition.
+        legacy_paid_reconfirmation = previous == PaymentStatus.paid and status == PaymentStatus.approved
+        status_changed = previous != status and not legacy_paid_reconfirmation
         if status_changed:
             if not payment_sm.can_transition(previous.value, status.value):
                 return False
@@ -908,7 +915,8 @@ class PaymentService:
                 inventory_service.reverse_order_sale(order.id)
             sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
 
-        if status == PaymentStatus.approved and status_changed:
+        confirmation_requested = status == PaymentStatus.approved and (status_changed or legacy_paid_reconfirmation)
+        if confirmation_requested:
             from backend.services.automation_event_producer import AutomationEventProducer
             AutomationEventProducer(self._db, payment.tenant_id).payment_confirmed(
                 payment, order.customer_id if order else None
@@ -916,7 +924,7 @@ class PaymentService:
 
         self._db.commit()
 
-        if status == PaymentStatus.approved and status_changed:
+        if confirmation_requested:
             _logger.info(
                 "Pagamento aprovado: payment_id=%s order_id=%s amount=%.2f gateway=%s source=%s",
                 payment.id, payment.order_id, payment.amount, payment.gateway, source,
