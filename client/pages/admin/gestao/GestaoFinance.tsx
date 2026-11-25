@@ -249,6 +249,7 @@ function FinancePanel() {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [data, setData] = useState<FinanceOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState("");
   const [error, setError] = useState("");
   const [accountDraft, setAccountDraft] = useState<FinanceAccountInput>(emptyAccount);
@@ -511,12 +512,17 @@ function FinancePanel() {
   };
 
   const load = () => {
-    setLoading(true);
+    const isRefresh = data !== null;
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
     setError("");
     financeApi.overview()
       .then(setData)
       .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar Financeiro."))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (isRefresh) setRefreshing(false);
+        else setLoading(false);
+      });
   };
 
   const saveFinanceSettings = async () => {
@@ -686,20 +692,6 @@ function FinancePanel() {
 
   useEffect(() => {
     load();
-  }, []);
-
-  useEffect(() => {
-    const refreshWhenActive = () => {
-      if (document.visibilityState === "visible") load();
-    };
-    const timer = window.setInterval(refreshWhenActive, 30000);
-    window.addEventListener("focus", refreshWhenActive);
-    document.addEventListener("visibilitychange", refreshWhenActive);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("focus", refreshWhenActive);
-      document.removeEventListener("visibilitychange", refreshWhenActive);
-    };
   }, []);
 
   useEffect(() => {
@@ -1021,8 +1013,8 @@ function FinancePanel() {
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-stone">Contas, categorias e lancamentos manuais para acompanhar caixa, competencia e DRE em um unico lugar.</p>
             </div>
           </div>
-          <button type="button" onClick={load} disabled={loading} className={mutedButtonClass} aria-label="Atualizar dados financeiros">
-            {loading ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <RefreshCw size={16} aria-hidden="true" />}
+          <button type="button" onClick={load} disabled={loading || refreshing} className={mutedButtonClass} aria-label="Atualizar dados financeiros" aria-busy={loading || refreshing}>
+            {loading || refreshing ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <RefreshCw size={16} aria-hidden="true" />}
             Atualizar dados
           </button>
         </div>
