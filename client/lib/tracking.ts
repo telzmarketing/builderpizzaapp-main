@@ -6,7 +6,7 @@ const STORE_PIXEL_STORAGE_KEY = "store_pixel_configs";
 const LOCATION_STORAGE_KEY = "visitor_location_permission_checked";
 const INTERNAL_STAFF_PATHS = ["/painel", "/motoboy", "/tv"];
 const PUBLIC_SALES_EXACT_PATHS = ["/", "/menu", "/cardapio", "/cart", "/checkout", "/order-tracking"];
-const PUBLIC_SALES_PREFIXES = ["/product/", "/campanha/", "/promocao/"];
+const PUBLIC_SALES_PREFIXES = ["/product/", "/campanha/", "/promocao/", "/campanha-estrategica/"];
 
 // ─── Pixel helpers ────────────────────────────────────────────────────────────
 

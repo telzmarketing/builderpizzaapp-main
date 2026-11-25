@@ -523,6 +523,8 @@ class OrderService:
         if not payload.items:
             raise CartEmpty()
 
+        strategic_context = self._resolve_strategic_context(payload)
+
         if payload.customer_id:
             if not self._tenant_query(CustomerModel).filter(CustomerModel.id == payload.customer_id).first():
                 raise DomainError(
@@ -530,11 +532,13 @@ class OrderService:
                     code="CustomerNotFound",
                 )
 
+        self._validate_strategic_commercial_rules(payload, strategic_context)
         from backend.services.store_operation_service import StoreOperationService
 
         StoreOperationService(self._db, self._tenant_context.tenant_id if self._tenant_context else "default").validate_order_allowed(
             is_scheduled=payload.delivery.is_scheduled if payload.delivery else False,
             scheduled_for=payload.delivery.scheduled_for if payload.delivery else None,
+            allow_closed_campaign=self._strategic_allows_closed_store(strategic_context),
         )
 
         if any(item.kit_id for item in payload.items):
@@ -594,6 +598,7 @@ class OrderService:
             })
         self._validate_inventory_items(expanded_items)
         subtotal = round(subtotal, 2)
+        self._assert_strategic_quote(strategic_context, subtotal, expanded_items)
 
         from backend.services.shipping_service import ShippingService
         from backend.schemas.shipping_v2 import ShippingCalculateIn
@@ -665,7 +670,7 @@ class OrderService:
                     code="InvalidCashChange",
                 )
             cash_change_amount = round(payload.cash_change_for - total, 2)
-        return {
+        result = {
             "items": items,
             "subtotal": subtotal,
             "shipping": shipping_result.model_dump(),
@@ -680,6 +685,75 @@ class OrderService:
             "payment_method": payload.payment_method,
             "cash_change_amount": cash_change_amount,
         }
+        if strategic_context:
+            campaign, offer = strategic_context
+            result["strategic_campaign_id"] = campaign.id
+            result["strategic_offer_id"] = offer.id
+            result["strategic_offer_snapshot"] = self._strategic_snapshot(campaign, offer, result["items"])
+        return result
+
+    def _resolve_strategic_context(self, payload: CheckoutIn):
+        if not payload.strategic_offer_id:
+            return None
+        from backend.services.strategic_campaign_service import StrategicCampaignService
+        tenant_id = self._tenant_context.tenant_id if self._tenant_context else "tenant-legacy-default"
+        campaign, offer = StrategicCampaignService(self._db, tenant_id).resolve_checkout_offer(payload.strategic_offer_id)
+        if len(payload.items) != 1:
+            raise DomainError("A oferta estratégica deve ser enviada como uma única linha de checkout.", code="StrategicOfferCompositionInvalid")
+        item = payload.items[0]
+        if (offer.product_id and item.product_id != offer.product_id) or (offer.kit_id and item.kit_id != offer.kit_id):
+            raise DomainError("A composição do checkout não corresponde à oferta estratégica.", code="StrategicOfferCompositionInvalid")
+        return campaign, offer
+
+    @staticmethod
+    def _strategic_allows_closed_store(context) -> bool:
+        return bool(context and (context[0].commercial_config or {}).get("allow_when_store_closed"))
+
+    @staticmethod
+    def _validate_strategic_commercial_rules(payload: CheckoutIn, context) -> None:
+        if not context:
+            return
+        campaign = context[0]
+        config = campaign.commercial_config or {}
+        scheduled = bool(payload.delivery and payload.delivery.is_scheduled)
+        mode = config.get("sales_mode", "immediate")
+        if mode == "preorder" or config.get("require_scheduled_order"):
+            if not scheduled or not payload.delivery.scheduled_for:
+                raise DomainError("Esta campanha exige data e horario futuro para o pedido.", code="StrategicScheduleRequired")
+        allowed_payments = set(config.get("allowed_payment_methods") or [])
+        if allowed_payments and payload.payment_method not in allowed_payments:
+            raise DomainError("A forma de pagamento nao esta habilitada para esta campanha.", code="StrategicPaymentMethodNotAllowed")
+        if scheduled and payload.delivery.scheduled_for:
+            target = payload.delivery.scheduled_for
+            if target.tzinfo is None:
+                target = target.replace(tzinfo=timezone.utc)
+            lead_minutes = (target.astimezone(timezone.utc) - datetime.now(timezone.utc)).total_seconds() / 60
+            minimum = int(config.get("min_lead_minutes") or 0)
+            maximum_days = config.get("max_lead_days")
+            if lead_minutes < minimum:
+                raise DomainError("O horario agendado nao respeita a antecedencia minima da campanha.", code="StrategicScheduleTooSoon")
+            if maximum_days is not None and lead_minutes > int(maximum_days) * 24 * 60:
+                raise DomainError("O horario agendado ultrapassa a antecedencia maxima da campanha.", code="StrategicScheduleTooLate")
+
+    @staticmethod
+    def _strategic_snapshot(campaign, offer, items):
+        return {
+            "campaign": {"id": campaign.id, "name": campaign.name, "slug": campaign.slug, "version": campaign.published_version},
+            "offer": {"id": offer.id, "code": offer.code, "title": offer.title, "price_original": str(offer.price_original), "price_promotional": str(offer.price_promotional), "config": offer.config},
+            "quoted_items": items,
+        }
+
+    @staticmethod
+    def _assert_strategic_quote(context, subtotal: float, items) -> None:
+        if not context:
+            return
+        _, offer = context
+        expected = float(offer.price_promotional) * sum(item.quantity for item in items)
+        if round(expected, 2) != round(subtotal, 2):
+            raise DomainError(
+                "O preço da oferta estratégica precisa corresponder ao quote canônico do catálogo.",
+                code="StrategicOfferPriceMismatch",
+            )
 
     def _amendment_snapshot(self, order: Order) -> dict:
         """Copy every item/option/flavor so later catalog edits cannot rewrite history."""
@@ -1310,6 +1384,7 @@ class OrderService:
         """
         if not payload.items:
             raise CartEmpty()
+        strategic_context = self._resolve_strategic_context(payload)
         if sales_channel not in {"counter", "delivery", "pickup", "dine_in"}:
             raise DomainError("Canal de venda invalido.", code="InvalidSalesChannel")
         origin_aliases = {"99": "partner_99", "99food": "partner_99", "propria": "own", "venda_propria": "own"}
@@ -1341,11 +1416,13 @@ class OrderService:
                     code="CustomerNotFound",
                 )
 
+        self._validate_strategic_commercial_rules(payload, strategic_context)
         from backend.services.store_operation_service import StoreOperationService
 
         StoreOperationService(self._db, self._tenant_context.tenant_id if self._tenant_context else "default").validate_order_allowed(
             is_scheduled=payload.delivery.is_scheduled if payload.delivery else False,
             scheduled_for=payload.delivery.scheduled_for if payload.delivery else None,
+            allow_closed_campaign=self._strategic_allows_closed_store(strategic_context),
         )
 
         if any(item.kit_id for item in payload.items):
@@ -1375,6 +1452,7 @@ class OrderService:
             item_data.append((item, unit_price, flavor_products, pricing, size_obj, crust_obj))
         self._validate_inventory_items(expanded_items)
         subtotal = round(subtotal, 2)
+        self._assert_strategic_quote(strategic_context, subtotal, expanded_items)
         coupon_blocker = next((pricing for _, _, _, pricing, _, _ in item_data if pricing.blocks_other_coupons), None)
         promotion_free_shipping = any(pricing.free_shipping for _, _, _, pricing, _, _ in item_data)
         promotion_gifts = self._collect_promotion_gifts(item_data)
@@ -1500,6 +1578,9 @@ class OrderService:
                     else OrderStatus.aguardando_pagamento),
             coupon_id=resolved_coupon_id,
             campaign_id=tracking["campaign_id"],
+            strategic_campaign_id=strategic_context[0].id if strategic_context else None,
+            strategic_offer_id=strategic_context[1].id if strategic_context else None,
+            strategic_offer_snapshot=self._strategic_snapshot(strategic_context[0], strategic_context[1], [item.model_dump(mode="json") for item in payload.items]) if strategic_context else None,
             utm_source=tracking["utm_source"],
             utm_medium=tracking["utm_medium"],
             utm_campaign=tracking["utm_campaign"],
@@ -2041,6 +2122,11 @@ class OrderService:
 
         if order.fulfillment_type == "dine_in" and new_status == "on_the_way":
             raise DomainError("Pedido do salao deve ser servido sem rota de entrega.", code="DineInDeliveryNotAllowed")
+
+        if new_status == "preparing" and order.is_scheduled and order.scheduled_for:
+            scheduled_for = order.scheduled_for if order.scheduled_for.tzinfo else order.scheduled_for.replace(tzinfo=timezone.utc)
+            if scheduled_for.astimezone(timezone.utc) > datetime.now(timezone.utc):
+                raise DomainError("Pedido agendado ainda nao entrou na janela operacional.", code="ScheduledOrderNotDue")
 
         if new_status == "preparing" and current in {"paid", "pago", "ready_for_pickup"} and not changed_by.startswith("kds:"):
             raise DomainError("A entrada ou o retorno à cozinha deve ser confirmado pelo KDS.", code="KdsActionRequired")

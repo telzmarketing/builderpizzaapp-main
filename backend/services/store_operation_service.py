@@ -93,6 +93,7 @@ class StoreOperationService:
         *,
         is_scheduled: bool = False,
         scheduled_for: datetime | None = None,
+        allow_closed_campaign: bool = False,
     ) -> None:
         status = self.get_status()
         if status["is_open"] and not is_scheduled:
@@ -100,7 +101,7 @@ class StoreOperationService:
 
         settings = self._settings()
         if is_scheduled:
-            if not settings.allow_scheduled_orders:
+            if not settings.allow_scheduled_orders and not allow_closed_campaign:
                 raise StoreClosed(self._closed_message(status))
             if not scheduled_for:
                 raise StoreClosed("Informe um horario futuro disponivel para agendar o pedido.")
@@ -118,6 +119,8 @@ class StoreOperationService:
 
         if settings.allow_scheduled_orders:
             raise StoreClosed(self._closed_message(status) + " Voce pode agendar para um horario futuro disponivel.")
+        if allow_closed_campaign:
+            raise StoreClosed("Esta campanha exige um horario futuro agendado.")
         raise StoreClosed(self._closed_message(status))
 
     def update_settings(self, payload: StoreOperationSettingsIn, admin: AdminUser) -> StoreOperationSettings:

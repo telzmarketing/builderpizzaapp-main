@@ -304,6 +304,15 @@ def _store_mp_payment_data(payment: Payment, response: dict[str, Any]) -> None:
 
 
 class PaymentService:
+    @staticmethod
+    def _scheduled_order_not_due(order: Order) -> bool:
+        scheduled_for = getattr(order, "scheduled_for", None)
+        if not getattr(order, "is_scheduled", False) or not scheduled_for:
+            return False
+        if scheduled_for.tzinfo is None:
+            scheduled_for = scheduled_for.replace(tzinfo=timezone.utc)
+        return scheduled_for.astimezone(timezone.utc) > datetime.now(timezone.utc)
+
     def _publish_order_status_changed(self, order: Order, old_status: str, new_status: str) -> None:
         from backend.services.automation_event_producer import AutomationEventProducer
         AutomationEventProducer(self._db, order.tenant_id).order_status_changed(order, old_status, new_status)
@@ -813,11 +822,12 @@ class PaymentService:
         self._db.flush()
         from backend.services.inventory_service import InventoryService
 
-        InventoryService(
-            self._db,
-            order.tenant_id,
-            trusted_process_context(order.tenant_id, source=TenantSource.WEBHOOK),
-        ).consume_order_sale(order.id)
+        if not self._scheduled_order_not_due(order):
+            InventoryService(
+                self._db,
+                order.tenant_id,
+                trusted_process_context(order.tenant_id, source=TenantSource.WEBHOOK),
+            ).consume_order_sale(order.id)
         sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
         self._db.commit()
         self._db.refresh(payment)
@@ -896,12 +906,13 @@ class PaymentService:
             if status == PaymentStatus.approved:
                 from backend.services.inventory_service import InventoryService
 
-                inventory_service = InventoryService(
-                    self._db,
-                    order.tenant_id,
-                    trusted_process_context(order.tenant_id, source=TenantSource.WEBHOOK),
-                )
-                inventory_service.consume_order_sale(order.id)
+                if not self._scheduled_order_not_due(order):
+                    inventory_service = InventoryService(
+                        self._db,
+                        order.tenant_id,
+                        trusted_process_context(order.tenant_id, source=TenantSource.WEBHOOK),
+                    )
+                    inventory_service.consume_order_sale(order.id)
             current_order_status = order.status.value if hasattr(order.status, "value") else str(order.status)
             if current_order_status in {"cancelled", "refunded"}:
                 if inventory_service is None:

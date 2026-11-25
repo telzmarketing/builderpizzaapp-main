@@ -1138,6 +1138,81 @@ export interface ApiPromotionalKit {
   items: ApiKitItem[];
 }
 
+export type StrategicCampaignStatus = "draft" | "scheduled" | "active" | "paused" | "sold_out" | "ended" | "archived";
+
+export interface StrategicCommercialConfig {
+  sales_mode: "immediate" | "preorder";
+  allow_when_store_closed: boolean;
+  require_scheduled_order: boolean;
+  min_lead_minutes: number;
+  max_lead_days: number | null;
+  allowed_payment_methods: Array<"pix" | "credit_card" | "debit_card" | "pay_on_delivery">;
+}
+
+export interface StrategicMarketingConfig {
+  planned_budget: number | null;
+  traffic_campaign_id: string | null;
+  attribution_window_days: number;
+}
+
+export interface StrategicCampaignMetrics {
+  campaign_id: string;
+  campaign_name: string;
+  period: { date_from: string; date_to: string };
+  funnel: { views: number; offer_clicks: number; offer_scrolls: number; checkout_starts: number; sessions: number; paid_orders: number };
+  revenue: number;
+  planned_budget: number | null;
+  spend: number | null;
+  roas: number | null;
+  conversion_rate: number | null;
+  attribution: { source: string; spend_source: string | null; warning: string | null };
+}
+
+export interface ApiStrategicOffer {
+  id: string;
+  campaign_id: string;
+  code: string;
+  title: string;
+  description: string | null;
+  product_id: string | null;
+  kit_id: string | null;
+  price_original: number;
+  price_promotional: number;
+  active: boolean;
+  display_order: number;
+  quantity_limit: number | null;
+  max_per_customer: number | null;
+  sales_starts_at: string | null;
+  sales_ends_at: string | null;
+  show_when_sold_out: boolean;
+  button_text: string | null;
+  image_desktop_url: string | null;
+  image_mobile_url: string | null;
+  badge_text: string | null;
+  highlighted: boolean;
+  config: Record<string, unknown>;
+}
+
+export interface ApiStrategicCampaign {
+  id: string;
+  name: string;
+  commercial_name: string | null;
+  slug: string;
+  description: string | null;
+  status: StrategicCampaignStatus;
+  starts_at: string | null;
+  ends_at: string | null;
+  visual_config: Record<string, unknown>;
+  commercial_config: StrategicCommercialConfig;
+  marketing_config: StrategicMarketingConfig;
+  published_version: number | null;
+  offers: ApiStrategicOffer[];
+}
+
+export type StrategicOfferInput = Omit<ApiStrategicOffer, "id" | "campaign_id" | "active" | "config"> & {
+  config?: Record<string, unknown>;
+};
+
 export type { OperationalDrink } from "./operationalDrinks";
 import type { OperationalDrink } from "./operationalDrinks";
 
@@ -2126,6 +2201,7 @@ export interface CheckoutIn {
   cash_needs_change?: boolean | null;
   cash_change_for?: number | null;
   campaign_id?: string | null;
+  strategic_offer_id?: string | null;
   utm_source?: string | null;
   utm_medium?: string | null;
   utm_campaign?: string | null;
@@ -8727,6 +8803,28 @@ export const campaignsApi = {
     post<ApiKitItem>(`/campaigns/kits/${kitId}/items`, { product_id, quantity }),
 
   removeKitItem: (itemId: string) => del<void>(`/campaigns/kits/items/${itemId}`),
+};
+
+export const strategicCampaignsApi = {
+  list: () => get<ApiStrategicCampaign[]>("/strategic-campaigns"),
+  get: (id: string) => get<ApiStrategicCampaign>(`/strategic-campaigns/${id}`),
+  create: (data: Pick<ApiStrategicCampaign, "name" | "commercial_name" | "slug" | "description" | "starts_at" | "ends_at"> & { commercial_config?: StrategicCommercialConfig; marketing_config?: StrategicMarketingConfig }) =>
+    post<ApiStrategicCampaign>("/strategic-campaigns", data),
+  update: (id: string, data: Partial<Pick<ApiStrategicCampaign, "name" | "commercial_name" | "slug" | "description" | "starts_at" | "ends_at" | "status" | "visual_config" | "commercial_config" | "marketing_config">>) =>
+    put<ApiStrategicCampaign>(`/strategic-campaigns/${id}`, data),
+  addOffer: (campaignId: string, data: Omit<StrategicOfferInput, "campaign_id">) =>
+    post<ApiStrategicOffer>(`/strategic-campaigns/${campaignId}/offers`, data),
+  updateOffer: (offerId: string, data: Partial<Omit<StrategicOfferInput, "campaign_id">>) =>
+    put<ApiStrategicOffer>(`/strategic-campaigns/offers/${offerId}`, data),
+  publish: (campaignId: string) =>
+    post<{ id: string; campaign_id: string; version: number; snapshot: Record<string, unknown>; published_at: string }>(`/strategic-campaigns/${campaignId}/publish`, {}),
+  publicBySlug: (slug: string) => get<ApiStrategicCampaign>(`/strategic-campaigns/public/${encodeURIComponent(slug)}`),
+  metrics: (id: string, dateFrom?: string, dateTo?: string) => {
+    const qs = new URLSearchParams();
+    if (dateFrom) qs.set("date_from", dateFrom);
+    if (dateTo) qs.set("date_to", dateTo);
+    return get<StrategicCampaignMetrics>(`/strategic-campaigns/${id}/metrics?${qs.toString()}`);
+  },
 };
 
 export interface CampaignCreative {

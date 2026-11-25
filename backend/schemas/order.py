@@ -80,6 +80,7 @@ class CheckoutIn(BaseModel):
     cash_needs_change: Optional[bool] = None
     cash_change_for: Optional[float] = Field(default=None, ge=0)
     campaign_id: Optional[str] = None
+    strategic_offer_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
     utm_source: Optional[str] = None
     utm_medium: Optional[str] = None
     utm_campaign: Optional[str] = None
@@ -207,6 +208,9 @@ class OrderOut(BaseModel):
     partner_order_number: Optional[str] = None
     order_identification: Optional["OrderIdentificationOut"] = None
     campaign_id: Optional[str] = None
+    strategic_campaign_id: Optional[str] = None
+    strategic_offer_id: Optional[str] = None
+    strategic_offer_snapshot: Optional[dict] = None
     utm_source: Optional[str] = None
     utm_medium: Optional[str] = None
     utm_campaign: Optional[str] = None

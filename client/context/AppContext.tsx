@@ -102,6 +102,15 @@ export interface CartItem {
   promotionGiftIcon?: string | null;
   promotionBlocksOtherCoupons?: boolean;
   kit?: CartKitMeta;
+  strategicCampaignId?: string | null;
+  strategicOfferId?: string | null;
+  strategicCampaignSlug?: string | null;
+}
+
+export interface StrategicCartMeta {
+  campaignId?: string | null;
+  offerId: string;
+  campaignSlug?: string | null;
 }
 
 export interface CartPromotionMeta {
@@ -340,7 +349,8 @@ interface AppContextType {
     promotion?: CartPromotionMeta
     , border?: CartItemVariation | null,
     selectedOptions?: CartItemOptionSelection[],
-    kit?: CartKitMeta
+    kit?: CartKitMeta,
+    strategicOffer?: StrategicCartMeta
   ) => void;
   updateCartItem: (cartItemId: string, quantity: number, size: string, addOns: string[]) => void;
   removeFromCart: (cartItemId: string) => void;
@@ -945,7 +955,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     promotion?: CartPromotionMeta
     , border?: CartItemVariation | null,
     selectedOptions?: CartItemOptionSelection[],
-    kit?: CartKitMeta
+    kit?: CartKitMeta,
+    strategicOffer?: StrategicCartMeta
   ) => {
     const cartItemId = `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const isFixedFlavorCombination = isFixedFlavorCombinationProduct(primaryProduct);
@@ -989,6 +1000,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         promotionGiftIcon: promotion?.giftIcon ?? null,
         promotionBlocksOtherCoupons: !!promotion?.blocksOtherCoupons,
         kit,
+        strategicCampaignId: strategicOffer?.campaignId ?? null,
+        strategicOfferId: strategicOffer?.offerId ?? null,
+        strategicCampaignSlug: strategicOffer?.campaignSlug ?? null,
       },
     ]);
     const _td = getTrackingData();

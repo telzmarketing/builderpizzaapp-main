@@ -389,6 +389,7 @@ class KdsProductionService:
             Order.tenant_id == self.tenant_id,
             Order.archived_at.is_(None),
             Order.status.in_((OrderStatus.paid, OrderStatus.pago, OrderStatus.preparing)),
+            or_(Order.scheduled_for.is_(None), Order.scheduled_for <= datetime.now(timezone.utc)),
         ).order_by(
             ProductionAttempt.production_unit_id,
             ProductionAttempt.attempt_number,

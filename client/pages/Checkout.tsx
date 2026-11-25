@@ -34,6 +34,7 @@ import {
   paymentsApi,
   shippingApi,
   storeOperationApi,
+  strategicCampaignsApi,
   isAssetUrl,
   resolveAssetUrl,
   type ApiAddress,
@@ -116,6 +117,15 @@ export default function Checkout() {
   const navigate = useNavigate();
   const { cart, cartSubtotal, clearCart, siteContent, customer, customerLogout } = useApp();
   const cartGroups = useMemo(() => groupCartItems(cart), [cart]);
+  const [strategicCommercialConfig, setStrategicCommercialConfig] = useState<import("@/lib/api").StrategicCommercialConfig | null>(null);
+  const strategicCampaignSlug = cart.length === 1 ? cart[0].strategicCampaignSlug : null;
+  useEffect(() => {
+    if (!strategicCampaignSlug) { setStrategicCommercialConfig(null); return; }
+    strategicCampaignsApi.publicBySlug(strategicCampaignSlug)
+      .then((campaign) => setStrategicCommercialConfig(campaign.commercial_config))
+      .catch(() => setStrategicCommercialConfig(null));
+  }, [strategicCampaignSlug]);
+  const strategicRequiresSchedule = !!strategicCommercialConfig && (strategicCommercialConfig.sales_mode === "preorder" || strategicCommercialConfig.require_scheduled_order);
   const c = siteContent.pages.checkout;
 
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("delivery");
@@ -595,8 +605,9 @@ export default function Checkout() {
       setApiError("Aguarde enquanto carregamos as formas de pagamento.");
       return;
     }
-    const mustSchedule = !!storeStatus && !storeStatus.is_open && storeStatus.allow_scheduled_orders;
-    if (storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders) {
+    const mustSchedule = strategicRequiresSchedule || (!!storeStatus && !storeStatus.is_open && storeStatus.allow_scheduled_orders);
+    const campaignMayOrderWhileClosed = !!strategicCommercialConfig?.allow_when_store_closed;
+    if (storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders && !campaignMayOrderWhileClosed) {
       setApiError(storeStatus.message || "Loja fechada no momento.");
       return;
     }
@@ -640,6 +651,10 @@ export default function Checkout() {
     trackEvent("checkout_start", cartSubtotal);
     firePixelEvent("InitiateCheckout", { value: cartSubtotal });
     const tracking = checkoutTrackingPayload();
+    const strategicOfferIds = new Set(cart.map((item) => item.strategicOfferId).filter(Boolean));
+    const strategicOfferId = cart.length === 1 && strategicOfferIds.size === 1
+      ? [...strategicOfferIds][0]
+      : undefined;
     const changeFor = Number(cashChangeFor.replace(",", "."));
     const payload: CheckoutIn = {
       items: cartGroups.map((group) => {
@@ -698,6 +713,7 @@ export default function Checkout() {
       ...tracking,
       ...(couponApplied && couponCode && !promotionBlocksCoupons ? { coupon_code: couponCode } : {}),
       ...(customer ? { customer_id: customer.id } : {}),
+      ...(strategicOfferId ? { strategic_offer_id: strategicOfferId } : {}),
     };
 
     try {
@@ -1004,13 +1020,13 @@ export default function Checkout() {
       </div>
 
       <div className="px-4 pt-6 pb-36 space-y-6">
-        {storeStatus && !storeStatus.is_open && storeStatus.allow_scheduled_orders && !createdOrder && (
+        {strategicRequiresSchedule || (storeStatus && !storeStatus.is_open && storeStatus.allow_scheduled_orders) ? !createdOrder && (
           <section className="bg-surface-02 border border-surface-03 rounded-xl p-4">
             <h2 className="text-cream font-bold text-lg mb-2 flex items-center gap-2">
               <Clock size={20} className="text-gold" />
               Pedido agendado
             </h2>
-            <p className="text-stone text-sm mb-3">A loja esta fechada, mas aceita pedidos agendados para horarios disponiveis.</p>
+            <p className="text-stone text-sm mb-3">{strategicRequiresSchedule ? "Esta campanha exige pedido antecipado em horario futuro." : "A loja esta fechada, mas aceita pedidos agendados para horarios disponiveis."}</p>
             <input
               type="datetime-local"
               value={scheduledFor}
@@ -1018,7 +1034,7 @@ export default function Checkout() {
               className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream outline-none focus:border-gold"
             />
           </section>
-        )}
+        ) : null}
 
         <section>
           <h2 className="text-cream font-bold text-lg mb-3 flex items-center gap-2">
@@ -1684,11 +1700,11 @@ export default function Checkout() {
         <div className="fixed bottom-0 left-0 right-0 bg-surface-00 border-t border-surface-02 px-4 py-4">
           <button
             onClick={handleConfirm}
-            disabled={loading || (!shippingAvailable && deliveryMode === "delivery") || (!!storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders)}
+            disabled={loading || (!shippingAvailable && deliveryMode === "delivery") || (!!storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders && !strategicCommercialConfig?.allow_when_store_closed)}
             className="w-full bg-gold hover:bg-gold/90 disabled:opacity-60 disabled:cursor-not-allowed text-cream font-bold py-4 px-4 rounded-full text-center transition-colors text-lg active:scale-95 flex items-center justify-center gap-2"
           >
             {loading && <Loader2 size={20} className="animate-spin" />}
-            {loading ? "Processando..." : storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders ? "Loja fechada" : c.confirmButton}
+            {loading ? "Processando..." : storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders && !strategicCommercialConfig?.allow_when_store_closed ? "Loja fechada" : c.confirmButton}
           </button>
         </div>
       )}

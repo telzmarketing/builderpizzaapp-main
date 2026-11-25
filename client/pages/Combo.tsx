@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ShoppingCart, Package } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { campaignsApi, isAssetUrl, productsApi, resolveOptimizedAssetUrl, type ApiProduct, type ApiPromotionalKit } from "@/lib/api";
 import { useApp, type CartKitMeta } from "@/context/AppContext";
 import BottomNav from "@/components/BottomNav";
@@ -12,6 +12,7 @@ interface ComboProps {
 
 export default function Combo({ kitId }: ComboProps) {
   const { slug } = useParams<{ slug: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { addToCart } = useApp();
   const [combo, setCombo] = useState<ApiPromotionalKit | null>(null);
@@ -56,7 +57,8 @@ export default function Combo({ kitId }: ComboProps) {
       }),
     };
     const primary = products[0];
-    addToCart(primary, 1, "Combo", [], [{ productId: primary.id, name: primary.name, price: primary.price, icon: primary.icon }], 1, promotionalTotal, undefined, undefined, undefined, undefined, undefined, undefined, undefined, kit);
+    const strategicOfferId = searchParams.get("strategic_offer_id");
+    addToCart(primary, 1, "Combo", [], [{ productId: primary.id, name: primary.name, price: primary.price, icon: primary.icon }], 1, promotionalTotal, undefined, undefined, undefined, undefined, undefined, undefined, undefined, kit, strategicOfferId ? { offerId: strategicOfferId } : undefined);
     navigate("/cart");
   };
 

@@ -75,6 +75,7 @@ export const adminPageMeta: Record<string, PageMeta> = {
   "/painel/crm/tarefas": { eyebrow: "CRM", title: "Tarefas", subtitle: "Atividades e follow-ups" },
   "/painel/crm/agente-whatsapp": { eyebrow: "CRM", title: "Agente WhatsApp", subtitle: "Central operacional de conversas e status de pedidos" },
   "/painel/marketing": { eyebrow: "Marketing", title: "Dashboard Marketing", subtitle: "Indicadores de campanhas e canais" },
+  "/painel/marketing/campanhas-estrategicas": { eyebrow: "Marketing", title: "Campanhas Estratégicas", subtitle: "Editor e publicação de ofertas comerciais" },
   "/painel/marketing/visitantes": { eyebrow: "Marketing", title: "Analise de Visitantes", subtitle: "Origem e comportamento no site" },
   "/painel/marketing/links": { eyebrow: "Marketing", title: "Links Rastreaveis", subtitle: "UTMs e rastreamento de campanhas" },
   "/painel/marketing/integracoes": { eyebrow: "Configuracoes", title: "Integracoes", subtitle: "Conexoes com canais externos" },

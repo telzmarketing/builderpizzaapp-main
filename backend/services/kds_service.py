@@ -182,6 +182,7 @@ class KdsService:
             joinedload(Order.delivery).joinedload(Delivery.delivery_person),
         ).filter(
             Order.status.in_(self.KITCHEN_STATUSES),
+            or_(Order.scheduled_for.is_(None), Order.scheduled_for <= datetime.now(timezone.utc)),
         ).order_by(Order.created_at).all()
         item_ids = [item.id for order in orders for item in order.items]
         frozen = {}
@@ -296,6 +297,7 @@ class KdsService:
             joinedload(Order.delivery).joinedload(Delivery.delivery_person),
         ).filter(
             Order.status.in_(self.OVERVIEW_ORDER_STATUSES),
+            or_(Order.scheduled_for.is_(None), Order.scheduled_for <= datetime.now(timezone.utc)),
         ).order_by(Order.created_at).all()
         identifications = PartnerIdentificationService(
             self.db, self.tenant_context
@@ -414,6 +416,11 @@ class KdsService:
             raise DomainError(
                 "Somente pedidos pagos podem entrar em preparacao.",
                 code="KdsOrderNotReadyToStart",
+            )
+        if order.is_scheduled and order.scheduled_for and self._as_utc(order.scheduled_for) > datetime.now(timezone.utc):
+            raise DomainError(
+                "Pedido agendado ainda nao entrou na janela operacional.",
+                code="KdsScheduledOrderNotDue",
             )
         self._audit_order_transition(order, current, OrderStatus.preparing.value, actor_id)
         from backend.services.kds_production_service import KdsProductionService

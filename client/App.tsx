@@ -458,6 +458,7 @@ const AdminPagamentos = lazy(() => import("./pages/admin/AdminPagamentos"));
 const AdminFrete = lazy(() => import("./pages/admin/AdminFrete"));
 const StoreOperation = lazy(() => import("./pages/admin/StoreOperation"));
 const AdminCampanhas = lazy(() => import("./pages/admin/AdminCampanhas"));
+const StrategicCampaigns = lazy(() => import("./pages/admin/StrategicCampaigns"));
 const AdminPaidTraffic = lazy(() => import("./pages/admin/PaidTraffic"));
 const AdminChatbot = lazy(() => import("./pages/admin/AdminChatbot"));
 const AdminAparencia = lazy(() => import("./pages/admin/Aparencia"));
@@ -509,6 +510,7 @@ const ManualOrder = lazy(() => import("./pages/admin/ManualOrder"));
 const Preparation = lazy(() => import("./pages/admin/Preparation"));
 const OrderBoardTv = lazy(() => import("./pages/OrderBoardTv"));
 const Campanha = lazy(() => import("./pages/Campanha"));
+const StrategicCampaignLanding = lazy(() => import("./pages/StrategicCampaignLandingV2"));
 const PromocaoLanding = lazy(() => import("./pages/PromocaoLanding"));
 const Promocoes = lazy(() => import("./pages/Promocoes"));
 const Combo = lazy(() => import("./pages/Combo"));
@@ -572,6 +574,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/menu" element={<ExperienceRoute salao={<SalaoHome />} delivery={<Cardapio />} />} />
                 <Route path="/cardapio" element={<ExperienceRoute salao={<SalaoHome />} delivery={<Cardapio />} />} />
                 <Route path="/campanha/:slug" element={<Campanha />} />
+                <Route path="/campanha-estrategica/:slug" element={<StrategicCampaignLanding />} />
                 <Route path="/promocao/:slug" element={<PromocaoLanding />} />
                 <Route path="/combo/:slug" element={<Combo />} />
                 <Route path="/promocoes" element={<Promocoes />} />
@@ -694,6 +697,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/frete" element={<AdminFrete />} />
                 <Route path="/painel/funcionamento" element={<StoreOperation />} />
                 <Route path="/painel/campanhas" element={<AdminCampanhas />} />
+                <Route path="/painel/marketing/campanhas-estrategicas" element={<StrategicCampaigns />} />
                 <Route path="/painel/promocoes" element={<AdminCampanhas />} />
                 <Route path="/painel/trafego-pago" element={<AdminPaidTraffic />} />
                 <Route path="/painel/chatbot"    element={<AdminChatbot />} />
