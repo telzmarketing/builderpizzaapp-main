@@ -56,6 +56,7 @@ import {
   type FinanceCounterpartyInput,
   type FinanceEntryType,
   type FinanceOverview,
+  type FinanceObligation,
   type FinanceSettlementInput,
   type FinanceTransaction,
   type FinanceTransactionInput,
@@ -260,6 +261,7 @@ function FinancePanel() {
   const [forecastLoading, setForecastLoading] = useState(false);
   const [bi, setBi] = useState<FinanceBi | null>(null);
   const [fiscalOverview, setFiscalOverview] = useState<FiscalOverview | null>(null);
+  const [obligations, setObligations] = useState<FinanceObligation[]>([]);
   const [gestaoSettings, setGestaoSettings] = useState<GestaoModuleSettings | null>(null);
   const [adminLoading, setAdminLoading] = useState(false);
   const [biLoading, setBiLoading] = useState(false);
@@ -343,7 +345,7 @@ function FinancePanel() {
     if (activeModule !== "fiscal" && activeModule !== "settings") return;
     setAdminLoading(true);
     const request = activeModule === "fiscal"
-      ? fiscalApi.overview().then(setFiscalOverview)
+      ? Promise.all([fiscalApi.overview(), financeApi.listObligations()]).then(([overview, items]) => { setFiscalOverview(overview); setObligations(items); })
       : gestaoApi.settings().then((response) => setGestaoSettings(response.modules.find((item) => item.module_key === "finance") ?? null));
     request
       .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar a administracao financeira."))
@@ -885,7 +887,7 @@ function FinancePanel() {
           {activeModule === "fiscal" && (
             <div className={panelClass}>
               <CardHeading icon={FileText} title="Fiscal e contÃ¡bil" description="Status fiscal da empresa e documentos emitidos. A escrituraÃ§Ã£o contÃ¡bil permanece no mÃ³dulo fiscal prÃ³prio." />
-              {adminLoading ? <div className="mt-5 flex min-h-24 items-center justify-center text-stone"><Loader2 size={20} className="mr-2 animate-spin text-gold" />Carregando status fiscal...</div> : fiscalOverview && <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric title="Documentos fiscais" value={String(fiscalOverview.documents.length)} subtitle="Documentos registrados" icon={FileText} tone="success" /><Metric title="SÃ©ries" value={String(fiscalOverview.series.length)} subtitle="SÃ©ries cadastradas" icon={Tags} /><Metric title="Perfis tributÃ¡rios" value={String(fiscalOverview.product_profiles.length)} subtitle="Produtos configurados" icon={ReceiptText} /><Metric title="Status" value={fiscalOverview.ready_for_homologation ? "Pronto" : "Configurar"} subtitle={fiscalOverview.missing_setup.length ? fiscalOverview.missing_setup.join(", ") : "Sem pendÃªncias de setup"} icon={fiscalOverview.ready_for_homologation ? CheckCircle2 : AlertTriangle} tone={fiscalOverview.ready_for_homologation ? "success" : "warn"} /></div>}
+              {adminLoading ? <div className="mt-5 flex min-h-24 items-center justify-center text-stone"><Loader2 size={20} className="mr-2 animate-spin text-gold" />Carregando status fiscal...</div> : fiscalOverview && <><div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5"><Metric title="Documentos fiscais" value={String(fiscalOverview.documents.length)} subtitle="Documentos registrados" icon={FileText} tone="success" /><Metric title="SÃ©ries" value={String(fiscalOverview.series.length)} subtitle="SÃ©ries cadastradas" icon={Tags} /><Metric title="Perfis tributÃ¡rios" value={String(fiscalOverview.product_profiles.length)} subtitle="Produtos configurados" icon={ReceiptText} /><Metric title="ObrigaÃ§Ãµes" value={String(obligations.length)} subtitle="Contas fiscais vinculadas" icon={ArrowDownCircle} tone={obligations.length ? "warn" : "success"} /><Metric title="Status" value={fiscalOverview.ready_for_homologation ? "Pronto" : "Configurar"} subtitle={fiscalOverview.missing_setup.length ? fiscalOverview.missing_setup.join(", ") : "Sem pendÃªncias de setup"} icon={fiscalOverview.ready_for_homologation ? CheckCircle2 : AlertTriangle} tone={fiscalOverview.ready_for_homologation ? "success" : "warn"} /></div><div className={`${panelClass} mt-5 overflow-x-auto`}><CardHeading icon={ArrowDownCircle} title="ObrigaÃ§Ãµes fiscais" description="Documentos fiscais que jÃ¡ foram convertidos em contas a pagar e suas parcelas." />{obligations.length === 0 ? <p className="mt-4 rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhuma obrigaÃ§Ã£o fiscal vinculada.</p> : <table className="mt-4 w-full min-w-[760px] text-left text-sm"><thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Fornecedor</th><th className="px-3 py-3">Documento</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Total</th><th className="px-3 py-3 text-right">Parcelas</th></tr></thead><tbody>{obligations.map((item) => <tr key={item.id} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{item.supplier_name || "Sem fornecedor"}</td><td className="px-3 py-3 text-stone">{item.fiscal_document_id || "-"}</td><td className="px-3 py-3 text-stone">{item.status}</td><td className="px-3 py-3 text-right font-black text-amber-200">{currency(Number(item.total_amount))}</td><td className="px-3 py-3 text-right text-stone">{item.installments.length}</td></tr>)}</tbody></table>}</div></>}
             </div>
           )}
 

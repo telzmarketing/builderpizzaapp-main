@@ -3193,6 +3193,37 @@ export interface FinanceProjectionHealth {
   missing_refund_payment_ids: string[];
 }
 
+export interface FinanceObligationInstallment {
+  id: string;
+  tenant_id: string;
+  obligation_id: string;
+  finance_transaction_id?: string | null;
+  installment_number: number;
+  amount: number | string;
+  due_date?: string | null;
+  status: FinanceTransactionStatus;
+  paid_amount: number | string;
+  created_at?: string | null;
+}
+
+export interface FinanceObligation {
+  id: string;
+  tenant_id: string;
+  fiscal_document_id?: string | null;
+  idempotency_key: string;
+  status: FinanceTransactionStatus;
+  currency: string;
+  total_amount: number | string;
+  product_amount: number | string;
+  freight_amount: number | string;
+  discount_amount: number | string;
+  tax_amount: number | string;
+  supplier_name?: string | null;
+  supplier_document?: string | null;
+  notes?: string | null;
+  installments: FinanceObligationInstallment[];
+}
+
 export interface FinanceBackfillResult {
   status: string;
   scanned: number;
@@ -6916,6 +6947,7 @@ export const appFinanceApi = {
 export const financeApi = {
   overview: () => get<FinanceOverview>("/gestao/finance/overview"),
   paymentOverview: () => get<FinancePaymentOverview>("/gestao/finance/payments/overview"),
+  listObligations: () => get<FinanceObligation[]>("/gestao/finance/obligations"),
   backfillSales: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/sales/backfill?limit=${limit}`, {}),
   backfillPaymentReversals: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/payments/backfill-reversals?limit=${limit}`, {}),
   backfillPurchasePayables: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/purchases/backfill-payables?limit=${limit}`, {}),
