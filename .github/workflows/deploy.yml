@@ -124,19 +124,30 @@ jobs:
               print("::error::backend-tests.xml nao foi gerado; a falha ocorreu antes da coleta pytest")
               raise SystemExit(0)
           root = ElementTree.parse(report).getroot()
+          failures = 0
+          errors = 0
+          skipped_count = 0
           for case in root.iter("testcase"):
-              failure = case.find("failure") or case.find("error")
+              failure = case.find("failure")
+              error = case.find("error")
               skipped = case.find("skipped")
-              if failure is None and skipped is None:
+              if failure is None and error is None and skipped is None:
                   continue
               classname = case.get("classname", "pytest")
               name = case.get("name", "caso desconhecido")
               if skipped is not None:
+                  skipped_count += 1
                   message = (skipped.get("message") or (skipped.text or "")).splitlines()[0][:500]
                   print(f"::warning file={classname}::{name}: skipped: {message}")
-              else:
+              elif failure is not None:
+                  failures += 1
                   message = (failure.get("message") or (failure.text or "")).splitlines()[0][:500]
-                  print(f"::error file={classname}::{name}: {message}")
+                  print(f"::error file={classname}::{name}: failure: {message}")
+              else:
+                  errors += 1
+                  message = (error.get("message") or (error.text or "")).splitlines()[0][:500]
+                  print(f"::error file={classname}::{name}: error: {message}")
+          print(f"::notice::backend report summary: failures={failures}, errors={errors}, skipped={skipped_count}")
           PY
 
       - name: Validar frontend
