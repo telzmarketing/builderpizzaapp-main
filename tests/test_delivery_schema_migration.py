@@ -13,6 +13,12 @@ from alembic.script import ScriptDirectory
 
 ROOT = Path(__file__).parents[1]
 REVISION = "20261017_delivery_schema"
+DELIVERY_COLUMNS_AT_REVISION = {
+    "id", "order_id", "driver_id", "status", "assigned_at", "picked_up_at",
+    "delivered_at", "notes", "problem_report", "problem_reported_at",
+    "problem_resolved_at", "admin_resolution_note", "tenant_id",
+    "confirmation_code", "confirmed_by_code_at",
+}
 COLUMNS = {
     "password_hash": "TEXT",
     "cpf": "VARCHAR(14)",
@@ -114,11 +120,12 @@ def test_postgresql_restores_full_driver_projection_from_historical_schema(postg
 
     # Selecting the complete mapped table detects the next omitted model column.
     from backend.models.delivery import DeliveryPerson
-    row = connection.execute(DeliveryPerson.__table__.select()).mappings().one()
+    driver_columns = set(DeliveryPerson.__table__.columns.keys()) - {"daily_allowance_amount"}
+    row = connection.execute(sa.select(*(DeliveryPerson.__table__.c[name] for name in driver_columns))).mappings().one()
     assert row["id"] == "driver-legacy"
     assert all(row[name] is None for name in COLUMNS)
     columns = {column["name"]: column for column in sa.inspect(connection).get_columns("delivery_persons")}
-    assert set(columns) == set(DeliveryPerson.__table__.columns.keys())
+    assert set(columns) == driver_columns
     for name, datatype in COLUMNS.items():
         assert columns[name]["nullable"]
         assert columns[name]["default"] is None
@@ -184,14 +191,17 @@ def test_postgresql_full_delivery_and_logistics_projection_preserves_runtime_val
     upgrade_on(connection)
     upgrade_on(connection)
     from backend.models.delivery import Delivery, LogisticsSettings
-    row = connection.execute(Delivery.__table__.select()).mappings().one()
+    row = connection.execute(
+        sa.select(*(Delivery.__table__.c[name] for name in DELIVERY_COLUMNS_AT_REVISION))
+    ).mappings().one()
     assert row["notes"] == "preserve"
     assert row["status"].value == "assigned"
     assert row["confirmation_code"] is None
     assert row["confirmed_by_code_at"] is None
     columns = {column["name"] for column in sa.inspect(connection).get_columns("deliveries")}
-    assert columns == set(Delivery.__table__.columns.keys())
-    settings = connection.execute(LogisticsSettings.__table__.select()).mappings().one()
+    assert columns == DELIVERY_COLUMNS_AT_REVISION
+    logistics_columns = set(LogisticsSettings.__table__.columns.keys()) - {"daily_allowance_amount"}
+    settings = connection.execute(sa.select(*(LogisticsSettings.__table__.c[name] for name in logistics_columns))).mappings().one()
     assert settings["max_concurrent_deliveries"] == 7
     assert settings["rate_per_delivery"] == 0.0
     connection.execute(sa.text(
@@ -199,11 +209,19 @@ def test_postgresql_full_delivery_and_logistics_projection_preserves_runtime_val
         "confirmed_by_code_at = '2026-10-17T12:00:00Z'"
     ))
     connection.execute(sa.text("UPDATE logistics_settings SET rate_per_delivery = 13.75"))
-    before = connection.execute(Delivery.__table__.select()).one()
-    before_settings = connection.execute(LogisticsSettings.__table__.select()).one()
+    before = connection.execute(
+        sa.select(*(Delivery.__table__.c[name] for name in DELIVERY_COLUMNS_AT_REVISION))
+    ).one()
+    before_settings = connection.execute(
+        sa.select(*(LogisticsSettings.__table__.c[name] for name in logistics_columns))
+    ).one()
     upgrade_on(connection)
-    assert connection.execute(Delivery.__table__.select()).one() == before
-    assert connection.execute(LogisticsSettings.__table__.select()).one() == before_settings
+    assert connection.execute(
+        sa.select(*(Delivery.__table__.c[name] for name in DELIVERY_COLUMNS_AT_REVISION))
+    ).one() == before
+    assert connection.execute(
+        sa.select(*(LogisticsSettings.__table__.c[name] for name in logistics_columns))
+    ).one() == before_settings
     for column in sa.inspect(connection).get_columns("deliveries"):
         if column["name"] in {"confirmation_code", "confirmed_by_code_at"}:
             assert column["nullable"] and column["default"] is None
