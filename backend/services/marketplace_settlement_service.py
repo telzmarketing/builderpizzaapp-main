@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
 from backend.models.marketplace_settlement import MarketplaceSettlement
+from backend.models.finance import FinanceTransaction
 from backend.models.order import Order, OrderStatus
 from backend.schemas.marketplace_settlement import MarketplaceSettlementIn
 
@@ -30,6 +32,8 @@ class MarketplaceSettlementService:
             raise DomainError("Idempotency-Key e obrigatoria.", code="MarketplaceSettlementIdempotencyRequired")
         existing = self.db.query(MarketplaceSettlement).filter_by(tenant_id=self.tenant_id, idempotency_key=key).first()
         if existing:
+            if self._ensure_received_transaction(existing, admin_id=admin_id):
+                self.db.commit()
             return existing
         order = self.db.query(Order).filter(Order.tenant_id == self.tenant_id, Order.id == order_id).first()
         if order is None:
@@ -55,9 +59,43 @@ class MarketplaceSettlementService:
             settled_at=payload.settled_at, idempotency_key=key, notes=payload.notes, created_by_admin_id=admin_id,
         )
         self.db.add(row)
+        self.db.flush()
+        self._ensure_received_transaction(row, admin_id=admin_id)
         self.db.commit()
         self.db.refresh(row)
         return row
+
+    def _ensure_received_transaction(self, settlement: MarketplaceSettlement, *, admin_id: str | None) -> bool:
+        received = money(settlement.received_net_amount)
+        if settlement.status not in {"received", "partially_received"} or received <= 0:
+            return False
+        existing = self.db.query(FinanceTransaction).filter_by(
+            tenant_id=self.tenant_id,
+            origin_type="marketplace_settlement",
+            origin_id=settlement.id,
+        ).first()
+        if existing:
+            return False
+        settled_at = settlement.settled_at
+        competence_date = settled_at.date() if settled_at is not None else date.today()
+        self.db.add(FinanceTransaction(
+            id=str(uuid.uuid4()),
+            tenant_id=self.tenant_id,
+            order_id=settlement.order_id,
+            entry_type="income",
+            status="paid",
+            description=f"Recebimento {settlement.provider} pedido {settlement.order_id}",
+            amount=float(received),
+            paid_amount=float(received),
+            net_amount=float(received),
+            competence_date=competence_date,
+            paid_at=settled_at,
+            payment_reference=settlement.external_settlement_reference,
+            created_by_admin_id=admin_id,
+            origin_type="marketplace_settlement",
+            origin_id=settlement.id,
+        ))
+        return True
 
     def list(self, *, order_id: str | None = None, provider: str | None = None, status: str | None = None) -> list[MarketplaceSettlement]:
         query = self.db.query(MarketplaceSettlement).filter(MarketplaceSettlement.tenant_id == self.tenant_id)
