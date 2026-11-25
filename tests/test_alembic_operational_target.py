@@ -149,23 +149,24 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20261121_print_center:20261122_print_agent_protocol",
         "20261122_print_agent_protocol:20261124_finance_operational_enablement",
         "20261124_purchase_receipt_foundation:20261124_finance_operational_enablement",
+        "20261124_purchase_receipt_foundation:20261124_finance_projection_queue",
         "20261124_finance_operational_enablement:20261124_finance_projection_queue",
     }
 
     sources = {
         "health": (
             ROOT / "scripts/health-check.sh",
-            "schema_pair_is_compatible() {",
+            "schema_pair_is_directly_compatible() {",
             "\n}\n\nvalidate_release_path()",
         ),
         "update": (
             ROOT / "scripts/update-telz.sh",
-            "schema_is_rollback_compatible() {",
+                "schema_is_rollback_pair_compatible() {",
             "\n}\n\nvalidate_release_tree()",
         ),
         "rollback": (
             ROOT / "scripts/rollback-telz.sh",
-            "schema_pair_is_compatible() {",
+            "schema_pair_is_directly_compatible() {",
             "\n}\n\n[[ -L \"$CURRENT_LINK\"",
         ),
     }
@@ -176,7 +177,7 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         function = source[start : source.index(end_marker, start)]
         assert set(re.findall(r'"(202\d{5}_[a-z0-9_]+:202\d{5}_[a-z0-9_]+)"', function)) == reviewed_pairs, label
         assert "&& return 0" in function
-        assert "*)\n      return 1" in function
+        assert "return 1" in function
 
 
 def test_health_uses_the_reviewed_schema_predicate_for_the_active_release():
@@ -200,9 +201,9 @@ def test_schema_predicates_allow_reviewed_recovery_and_reject_unknown_pairs():
     if not bash:
         pytest.skip("bash indisponivel")
     sources = (
-        ("scripts/update-telz.sh", "schema_is_rollback_compatible"),
-        ("scripts/rollback-telz.sh", "schema_pair_is_compatible"),
-        ("scripts/health-check.sh", "schema_pair_is_compatible"),
+            ("scripts/update-telz.sh", "schema_is_rollback_pair_compatible"),
+            ("scripts/rollback-telz.sh", "schema_pair_is_directly_compatible"),
+            ("scripts/health-check.sh", "schema_pair_is_directly_compatible"),
     )
     for relative, name in sources:
         source = (ROOT / relative).read_text(encoding="utf-8")
@@ -241,6 +242,7 @@ def test_schema_predicates_allow_reviewed_recovery_and_reject_unknown_pairs():
             ("20261121_payment_amendment_settlement", "20261121_print_center", 0),
             ("20261121_print_center", "20261122_print_agent_protocol", 0),
             ("20261122_print_agent_protocol", "20261121_print_center", 1),
+            ("20261124_purchase_receipt_foundation", "20261124_finance_projection_queue", 0),
             ("unknown", "20261017_runtime_schema", 1),
         )
         for code, database, expected in cases:

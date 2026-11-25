@@ -598,7 +598,7 @@ finally:
 PY
 }
 
-schema_is_rollback_compatible() {
+schema_is_rollback_pair_compatible() {
   local code_revision="$1"
   local database_revision="$2"
   [[ "$code_revision" == "$database_revision" ]] && return 0
@@ -667,6 +667,7 @@ schema_is_rollback_compatible() {
     "20261121_print_center:20261122_print_agent_protocol" | \
     "20261122_print_agent_protocol:20261124_finance_operational_enablement" | \
     "20261124_purchase_receipt_foundation:20261124_finance_operational_enablement" | \
+    "20261124_purchase_receipt_foundation:20261124_finance_projection_queue" | \
     "20261124_finance_operational_enablement:20261124_finance_projection_queue")
       return 0
       ;;
@@ -674,6 +675,77 @@ schema_is_rollback_compatible() {
       return 1
       ;;
   esac
+}
+
+schema_is_rollback_compatible() {
+  local code_revision="$1"
+  local database_revision="$2"
+  local current_revision compatible_pair next_revision
+  local -a frontier=("$code_revision")
+  local -A visited=()
+  local -a compatible_pairs=(
+    "20260816_master_completion:20260818_platform_operations"
+    "20260817_platform_wave0:20260818_platform_operations"
+    "20260924_kds_kitchen_dispatch:20260926_dispatch_labels"
+    "20260924_kds_kitchen_dispatch:20260927_order_board_mvp"
+    "20260926_dispatch_labels:20260927_order_board_mvp"
+    "20260930_tenant_runtime_uniqueness:20261002_marketing_workflow_foundation"
+    "20261002_marketing_workflow_foundation:20261003_marketing_workflow_tenant_isolation"
+    "20261003_marketing_workflow_tenant_isolation:20261003_chatbot_tenant_keys"
+    "20261003_chatbot_tenant_keys:20261003_marketing_tenant_keys"
+    "20261003_marketing_tenant_keys:20261003_whatsapp_meta_webhook_tenant_keys"
+    "20261003_whatsapp_meta_webhook_tenant_keys:20261003_email_marketing_tenant_config"
+    "20261003_email_marketing_tenant_config:20261003_agente_whatsapp_tenant_foundation"
+    "20261003_agente_whatsapp_tenant_foundation:20261004_wave7_finance_contract"
+    "20261004_wave7_finance_contract:20261004_wave7_fiscal_contract"
+    "20261004_wave7_fiscal_contract:20261004_wave7_management_geocode_contract"
+    "20261004_wave7_management_geocode_contract:20261004_wave7_logistics_identity_contract"
+    "20261004_wave7_logistics_identity_contract:20261004_tenant_upload_ownership_contract"
+    "20261004_tenant_upload_ownership_contract:20261014_order_cancellation_tracking"
+    "20261014_tenant_domain_ssl:20261017_site_config"
+    "20261017_site_config:20261017_delivery_schema"
+    "20261017_delivery_schema:20261017_runtime_schema"
+    "20261017_site_config:20261017_runtime_schema"
+    "20261026_product_crust_visibility:20261026_order_driver_delivery_fee"
+    "20261026_order_driver_delivery_fee:20261027_kds_dispatch_unit_completion"
+    "20261027_kds_dispatch_unit_completion:20261027_bi_mobile_analytics_indexes"
+    "20261027_bi_mobile_analytics_indexes:20261027_logistics_settings_tenant_key"
+    "20261113_marketplace_settlements:20261112_tenant_ai_credentials"
+    "20261112_tenant_ai_credentials:20261113_marketplace_settlements"
+    "20261113_marketplace_settlements:20261114_product_landing_pages"
+    "20261114_product_landing_pages:20261113_marketplace_settlements"
+    "20261113_customer_reviews:20261114_product_landing_pages"
+    "20261114_product_landing_pages:20261113_customer_reviews"
+    "20261114_product_landing_pages:20261114_upsell_subcategory_triggers"
+    "20261114_upsell_subcategory_triggers:20261114_product_landing_pages"
+    "20261114_product_landing_pages:20261115_delivery_daily_allowances"
+    "20261115_delivery_daily_allowances:20261114_product_landing_pages"
+    "20261114_upsell_subcategory_triggers:20261115_delivery_daily_allowances"
+    "20261115_delivery_daily_allowances:20261114_upsell_subcategory_triggers"
+    "20261117_combo_landing:20261121_payment_amendment_settlement"
+    "20261121_print_center:20261121_payment_amendment_settlement"
+    "20261121_payment_amendment_settlement:20261121_print_center"
+    "20261121_print_center:20261122_print_agent_protocol"
+    "20261122_print_agent_protocol:20261124_finance_operational_enablement"
+    "20261124_purchase_receipt_foundation:20261124_finance_operational_enablement"
+    "20261124_purchase_receipt_foundation:20261124_finance_projection_queue"
+    "20261124_finance_operational_enablement:20261124_finance_projection_queue"
+  )
+
+  while ((${#frontier[@]})); do
+    current_revision="${frontier[0]}"
+    frontier=("${frontier[@]:1}")
+    [[ "${visited[$current_revision]:-}" == "1" ]] && continue
+    visited["$current_revision"]=1
+    [[ "$current_revision" == "$database_revision" ]] && return 0
+    for compatible_pair in "${compatible_pairs[@]}"; do
+      [[ "${compatible_pair%%:*}" == "$current_revision" ]] || continue
+      next_revision="${compatible_pair#*:}"
+      [[ "$next_revision" == "$database_revision" ]] && return 0
+      [[ "${visited[$next_revision]:-}" == "1" ]] || frontier+=("$next_revision")
+    done
+  done
+  return 1
 }
 
 validate_release_tree() {
