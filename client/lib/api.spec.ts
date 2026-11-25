@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildApiBases, campaignsApi, companyDomainsApi, financeApi, inventoryFoundationApi, inventoryReceiptApi, kdsApi, manualOrdersApi, platformDomainsApi, platformTenantsApi, preparationApi, productRecipesApi, type ManualOrderIn, type PreparationInputAllocation, type PreparationOrder } from "./api";
+import { buildApiBases, campaignsApi, companyDomainsApi, deliveryApi, financeApi, inventoryFoundationApi, inventoryReceiptApi, kdsApi, manualOrdersApi, platformDomainsApi, platformTenantsApi, preparationApi, productRecipesApi, type ManualOrderIn, type PreparationInputAllocation, type PreparationOrder } from "./api";
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -87,6 +87,25 @@ describe("finance fiscal obligations", () => {
       notes: "Entrada fiscal",
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("courier finance API", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    vi.stubGlobal("sessionStorage", memoryStorage());
+    vi.stubGlobal("window", { location: { pathname: "/painel/gestao/financeiro", replace: vi.fn() } });
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  it("uses the canonical delivery earnings payment endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { paid: 2 } }), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deliveryApi.payEarnings(["earning-1", "earning-2"])).resolves.toEqual({ paid: 2 });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/delivery\/earnings\/pay$/);
+    expect(JSON.parse(String(init.body))).toEqual({ earning_ids: ["earning-1", "earning-2"], paid_by: "admin" });
   });
 });
 

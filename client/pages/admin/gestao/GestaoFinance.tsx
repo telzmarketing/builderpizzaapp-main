@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import AdminGestao from "./AdminGestao";
 import {
+  deliveryApi,
   financeApi,
   fiscalApi,
   gestaoApi,
@@ -42,6 +43,7 @@ import {
   type FinanceBankStatementImportInput,
   type FinanceBankReconciliationLine,
   type FinancePaymentOverview,
+  type FinancePaymentReconciliation,
   type FinanceDeliveryOverview,
   type FinanceDeliveryEarning,
   type FinanceCashFlow,
@@ -110,7 +112,7 @@ const financeModuleGroups: Array<{ id: string; title: string; modules: FinanceMo
     { id: "banks", title: "Bancos e Conciliação", description: "Contas bancárias cadastradas, importação de extratos, conciliação e tratamento de divergências.", status: "Base disponível", icon: Landmark },
     { id: "cards", title: "Cartões e Pix", description: "Forma de pagamento, referência e tarifa podem ser informadas na baixa. Agenda de repasses e conciliação por adquirente ainda não estão disponíveis.", status: "Cobertura parcial", icon: CreditCard },
     { id: "delivery", title: "Aplicativos de Delivery", description: "Valores agrupados por canal. Comissões, lotes de repasse e conciliação por aplicativo ainda não estão disponíveis.", status: "Cobertura parcial", icon: ShoppingBag },
-    { id: "couriers", title: "Gestão Financeira de Entregadores", description: "Consulta de ganhos, status e valores por entregador. Pagamentos e adiantamentos continuam no fluxo operacional de repasses.", status: "Cobertura parcial", icon: Route },
+    { id: "couriers", title: "Gestão Financeira de Entregadores", description: "Consulta ganhos por entregador e permite pagar repasses pendentes pelo fluxo oficial existente.", status: "Cobertura parcial", icon: Route },
     { id: "cashflow", title: "Fluxo de Caixa", description: "Fluxo mensal com saldo inicial, realizado, projetado e extrato cronológico dos lançamentos.", status: "Base disponível", icon: LineChart },
     { id: "planning", title: "Planejamento Financeiro", description: "Previsão mensal baseada exclusivamente em lançamentos existentes, vencimentos e saldos cadastrados.", status: "Base disponível", icon: CalendarCheck2 },
     { id: "intelligence", title: "Inteligência Financeira", description: "Recomendações automáticas, detecção de anomalias e análises por IA ainda não estão disponíveis neste painel.", status: "Não disponível", icon: BrainCircuit },
@@ -249,10 +251,13 @@ function FinancePanel() {
   const [selectedStatement, setSelectedStatement] = useState<string | null>(null);
   const [reconciliationLines, setReconciliationLines] = useState<FinanceBankReconciliationLine[]>([]);
   const [paymentOverview, setPaymentOverview] = useState<FinancePaymentOverview | null>(null);
+  const [paymentReconciliation, setPaymentReconciliation] = useState<FinancePaymentReconciliation | null>(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [deliveryOverview, setDeliveryOverview] = useState<FinanceDeliveryOverview | null>(null);
   const [deliveryEarnings, setDeliveryEarnings] = useState<FinanceDeliveryEarning[]>([]);
   const [deliveryLoading, setDeliveryLoading] = useState(false);
+  const [courierPayLoading, setCourierPayLoading] = useState(false);
+  const [courierPayMessage, setCourierPayMessage] = useState("");
   const [deliveryBackfillLoading, setDeliveryBackfillLoading] = useState(false);
   const [cmvBackfillLoading, setCmvBackfillLoading] = useState(false);
   const [salesBackfillLoading, setSalesBackfillLoading] = useState(false);
@@ -531,6 +536,26 @@ function FinancePanel() {
     }
   };
 
+  const payPendingCourierEarnings = async () => {
+    const earningIds = deliveryEarnings.filter((earning) => earning.status === "pending").map((earning) => earning.id);
+    if (earningIds.length === 0) return;
+    setCourierPayLoading(true);
+    setError("");
+    setCourierPayMessage("");
+    try {
+      const result = await deliveryApi.payEarnings(earningIds);
+      setCourierPayMessage(`${result.paid} repasse${result.paid === 1 ? "" : "s"} marcado${result.paid === 1 ? "" : "s"} como pago${result.paid === 1 ? "" : "s"}.`);
+      const [overview, earnings] = await Promise.all([financeApi.deliveryOverview(), financeApi.deliveryEarnings()]);
+      setDeliveryOverview(overview);
+      setDeliveryEarnings(earnings);
+    } catch (err) {
+      setCourierPayMessage("");
+      setError(err instanceof Error ? err.message : "Nao foi possivel pagar os repasses pendentes.");
+    } finally {
+      setCourierPayLoading(false);
+    }
+  };
+
   const backfillCmvSnapshots = async () => {
     setCmvBackfillLoading(true);
     setError("");
@@ -634,8 +659,8 @@ function FinancePanel() {
   useEffect(() => {
     if (activeModule !== "cards") return;
     setPaymentLoading(true);
-    financeApi.paymentOverview()
-      .then(setPaymentOverview)
+    Promise.all([financeApi.paymentOverview(), financeApi.paymentReconciliation()])
+      .then(([overview, reconciliation]) => { setPaymentOverview(overview); setPaymentReconciliation(reconciliation); })
       .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar pagamentos."))
       .finally(() => setPaymentLoading(false));
   }, [activeModule]);
@@ -1346,6 +1371,7 @@ function FinancePanel() {
                     <Metric title="Pagamentos" value={String(paymentOverview.total_count)} subtitle="Registros no checkout" icon={CreditCard} tone="success" />
                     <Metric title="Volume bruto" value={currency(paymentOverview.total_gross_amount)} subtitle="Valor dos pagamentos" icon={ReceiptText} tone="success" />
                     <Metric title="Tarifas vinculadas" value={currency(paymentOverview.total_linked_fee_amount)} subtitle="Tarifas registradas no financeiro" icon={SlidersHorizontal} tone="warn" />
+                    {paymentReconciliation && <Metric title="Sem projeção" value={String(paymentReconciliation.missing_projection_count)} subtitle="Pagamentos confirmados sem lançamento financeiro" icon={AlertTriangle} tone={paymentReconciliation.missing_projection_count ? "warn" : "success"} />}
                   </div>
                   <div className={panelClass}>
                     <CardHeading icon={CreditCard} title="Cartões e Pix" description="Volume por método, gateway, provedor e status. A conciliação de repasse depende de tarifas e liquidações vinculadas." />
@@ -1356,6 +1382,11 @@ function FinancePanel() {
                       </table>}
                     </div>
                   </div>
+                  {paymentReconciliation && <div className={`${panelClass} overflow-x-auto`}>
+                    <CardHeading icon={Landmark} title="Prontidão da conciliação financeira" description="Mostra somente o vínculo do pagamento com o Financeiro. Não representa repasse ou liquidação confirmada pelo adquirente." />
+                    <div className="mt-4 grid gap-3 sm:grid-cols-3"><Metric title="Confirmados" value={String(paymentReconciliation.confirmed_count)} subtitle="Pagamentos aprovados ou pagos" icon={CheckCircle2} tone="success" /><Metric title="Projetados" value={String(paymentReconciliation.projected_count)} subtitle="Com lançamento financeiro" icon={ReceiptText} tone="success" /><Metric title="Líquido vinculado" value={currency(paymentReconciliation.total_linked_net_amount)} subtitle="Conforme lançamentos atuais" icon={Wallet} /></div>
+                    <div className="mt-4"><table className="w-full min-w-[900px] text-left text-sm"><thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Pagamento</th><th className="px-3 py-3">Método/provedor</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Prontidão</th><th className="px-3 py-3 text-right">Bruto</th><th className="px-3 py-3 text-right">Tarifa</th><th className="px-3 py-3 text-right">Líquido</th></tr></thead><tbody>{paymentReconciliation.items.map((item) => <tr key={item.payment_id} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{item.provider_payment_id || item.payment_id}</td><td className="px-3 py-3 text-stone">{item.method} · {item.provider}</td><td className="px-3 py-3 text-stone">{item.status}</td><td className={`px-3 py-3 font-bold ${item.readiness === "projected" ? "text-emerald-300" : item.readiness === "missing_projection" ? "text-amber-300" : "text-stone"}`}>{item.readiness === "projected" ? "Projetado" : item.readiness === "missing_projection" ? "Sem projeção" : "Não confirmado"}</td><td className="px-3 py-3 text-right text-cream">{currency(item.gross_amount)}</td><td className="px-3 py-3 text-right text-amber-200">{currency(item.linked_fee_amount)}</td><td className="px-3 py-3 text-right text-emerald-300">{currency(item.linked_net_amount)}</td></tr>)}</tbody></table></div>
+                  </div>}
                   <div className={`${panelClass} overflow-x-auto`}>
                     <CardHeading icon={ReceiptText} title="Repasses detalhados" description="Valores operacionais originados na logística. O status pago também pode ser projetado como despesa no caixa." />
                     <div className="mt-4 flex justify-end">
@@ -1457,6 +1488,19 @@ function FinancePanel() {
 
           {(activeModule === "delivery" || activeModule === "couriers") && (
             <div className="space-y-5">
+              {activeModule === "couriers" && <div className={panelClass}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-cream">Ações de pagamento</p>
+                    <p className="mt-1 text-sm text-stone">Use o fluxo oficial para liquidar os repasses pendentes.</p>
+                  </div>
+                  <button type="button" onClick={() => void payPendingCourierEarnings()} disabled={courierPayLoading || !deliveryEarnings.some((earning) => earning.status === "pending")} className={mutedButtonClass}>
+                    {courierPayLoading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                    {courierPayLoading ? "Pagando repasses..." : "Pagar pendentes"}
+                  </button>
+                </div>
+                {courierPayMessage && <p className="mt-3 text-sm text-emerald-300" role="status">{courierPayMessage}</p>}
+              </div>}
               {deliveryLoading ? (
                 <div className="flex min-h-40 items-center justify-center rounded-2xl border border-surface-03 bg-surface-02 text-stone"><Loader2 size={22} className="mr-2 animate-spin text-gold" />Carregando repasses...</div>
               ) : deliveryOverview && (
