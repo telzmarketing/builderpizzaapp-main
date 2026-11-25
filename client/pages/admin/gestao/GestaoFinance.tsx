@@ -540,6 +540,7 @@ function FinancePanel() {
   };
 
   const backfillSales = async () => {
+    if (salesBackfillLoading) return;
     setSalesBackfillLoading(true);
     setError("");
     try {
@@ -1013,10 +1014,16 @@ function FinancePanel() {
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-stone">Contas, categorias e lancamentos manuais para acompanhar caixa, competencia e DRE em um unico lugar.</p>
             </div>
           </div>
-          <button type="button" onClick={load} disabled={loading || refreshing} className={mutedButtonClass} aria-label="Atualizar dados financeiros" aria-busy={loading || refreshing}>
-            {loading || refreshing ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <RefreshCw size={16} aria-hidden="true" />}
-            Atualizar dados
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={load} disabled={loading || refreshing} className={mutedButtonClass} aria-label="Atualizar dados financeiros" aria-busy={loading || refreshing}>
+              {loading || refreshing ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <RefreshCw size={16} aria-hidden="true" />}
+              Atualizar dados
+            </button>
+            <button type="button" onClick={() => void backfillSales()} disabled={salesBackfillLoading} className={buttonClass} aria-label="Sincronizar vendas" aria-busy={salesBackfillLoading}>
+              <RefreshCw size={16} className={salesBackfillLoading ? "animate-spin" : ""} aria-hidden="true" />
+              {salesBackfillLoading ? "Sincronizando vendas..." : "Sincronizar vendas"}
+            </button>
+          </div>
         </div>
         <div className="relative mt-5 grid gap-3 border-t border-surface-03/80 pt-4 text-xs text-stone sm:grid-cols-3">
           <div className="flex items-center gap-2"><Wallet size={15} className="text-gold" aria-hidden="true" /><span>Controle de caixa e liquidações</span></div>
