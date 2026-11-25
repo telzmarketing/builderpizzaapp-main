@@ -13,6 +13,8 @@ from backend.models.order import Order, OrderStatus
 from backend.models.product import Product
 from backend.models.payment import Payment, PaymentStatus
 
+LEGACY_TENANT_IDS = frozenset({"default", "tenant-legacy-default"})
+
 TENANT_ID = "default"
 
 
@@ -159,6 +161,8 @@ class CmvService:
                 or_(
                     Payment.tenant_id == self._tenant_id,
                     and_(Payment.tenant_id.is_(None), Order.tenant_id == self._tenant_id),
+                    *([and_(Payment.tenant_id.in_(LEGACY_TENANT_IDS), Order.tenant_id.in_(LEGACY_TENANT_IDS))]
+                      if self._tenant_id in LEGACY_TENANT_IDS else []),
                 ),
                 Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
             )

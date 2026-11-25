@@ -39,6 +39,7 @@ from backend.services.finance_contracts import (
 )
 
 TENANT_ID = "default"
+LEGACY_TENANT_IDS = frozenset({"default", "tenant-legacy-default"})
 
 
 class FinanceNotFound(DomainError):
@@ -99,14 +100,19 @@ class FinanceService:
         orders were already tenant-scoped. The order is the authoritative
         ownership boundary for that compatibility case.
         """
-        return (
-            self._db.query(Payment)
-            .join(Order, Order.id == Payment.order_id)
-            .filter(or_(
-                Payment.tenant_id == self._tenant_id,
-                and_(Payment.tenant_id.is_(None), Order.tenant_id == self._tenant_id),
+        ownership = [
+            Payment.tenant_id == self._tenant_id,
+            and_(Payment.tenant_id.is_(None), Order.tenant_id == self._tenant_id),
+        ]
+        # Some legacy deployments reached the application before the tenant
+        # backfill ran. Read those rows only inside the legacy boundary; never
+        # use this compatibility branch for a real tenant.
+        if self._tenant_id in LEGACY_TENANT_IDS:
+            ownership.append(and_(
+                Payment.tenant_id.in_(LEGACY_TENANT_IDS),
+                Order.tenant_id.in_(LEGACY_TENANT_IDS),
             ))
-        )
+        return self._db.query(Payment).join(Order, Order.id == Payment.order_id).filter(or_(*ownership))
 
     def _confirmed_payments(self) -> list[Payment]:
         """Return confirmed payments using the order as legacy ownership proof."""
