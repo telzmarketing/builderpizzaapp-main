@@ -614,10 +614,10 @@ class InventoryService:
         if not order:
             raise InventoryInvalidReference("Pedido nao encontrado para baixa de estoque.")
         status = getattr(order.status, "value", order.status)
-        allowed_statuses = {"preparing"} if not force else {
-            "preparing", "ready_for_pickup", "on_the_way", "delivered",
-        }
-        if status not in allowed_statuses:
+        if force:
+            if status not in {"preparing", "ready_for_pickup", "on_the_way", "delivered"}:
+                return {"deducted": False, "reason": "not_releasable", "movements": 0}
+        elif status != "preparing":
             return {"deducted": False, "reason": "not_releasable", "movements": 0}
         # Persistent physical units choose the unit writer. Never charge the same
         # commercial order again when its stock gate/tentative writer is active.
