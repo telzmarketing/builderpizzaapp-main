@@ -117,7 +117,7 @@ const financeModuleGroups: Array<{ id: string; title: string; modules: FinanceMo
     { id: "couriers", title: "Gestão Financeira de Entregadores", description: "Consulta ganhos por entregador e permite pagar repasses pendentes pelo fluxo oficial existente.", status: "Cobertura parcial", icon: Route },
     { id: "cashflow", title: "Fluxo de Caixa", description: "Fluxo mensal com saldo inicial, realizado, projetado e extrato cronológico dos lançamentos.", status: "Base disponível", icon: LineChart },
     { id: "planning", title: "Planejamento Financeiro", description: "Previsão mensal baseada exclusivamente em lançamentos existentes, vencimentos e saldos cadastrados.", status: "Base disponível", icon: CalendarCheck2 },
-    { id: "intelligence", title: "Inteligência Financeira", description: "Recomendações automáticas, detecção de anomalias e análises por IA ainda não estão disponíveis neste painel.", status: "Não disponível", icon: BrainCircuit },
+    { id: "intelligence", title: "Inteligência Financeira", description: "Alertas e indicadores operacionais derivados da saúde das projeções e dos dados financeiros atuais.", status: "Base disponível", icon: BrainCircuit },
   ] },
   { id: "administration", title: "Administração", modules: [
     { id: "suppliers", title: "Fornecedores e Contratos", description: "Consulta e cadastro de fornecedores e favorecidos. Contratos, vigências e renovações ainda não estão disponíveis.", status: "Cobertura parcial", icon: Users },
