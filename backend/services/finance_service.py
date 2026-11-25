@@ -268,7 +268,10 @@ class FinanceService:
         missing_delivery = [earning_id for earning_id in delivery_ids if earning_id not in linked_delivery_ids]
         checked_cmv = self._db.query(Order.id).join(Payment, Payment.order_id == Order.id).filter(
             Order.tenant_id == self._tenant_id,
-            Payment.tenant_id == self._tenant_id,
+            or_(
+                Payment.tenant_id == self._tenant_id,
+                and_(Payment.tenant_id.is_(None), Order.tenant_id == self._tenant_id),
+            ),
             Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
         ).distinct().count()
         cmv_orders = (
@@ -277,7 +280,10 @@ class FinanceService:
             .outerjoin(OrderCmvSnapshot, (OrderCmvSnapshot.order_id == Order.id) & (OrderCmvSnapshot.tenant_id == self._tenant_id))
             .filter(
                 Order.tenant_id == self._tenant_id,
-                Payment.tenant_id == self._tenant_id,
+                or_(
+                    Payment.tenant_id == self._tenant_id,
+                    and_(Payment.tenant_id.is_(None), Order.tenant_id == self._tenant_id),
+                ),
                 Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
                 OrderCmvSnapshot.id.is_(None),
             ).distinct().limit(5000).all()
@@ -352,8 +358,8 @@ class FinanceService:
         if limit < 1 or limit > 10000:
             raise FinanceInvalidReference("Limite de backfill financeiro invalido.")
         payments = (
-            self._db.query(Payment)
-            .filter(Payment.tenant_id == self._tenant_id, Payment.status == PaymentStatus.refunded)
+            self._tenant_payments()
+            .filter(Payment.status == PaymentStatus.refunded)
             .order_by(Payment.updated_at.asc(), Payment.id.asc())
             .limit(limit)
             .all()
@@ -1484,7 +1490,13 @@ class FinanceService:
             .join(Order, Order.id == OrderCmvSnapshot.order_id)
             .join(Payment, Payment.order_id == Order.id)
             .filter(OrderCmvSnapshot.tenant_id == self._tenant_id)
-            .filter(Payment.tenant_id == self._tenant_id, Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]))
+            .filter(
+                or_(
+                    Payment.tenant_id == self._tenant_id,
+                    and_(Payment.tenant_id.is_(None), Order.tenant_id == self._tenant_id),
+                ),
+                Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
+            )
             .filter(Order.status.in_(effective_statuses))
             .all()
         )
@@ -2156,7 +2168,10 @@ class FinanceService:
             .outerjoin(OrderCmvSnapshot, (OrderCmvSnapshot.order_id == Order.id) & (OrderCmvSnapshot.tenant_id == self._tenant_id))
             .filter(
                 Order.tenant_id == self._tenant_id,
-                Payment.tenant_id == self._tenant_id,
+                or_(
+                    Payment.tenant_id == self._tenant_id,
+                    and_(Payment.tenant_id.is_(None), Order.tenant_id == self._tenant_id),
+                ),
                 Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
                 OrderCmvSnapshot.id.is_(None),
             )
@@ -2396,11 +2411,7 @@ class FinanceService:
         return account.id
 
     def _payment_and_order(self, *, payment_id: str, order_id: str) -> tuple[Payment | None, Order | None]:
-        payment = (
-            self._db.query(Payment)
-            .filter(Payment.tenant_id == self._tenant_id, Payment.id == payment_id)
-            .first()
-        )
+        payment = self._tenant_payments().filter(Payment.id == payment_id).first()
         order = (
             self._db.query(Order)
             .filter(Order.tenant_id == self._tenant_id, Order.id == order_id)
@@ -2421,9 +2432,7 @@ class FinanceService:
             if not order:
                 raise FinanceInvalidReference("Pedido nao pertence a empresa atual.")
         if data.get("payment_id"):
-            payment = self._db.query(Payment).filter(
-                Payment.tenant_id == self._tenant_id, Payment.id == data["payment_id"]
-            ).first()
+            payment = self._tenant_payments().filter(Payment.id == data["payment_id"]).first()
             if not payment:
                 raise FinanceInvalidReference("Pagamento nao pertence a empresa atual.")
             if data.get("order_id") and payment.order_id != data["order_id"]:

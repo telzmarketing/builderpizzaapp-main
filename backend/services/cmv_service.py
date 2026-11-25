@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.tenant_context import TenantContext, TenantContextMissing
@@ -155,7 +155,13 @@ class CmvService:
             .join(Order, Order.id == OrderCmvSnapshot.order_id)
             .join(Payment, Payment.order_id == Order.id)
             .filter(OrderCmvSnapshot.tenant_id == self._tenant_id)
-            .filter(Payment.tenant_id == self._tenant_id, Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]))
+            .filter(
+                or_(
+                    Payment.tenant_id == self._tenant_id,
+                    and_(Payment.tenant_id.is_(None), Order.tenant_id == self._tenant_id),
+                ),
+                Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
+            )
             .filter(Order.status.in_(effective_statuses))
             .all()
         )
