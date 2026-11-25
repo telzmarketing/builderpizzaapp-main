@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildApiBases, campaignsApi, companyDomainsApi, inventoryFoundationApi, inventoryReceiptApi, kdsApi, manualOrdersApi, platformDomainsApi, platformTenantsApi, preparationApi, productRecipesApi, type ManualOrderIn, type PreparationInputAllocation, type PreparationOrder } from "./api";
+import { buildApiBases, campaignsApi, companyDomainsApi, financeApi, inventoryFoundationApi, inventoryReceiptApi, kdsApi, manualOrdersApi, platformDomainsApi, platformTenantsApi, preparationApi, productRecipesApi, type ManualOrderIn, type PreparationInputAllocation, type PreparationOrder } from "./api";
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -61,6 +61,32 @@ describe("buildApiBases", () => {
 
   it("ignores a localhost API base in production", () => {
     expect(buildApiBases("http://localhost:8000", true, false)).toEqual(["/api", ""]);
+  });
+});
+
+describe("finance fiscal obligations", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    vi.stubGlobal("sessionStorage", memoryStorage());
+    vi.stubGlobal("window", { location: { pathname: "/painel/gestao/financeiro", replace: vi.fn() } });
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  it("converts a fiscal document with installments, notes and idempotency", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "obligation-1" }), { status: 201, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await financeApi.createObligationFromFiscalDocument("document/1", {
+      installments: [{ installment_number: 1, amount: "400.00", due_date: "2026-12-10" }],
+      notes: "Entrada fiscal",
+    }, "fiscal-obligation-key");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/gestao\/finance\/fiscal-documents\/document%2F1\/obligation$/);
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBe("fiscal-obligation-key");
+    expect(JSON.parse(String(init.body))).toEqual({
+      installments: [{ installment_number: 1, amount: "400.00", due_date: "2026-12-10" }],
+      notes: "Entrada fiscal",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

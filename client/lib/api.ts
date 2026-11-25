@@ -3206,6 +3206,17 @@ export interface FinanceObligationInstallment {
   created_at?: string | null;
 }
 
+export interface FinanceObligationInstallmentInput {
+  installment_number: number;
+  amount: number | string;
+  due_date?: string | null;
+}
+
+export interface FinanceObligationFromFiscalInput {
+  installments: FinanceObligationInstallmentInput[];
+  notes?: string | null;
+}
+
 export interface FinanceObligation {
   id: string;
   tenant_id: string;
@@ -6968,6 +6979,8 @@ export const financeApi = {
   overview: () => get<FinanceOverview>("/gestao/finance/overview"),
   paymentOverview: () => get<FinancePaymentOverview>("/gestao/finance/payments/overview"),
   listObligations: () => get<FinanceObligation[]>("/gestao/finance/obligations"),
+  createObligationFromFiscalDocument: (documentId: string, data: FinanceObligationFromFiscalInput, idempotencyKey: string) =>
+    request<FinanceObligation>("POST", `/gestao/finance/fiscal-documents/${encodeURIComponent(documentId)}/obligation`, data, { "Idempotency-Key": idempotencyKey }),
   listContracts: () => get<FinanceContract[]>("/gestao/finance/contracts"),
   createContract: (data: FinanceContractInput) => post<FinanceContract>("/gestao/finance/contracts", data),
   updateContract: (id: string, data: FinanceContractInput) => put<FinanceContract>(`/gestao/finance/contracts/${encodeURIComponent(id)}`, data),

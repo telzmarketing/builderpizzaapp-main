@@ -57,6 +57,7 @@ import {
   type FinanceEntryType,
   type FinanceOverview,
   type FinanceObligation,
+  type FinanceObligationFromFiscalInput,
   type FinanceContract,
   type FinanceContractInput,
   type FinanceSettlementInput,
@@ -264,6 +265,13 @@ function FinancePanel() {
   const [bi, setBi] = useState<FinanceBi | null>(null);
   const [fiscalOverview, setFiscalOverview] = useState<FiscalOverview | null>(null);
   const [obligations, setObligations] = useState<FinanceObligation[]>([]);
+  const [fiscalObligationDocumentId, setFiscalObligationDocumentId] = useState<string | null>(null);
+  const [fiscalObligationDraft, setFiscalObligationDraft] = useState<FinanceObligationFromFiscalInput>({
+    installments: [{ installment_number: 1, amount: 0, due_date: null }],
+    notes: "",
+  });
+  const [fiscalObligationSaving, setFiscalObligationSaving] = useState(false);
+  const [fiscalObligationMessage, setFiscalObligationMessage] = useState("");
   const [contracts, setContracts] = useState<FinanceContract[]>([]);
   const [contractSaving, setContractSaving] = useState(false);
   const [contractPayableSaving, setContractPayableSaving] = useState<string | null>(null);
@@ -355,6 +363,48 @@ function FinancePanel() {
       setError(err instanceof Error ? err.message : "Nao foi possivel gerar as contas a pagar.");
     } finally {
       setContractPayableSaving(null);
+    }
+  };
+
+  const openFiscalObligationForm = (document: FiscalOverview["documents"][number]) => {
+    setFiscalObligationDocumentId(document.id);
+    setFiscalObligationDraft({
+      installments: [{ installment_number: 1, amount: Number(document.total_document || 0), due_date: null }],
+      notes: "",
+    });
+    setFiscalObligationMessage("");
+    setError("");
+  };
+
+  const createFiscalObligation = async () => {
+    if (!fiscalObligationDocumentId || !fiscalOverview) return;
+    const document = fiscalOverview.documents.find((item) => item.id === fiscalObligationDocumentId);
+    if (!document) return;
+    const installments = fiscalObligationDraft.installments.map((item, index) => ({
+      installment_number: index + 1,
+      amount: Number(item.amount || 0),
+      due_date: item.due_date || null,
+    }));
+    const total = installments.reduce((sum, item) => sum + item.amount, 0);
+    if (!installments.length || installments.some((item) => item.amount <= 0) || Math.abs(total - Number(document.total_document)) > 0.009) {
+      setFiscalObligationMessage("A soma das parcelas deve corresponder ao total do documento, com valores positivos.");
+      return;
+    }
+    setFiscalObligationSaving(true);
+    setFiscalObligationMessage("");
+    setError("");
+    try {
+      const key = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${document.id}-${Date.now()}`;
+      await financeApi.createObligationFromFiscalDocument(document.id, { ...fiscalObligationDraft, installments }, key);
+      const [overview, items] = await Promise.all([fiscalApi.overview(), financeApi.listObligations()]);
+      setFiscalOverview(overview);
+      setObligations(items);
+      setFiscalObligationDocumentId(null);
+      setFiscalObligationMessage("Obrigação fiscal convertida em conta a pagar.");
+    } catch (err) {
+      setFiscalObligationMessage(err instanceof Error ? err.message : "Nao foi possivel converter o documento em conta a pagar.");
+    } finally {
+      setFiscalObligationSaving(false);
     }
   };
 
@@ -966,6 +1016,36 @@ function FinancePanel() {
               </div>
               <div className="mt-5 overflow-x-auto">{contracts.length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhum contrato cadastrado.</p> : <table className="w-full min-w-[980px] text-left text-sm"><thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Contrato</th><th className="px-3 py-3">Fornecedor</th><th className="px-3 py-3">VigÃªncia</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Valor</th><th className="px-3 py-3">Acao</th></tr></thead><tbody>{contracts.map((item) => <tr key={item.id} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{item.title}<span className="ml-2 text-xs font-normal text-stone">{item.contract_number || ""}</span></td><td className="px-3 py-3 text-stone">{item.counterparty_name}</td><td className="px-3 py-3 text-stone">{item.start_date} a {item.end_date || "indeterminado"}</td><td className="px-3 py-3 text-stone">{item.status}</td><td className="px-3 py-3 text-right font-black text-cream">{currency(Number(item.amount))}</td><td className="px-3 py-3"><button type="button" className={mutedButtonClass} onClick={() => void generateContractPayables(item)} disabled={item.status !== "active" || contractPayableSaving === item.id}>{contractPayableSaving === item.id ? <Loader2 size={14} className="animate-spin" /> : <ReceiptText size={14} />} Gerar contas a pagar</button></td></tr>)}</tbody></table>}</div>
             </div>
+            </div>
+          )}
+
+          {activeModule === "fiscal" && fiscalOverview && (
+            <div className={`${panelClass} mb-5`}>
+              <CardHeading icon={ReceiptText} title="Converter documento fiscal em conta a pagar" description="Informe parcelas que totalizem o documento. O backend preserva idempotência e não inventa vencimentos." />
+              {fiscalObligationMessage && <p className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200" role="status">{fiscalObligationMessage}</p>}
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full min-w-[820px] text-left text-sm">
+                  <thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Documento</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Total</th><th className="px-3 py-3 text-right">Ação</th></tr></thead>
+                  <tbody>{fiscalOverview.documents.filter((document) => document.status !== "cancelled").map((document) => {
+                    const linked = obligations.some((item) => item.fiscal_document_id === document.id);
+                    return <tr key={document.id} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{document.document_model} {document.number ? `#${document.number}` : document.id}</td><td className="px-3 py-3 text-stone">{document.status}</td><td className="px-3 py-3 text-right font-black text-cream">{currency(document.total_document)}</td><td className="px-3 py-3 text-right"><button type="button" className={mutedButtonClass} disabled={linked || fiscalObligationSaving} onClick={() => openFiscalObligationForm(document)}>{linked ? "Já convertido" : "Informar parcelas"}</button></td></tr>;
+                  })}</tbody>
+                </table>
+              </div>
+              {fiscalObligationDocumentId && (() => {
+                const document = fiscalOverview.documents.find((item) => item.id === fiscalObligationDocumentId);
+                if (!document) return null;
+                return <div className="mt-5 rounded-xl border border-gold/30 bg-surface-01 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black text-cream">Parcelas do documento</p><p className="text-xs text-stone">Total: {currency(document.total_document)}</p></div><button type="button" className={mutedButtonClass} onClick={() => setFiscalObligationDocumentId(null)} disabled={fiscalObligationSaving}>Cancelar</button></div>
+                  <div className="mt-4 space-y-3">{fiscalObligationDraft.installments.map((item, index) => <div key={`fiscal-installment-${index}`} className="grid gap-3 md:grid-cols-[8rem_1fr_1fr_auto]">
+                    <label className="text-xs font-bold text-stone">Parcela<input className={inputClass} type="number" min="1" value={index + 1} readOnly /></label>
+                    <label className="text-xs font-bold text-stone">Valor<input className={inputClass} type="number" min="0.01" step="0.01" value={item.amount} onChange={(event) => setFiscalObligationDraft((draft) => ({ ...draft, installments: draft.installments.map((current, currentIndex) => currentIndex === index ? { ...current, amount: Number(event.target.value || 0) } : current) }))} /></label>
+                    <label className="text-xs font-bold text-stone">Vencimento<input className={inputClass} type="date" value={item.due_date || ""} onChange={(event) => setFiscalObligationDraft((draft) => ({ ...draft, installments: draft.installments.map((current, currentIndex) => currentIndex === index ? { ...current, due_date: event.target.value || null } : current) }))} /></label>
+                    <button type="button" className={`${mutedButtonClass} self-end`} onClick={() => setFiscalObligationDraft((draft) => ({ ...draft, installments: draft.installments.filter((_, currentIndex) => currentIndex !== index) }))} disabled={fiscalObligationDraft.installments.length <= 1 || fiscalObligationSaving}>Remover</button>
+                  </div>)}</div>
+                  <div className="mt-4 flex flex-col gap-3"><button type="button" className={mutedButtonClass} onClick={() => setFiscalObligationDraft((draft) => ({ ...draft, installments: [...draft.installments, { installment_number: draft.installments.length + 1, amount: 0, due_date: null }] }))} disabled={fiscalObligationSaving}>Adicionar parcela</button><label className="text-xs font-bold text-stone">Observação<textarea className={`${inputClass} min-h-20`} maxLength={2000} value={fiscalObligationDraft.notes || ""} onChange={(event) => setFiscalObligationDraft((draft) => ({ ...draft, notes: event.target.value }))} /></label><button type="button" className={buttonClass} onClick={() => void createFiscalObligation()} disabled={fiscalObligationSaving}>{fiscalObligationSaving ? <Loader2 size={15} className="animate-spin" /> : <ReceiptText size={15} />} Converter em conta a pagar</button></div>
+                </div>;
+              })()}
             </div>
           )}
 
