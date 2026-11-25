@@ -62,7 +62,7 @@ def require_finance_authorization(request: Request, db: Session = Depends(get_db
     permission = "view"
     if method == "POST":
         permission = "manage" if path.endswith(("/sales/backfill", "/payments/backfill-reversals", "/purchases/backfill-payables", "/delivery/backfill-expenses", "/cmv/backfill-snapshots")) else "create"
-        if "/match" in path or "/unmatch" in path or "/ignore" in path or "/reconcile" in path or path.endswith(("/settle", "/close", "/reopen")):
+        if "/match" in path or "/unmatch" in path or "/ignore" in path or "/reconcile" in path or path.endswith(("/activate", "/settle", "/close", "/reopen")):
             permission = "edit"
         if path.endswith("/sales/backfill"):
             permission = "manage"
@@ -246,6 +246,22 @@ def list_budgets(db: Session = Depends(get_db), _admin: AdminUser = Depends(get_
 def create_budget(body: FinanceBudgetIn, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
     try:
         return service(db, tenant_context).create_budget(body, admin.id)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/budgets/{budget_id}/activate", response_model=FinanceBudgetOut)
+def activate_budget(budget_id: str, db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).activate_budget(budget_id)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/budgets/{budget_id}/close", response_model=FinanceBudgetOut)
+def close_budget(budget_id: str, db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context).close_budget(budget_id)
     except DomainError as exc:
         return err(exc)
 

@@ -109,6 +109,27 @@ describe("finance payment reconciliation", () => {
   });
 });
 
+describe("finance budget lifecycle", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    vi.stubGlobal("sessionStorage", memoryStorage());
+    vi.stubGlobal("window", { location: { pathname: "/painel/gestao/financeiro", replace: vi.fn() } });
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  it("uses the dedicated activate and close endpoints", async () => {
+    const response = () => new Response(JSON.stringify({ id: "budget-1", status: "active" }), { headers: { "Content-Type": "application/json" } });
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(response()));
+    vi.stubGlobal("fetch", fetchMock);
+    await financeApi.activateBudget("budget/1");
+    await financeApi.closeBudget("budget/1");
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/gestao\/finance\/budgets\/budget%2F1\/activate$/);
+    expect(fetchMock.mock.calls[1][0]).toMatch(/\/api\/gestao\/finance\/budgets\/budget%2F1\/close$/);
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(fetchMock.mock.calls[1][1].method).toBe("POST");
+  });
+});
+
 describe("finance fiscal obligations", () => {
   beforeEach(() => {
     vi.stubGlobal("localStorage", memoryStorage());

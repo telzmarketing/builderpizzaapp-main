@@ -7082,6 +7082,8 @@ export const financeApi = {
   },
   listBudgets: () => get<FinanceBudget[]>("/gestao/finance/budgets"),
   createBudget: (data: FinanceBudgetInput) => post<FinanceBudget>("/gestao/finance/budgets", data),
+  activateBudget: (id: string) => post<FinanceBudget>(`/gestao/finance/budgets/${encodeURIComponent(id)}/activate`, {}),
+  closeBudget: (id: string) => post<FinanceBudget>(`/gestao/finance/budgets/${encodeURIComponent(id)}/close`, {}),
   listBankStatements: () => get<FinanceBankStatement[]>("/gestao/finance/bank-statements"),
   listBankStatementLines: (id: string) => get<FinanceBankStatementLine[]>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/lines`),
   listBankReconciliation: (id: string) => get<FinanceBankReconciliationLine[]>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/reconciliation`),

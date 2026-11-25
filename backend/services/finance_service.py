@@ -1096,6 +1096,40 @@ class FinanceService:
         self._db.refresh(row)
         return self._serialize_budget(row, [])
 
+    def transition_budget(self, budget_id: str, target_status: str) -> dict:
+        """Move a tenant budget forward through draft -> active -> closed."""
+        if target_status not in {"active", "closed"}:
+            raise FinanceInvalidReference("Transicao de orcamento invalida.")
+        row = (
+            self._db.query(FinanceBudget)
+            .filter(FinanceBudget.id == budget_id, FinanceBudget.tenant_id == self._tenant_id)
+            .options(joinedload(FinanceBudget.lines).joinedload(FinanceBudgetLine.category))
+            .with_for_update()
+            .one_or_none()
+        )
+        if row is None:
+            raise FinanceNotFound("Orcamento")
+        allowed = {"draft": "active", "active": "closed", "closed": None}
+        next_status = allowed[row.status]
+        if row.status == target_status:
+            return self._serialize_budget(row, [])
+        if next_status != target_status:
+            raise FinanceInvalidReference(f"O orcamento nao pode mudar de {row.status} para {target_status}.")
+        row.status = target_status
+        try:
+            self._db.commit()
+        except Exception:
+            self._db.rollback()
+            raise
+        self._db.refresh(row)
+        return self._serialize_budget(row, [])
+
+    def activate_budget(self, budget_id: str) -> dict:
+        return self.transition_budget(budget_id, "active")
+
+    def close_budget(self, budget_id: str) -> dict:
+        return self.transition_budget(budget_id, "closed")
+
     def _serialize_budget(self, row: FinanceBudget, transactions: list[FinanceTransaction]) -> dict:
         def actual_for(line: FinanceBudgetLine) -> float:
             total = 0.0

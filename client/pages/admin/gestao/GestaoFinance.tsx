@@ -837,6 +837,20 @@ function FinancePanel() {
     }
   };
 
+  const transitionBudget = async (budget: FinanceBudget, action: "activate" | "close") => {
+    setBudgetSaving(true);
+    setError("");
+    try {
+      if (action === "activate") await financeApi.activateBudget(budget.id);
+      else await financeApi.closeBudget(budget.id);
+      setBudgets(await financeApi.listBudgets());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel atualizar o ciclo de vida do orcamento.");
+    } finally {
+      setBudgetSaving(false);
+    }
+  };
+
   const createCounterparty = async () => {
     if (!counterpartyDraft.name.trim()) return;
     setSaving("counterparty");
@@ -1592,6 +1606,7 @@ function FinancePanel() {
                 {budgets.length === 0 ? <div className={panelClass}><p className="text-sm text-stone">Nenhum orçamento cadastrado.</p></div> : budgets.map((budget) => (
                   <div key={budget.id} className={panelClass}>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-lg font-black text-cream">{budget.name}</p><p className="mt-1 text-sm text-stone">{budget.period_start} a {budget.period_end} · {budget.status}</p></div><p className={`text-xl font-black ${budget.variance_result <= 0 ? "text-emerald-300" : "text-amber-300"}`}>{currency(budget.variance_result)} <span className="text-xs font-bold text-stone">variação</span></p></div>
+                    <div className="mt-3 flex justify-end gap-2">{budget.status === "draft" && <button type="button" className={mutedButtonClass} disabled={budgetSaving} onClick={() => void transitionBudget(budget, "activate")}>Ativar orçamento</button>}{budget.status === "active" && <button type="button" className={mutedButtonClass} disabled={budgetSaving} onClick={() => void transitionBudget(budget, "close")}>Fechar orçamento</button>}</div>
                     <div className="mt-4 grid gap-3 sm:grid-cols-4"><Metric title="Planejado receitas" value={currency(budget.planned_income)} icon={ArrowUpCircle} tone="success" /><Metric title="Realizado receitas" value={currency(budget.actual_income)} icon={CheckCircle2} tone="success" /><Metric title="Planejado despesas" value={currency(budget.planned_expense)} icon={ArrowDownCircle} tone="warn" /><Metric title="Realizado despesas" value={currency(budget.actual_expense)} icon={TrendingUp} tone="warn" /></div>
                     <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Categoria</th><th className="px-3 py-3">Centro</th><th className="px-3 py-3">Tipo</th><th className="px-3 py-3 text-right">Planejado</th><th className="px-3 py-3 text-right">Realizado</th><th className="px-3 py-3 text-right">Variação</th></tr></thead><tbody>{budget.lines.map((line) => <tr key={line.id} className="border-b border-surface-03/70"><td className="px-3 py-3 text-cream">{line.category_name || "Todas"}</td><td className="px-3 py-3 text-stone">{line.cost_center || "Todos"}</td><td className="px-3 py-3 text-stone">{line.entry_type}</td><td className="px-3 py-3 text-right text-cream">{currency(line.planned_amount)}</td><td className="px-3 py-3 text-right text-cream">{currency(line.actual_amount)}</td><td className={`px-3 py-3 text-right font-bold ${line.variance_amount <= 0 ? "text-emerald-300" : "text-amber-300"}`}>{currency(line.variance_amount)}</td></tr>)}</tbody></table></div>
                   </div>
