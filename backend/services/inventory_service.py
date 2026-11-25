@@ -618,7 +618,7 @@ class InventoryService:
             if status not in {"preparing", "ready_for_pickup", "on_the_way", "delivered"}:
                 return {"deducted": False, "reason": "not_releasable", "movements": 0}
         elif status != "preparing":
-            return {"deducted": False, "reason": "not_releasable", "movements": 0}
+            return {"deducted": False, "reason": "not_preparing", "movements": 0}
         # Persistent physical units choose the unit writer. Never charge the same
         # commercial order again when its stock gate/tentative writer is active.
         from backend.models.kds_production import ProductionUnit
