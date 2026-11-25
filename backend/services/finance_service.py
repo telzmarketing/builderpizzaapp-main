@@ -107,11 +107,52 @@ class FinanceService:
             ))
         )
 
-    def sales_overview(self) -> dict:
-        """Read confirmed sales directly from the canonical payment records."""
-        payments = self._tenant_payments().filter(
+    def _confirmed_payments(self) -> list[Payment]:
+        """Return confirmed payments using the order as legacy ownership proof."""
+        return self._tenant_payments().filter(
             Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
         ).all()
+
+    def _projected_payment_ids(self, payment_ids: list[str]) -> set[str]:
+        """Return payment ids already represented by a live finance title."""
+        if not payment_ids:
+            return set()
+        rows = self._db.query(
+            FinanceTransaction.payment_id,
+            FinanceTransaction.origin_id,
+        ).filter(
+            FinanceTransaction.tenant_id == self._tenant_id,
+            FinanceTransaction.status != "cancelled",
+            or_(
+                FinanceTransaction.payment_id.in_(payment_ids),
+                and_(
+                    FinanceTransaction.origin_type == "payment_receivable",
+                    FinanceTransaction.origin_id.in_(payment_ids),
+                ),
+            ),
+        ).all()
+        return {
+            value
+            for row in rows
+            for value in (row[0], row[1])
+            if value in payment_ids
+        }
+
+    def _unprojected_confirmed_payments(self) -> list[Payment]:
+        """Find confirmed sales not yet materialized as finance transactions.
+
+        This is a read-only compatibility bridge for installations where the
+        payment event was lost or the finance projection was disabled. It
+        keeps revenue visible while ``projection_health`` and the backfill
+        endpoint remain responsible for creating the durable ledger title.
+        """
+        payments = self._confirmed_payments()
+        projected = self._projected_payment_ids([payment.id for payment in payments])
+        return [payment for payment in payments if payment.id not in projected]
+
+    def sales_overview(self) -> dict:
+        """Read confirmed sales directly from the canonical payment records."""
+        payments = self._confirmed_payments()
         by_day: dict[date, dict[str, float | int]] = {}
         for payment in payments:
             settled_at = payment.paid_at or payment.created_at
@@ -132,11 +173,9 @@ class FinanceService:
         """Detect payment/purchase facts that lack their finance projection."""
         bounded_limit = max(1, min(int(limit), 500))
         payments = (
-            self._db.query(Payment.id)
-            .filter(
-                Payment.tenant_id == self._tenant_id,
-                Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
-            )
+            self._tenant_payments()
+            .with_entities(Payment.id)
+            .filter(Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]))
             .order_by(Payment.created_at.asc(), Payment.id.asc())
             .limit(5000)
             .all()
@@ -144,14 +183,7 @@ class FinanceService:
         payment_ids = [payment_id for payment_id, in payments]
         linked_payment_ids = set()
         if payment_ids:
-            linked_payment_ids = {
-                payment_id
-                for payment_id, in self._db.query(FinanceTransaction.payment_id).filter(
-                    FinanceTransaction.tenant_id == self._tenant_id,
-                    FinanceTransaction.payment_id.in_(payment_ids),
-                ).all()
-                if payment_id
-            }
+            linked_payment_ids = self._projected_payment_ids(payment_ids)
         missing_sales = [payment_id for payment_id in payment_ids if payment_id not in linked_payment_ids]
 
         purchases = (
@@ -242,8 +274,7 @@ class FinanceService:
             ).distinct().limit(5000).all()
         )
         missing_cmv_orders = [order_id for order_id, in cmv_orders]
-        refunded_payments = self._db.query(Payment.id).filter(
-            Payment.tenant_id == self._tenant_id,
+        refunded_payments = self._tenant_payments().with_entities(Payment.id).filter(
             Payment.status == PaymentStatus.refunded,
         ).limit(5000).all()
         refunded_ids = [payment_id for payment_id, in refunded_payments]
@@ -343,20 +374,14 @@ class FinanceService:
         return result
 
     def payment_overview(self) -> dict:
-        rows = (
-            self._db.query(
-                Payment.method,
-                Payment.gateway,
-                Payment.provider,
-                Payment.status,
-                func.count(Payment.id),
-                func.coalesce(func.sum(Payment.amount), 0),
-            )
-            .filter(Payment.tenant_id == self._tenant_id)
-            .group_by(Payment.method, Payment.gateway, Payment.provider, Payment.status)
-            .order_by(Payment.method, Payment.gateway, Payment.provider, Payment.status)
-            .all()
-        )
+        grouped: dict[tuple[str, str, str, str], dict[str, float | int]] = {}
+        for payment in self._tenant_payments().all():
+            method = getattr(payment.method, "value", payment.method) or "unknown"
+            status = getattr(payment.status, "value", payment.status) or "unknown"
+            key = (str(method), payment.gateway or "unknown", payment.provider or "unknown", str(status))
+            item = grouped.setdefault(key, {"count": 0, "gross_amount": 0.0})
+            item["count"] = int(item["count"]) + 1
+            item["gross_amount"] = round(float(item["gross_amount"]) + float(payment.amount or 0), 2)
         fee_rows = (
             self._db.query(
                 FinanceTransaction.payment_id,
@@ -371,26 +396,21 @@ class FinanceService:
         )
         linked_fees = {payment_id: round(float(amount or 0), 2) for payment_id, amount in fee_rows}
         summaries = []
-        for method, gateway, provider, status, count, gross_amount in rows:
-            method_value = getattr(method, "value", method)
-            status_value = getattr(status, "value", status)
+        for (method_value, gateway, provider, status_value), item in sorted(grouped.items()):
             payment_ids = [
-                payment_id for payment_id, in self._db.query(Payment.id)
-                .filter(
-                    Payment.tenant_id == self._tenant_id,
-                    Payment.method == method,
-                    Payment.gateway == gateway,
-                    Payment.provider == provider,
-                    Payment.status == status,
-                ).all()
+                payment.id for payment in self._tenant_payments().all()
+                if str(getattr(payment.method, "value", payment.method) or "unknown") == method_value
+                and (payment.gateway or "unknown") == gateway
+                and (payment.provider or "unknown") == provider
+                and str(getattr(payment.status, "value", payment.status) or "unknown") == status_value
             ]
             summaries.append({
-                "method": str(method_value),
-                "gateway": gateway or "unknown",
-                "provider": provider or "unknown",
-                "status": str(status_value),
-                "count": int(count or 0),
-                "gross_amount": round(float(gross_amount or 0), 2),
+                "method": method_value,
+                "gateway": gateway,
+                "provider": provider,
+                "status": status_value,
+                "count": int(item["count"]),
+                "gross_amount": round(float(item["gross_amount"]), 2),
                 "linked_fee_amount": round(sum(linked_fees.get(payment_id, 0) for payment_id in payment_ids), 2),
             })
         return {
@@ -515,6 +535,12 @@ class FinanceService:
         total_customer_discounts = 0.0
         total_app_deductions = 0.0
         total_expense = 0.0
+        projected_payment_ids = {
+            value
+            for row in rows
+            for value in (row.payment_id, row.origin_id if row.origin_type == "payment_receivable" else None)
+            if value
+        }
         for row in rows:
             projection = self._bi_order_projection(row)
             amount = projection["net_amount"] if row.entry_type == "income" else round(float(row.amount or 0), 2)
@@ -533,9 +559,8 @@ class FinanceService:
         # disabled. This is an operational sales view sourced from confirmed
         # payments, not a second financial transaction stream.
         sales_by_day: dict[date, dict[str, float | int]] = {}
-        payments = self._tenant_payments().filter(
-            Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
-        ).all()
+        payments = self._confirmed_payments()
+        fallback_sales_count = 0
         for payment in payments:
             settled_at = payment.paid_at or payment.created_at
             if settled_at is None:
@@ -543,6 +568,23 @@ class FinanceService:
             day = settled_at.date()
             if day < start or day > end:
                 continue
+            if payment.id not in projected_payment_ids:
+                # A confirmed payment is an operational sale even when its
+                # asynchronous receivable projection was missed or disabled.
+                # Include it once in BI totals and dimensions; the backfill
+                # endpoint remains responsible for creating the ledger title.
+                amount = round(float(payment.amount or 0.0), 2)
+                total_income += amount
+                total_gross_income += amount
+                fallback_sales_count += 1
+                self._add_dimension(origin_lines, "payment", "income", amount)
+                order = payment.order
+                self._add_dimension(
+                    channel_lines,
+                    order.sales_channel if order and order.sales_channel else "Sem canal",
+                    "income",
+                    amount,
+                )
             item = sales_by_day.setdefault(day, {"gross_amount": 0.0, "order_count": 0})
             item["gross_amount"] = round(float(item["gross_amount"]) + float(payment.amount or 0.0), 2)
             item["order_count"] = int(item["order_count"]) + 1
@@ -558,7 +600,7 @@ class FinanceService:
             "result": round(total_income - total_expense, 2),
             "gross_result": round(total_gross_income - total_expense, 2),
             "net_result": round(total_income - total_expense, 2),
-            "transaction_count": len(rows),
+            "transaction_count": len(rows) + fallback_sales_count,
             "by_origin": [
                 {"origin_type": item["label"], "entry_type": item["entry_type"], "amount": item["amount"], "count": item["count"]}
                 for item in self._dimension_rows(origin_lines)
