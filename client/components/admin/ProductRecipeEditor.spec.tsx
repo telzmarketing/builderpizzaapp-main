@@ -43,7 +43,7 @@ describe("recipe editor feedback", () => {
     const html = renderToStaticMarkup(<RecipeCompositionResult result={composition} />);
     expect(html).toContain("Composicao incompleta");
     expect(html).toContain("product:other");
-    expect(html).toContain("0.100001");
+    expect(html).toContain("0,100001");
     expect(html).toContain("Componentes comuns");
     expect(html).toContain("Ingredientes removidos");
     expect(html).toContain("Separar");
