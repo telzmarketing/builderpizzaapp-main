@@ -12,7 +12,9 @@
     "whatsapp-gateway:runtime": "node server/whatsapp-gateway-runtime.mjs",
     "whatsapp-gateway:health": "node scripts/whatsapp-gateway-health.mjs",
     "whatsapp-gateway:e2e": "node scripts/whatsapp-gateway-e2e.mjs",
-    "test": "vitest --run",
+    "test": "vitest --run --exclude tests/**/*.test.mjs",
+    "test:vitest": "vitest --run --exclude tests/**/*.test.mjs",
+    "test:node": "node --test tests/whatsapp-gateway-e2e-harness.test.mjs tests/whatsapp-gateway-runtime.test.mjs",
     "format.fix": "prettier --write .",
     "typecheck": "tsc"
   },

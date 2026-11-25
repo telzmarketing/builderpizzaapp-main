@@ -68,6 +68,7 @@ def _payment(**overrides):
         "method": PaymentMethod.cash,
         "status": PaymentStatus.pending,
         "amount": 42.5,
+        "gateway": "mock",
         "provider": "cash",
         "provider_payment_id": None,
         "provider_customer_id": None,

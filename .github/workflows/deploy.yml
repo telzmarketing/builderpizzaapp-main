@@ -154,6 +154,7 @@ jobs:
         run: |
           pnpm run typecheck
           pnpm test
+          pnpm run test:node
           pnpm run build
 
   inspect_vps:
