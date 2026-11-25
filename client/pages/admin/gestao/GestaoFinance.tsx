@@ -564,6 +564,20 @@ function FinancePanel() {
   }, []);
 
   useEffect(() => {
+    const refreshWhenActive = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    const timer = window.setInterval(refreshWhenActive, 30000);
+    window.addEventListener("focus", refreshWhenActive);
+    document.addEventListener("visibilitychange", refreshWhenActive);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshWhenActive);
+      document.removeEventListener("visibilitychange", refreshWhenActive);
+    };
+  }, []);
+
+  useEffect(() => {
     if (activeModule === "banks") loadBankStatements();
   }, [activeModule]);
 
