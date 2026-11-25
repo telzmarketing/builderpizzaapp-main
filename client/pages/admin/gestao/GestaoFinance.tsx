@@ -278,7 +278,11 @@ function FinancePanel() {
   // Ledger pages render only financial entries. Account/counterparty
   // registries belong to Cadastros and must never be repeated inside
   // payables, receivables, cash or reconciliation views.
-  const isTransactionArea = ["payables", "receivables", "transactions"].includes(activeModule);
+  const isTransactionArea = ["payables", "receivables", "cash", "transactions"].includes(activeModule);
+  const hasOperationalPanel = new Set<FinanceModuleId>([
+    "overview", "payables", "receivables", "cash", "banks", "cards", "delivery", "couriers",
+    "cashflow", "dre", "cmv", "budget", "planning", "bi", "registries", "transactions",
+  ]);
 
   const selectModule = (id: FinanceModuleId) => {
     setActiveModule(id);
@@ -819,7 +823,7 @@ function FinancePanel() {
             </div>
           </div>
 
-          {activeModule !== "overview" && activeModule !== "registries" && activeModule !== "banks" && activeModule !== "planning" && activeModule !== "bi" && !isTransactionArea && (
+          {!hasOperationalPanel.has(activeModule) && (
             <div className={`${panelClass} min-h-64 flex flex-col items-center justify-center text-center`}>
               <div className="rounded-2xl border border-surface-03 bg-surface-01 p-4 text-gold"><CurrentIcon size={28} aria-hidden="true" /></div>
               <h4 className="mt-4 text-xl font-black text-cream">{currentModule.title}</h4>
