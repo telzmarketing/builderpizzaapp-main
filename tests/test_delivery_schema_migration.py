@@ -15,7 +15,8 @@ ROOT = Path(__file__).parents[1]
 REVISION = "20261017_delivery_schema"
 DELIVERY_COLUMNS_AT_REVISION = {
     "id", "order_id", "delivery_person_id", "status", "assigned_at", "picked_up_at",
-    "delivered_at", "notes", "problem_report", "problem_reported_at",
+    "delivered_at", "estimated_minutes", "delivery_photo_url", "recipient_name", "notes",
+    "rating", "rating_comment", "created_at", "updated_at", "problem_report", "problem_reported_at",
     "problem_resolved_at", "admin_resolution_note", "tenant_id",
     "confirmation_code", "confirmed_by_code_at",
 }
