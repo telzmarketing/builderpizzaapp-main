@@ -65,3 +65,22 @@ def test_receipt_obligation_serializer_allows_missing_fiscal_document():
 
     assert serialized["fiscal_document_id"] is None
     assert response.fiscal_document_id is None
+
+
+def test_fiscal_sale_cannot_be_converted_into_payable():
+    service = _service()
+
+    with pytest.raises(
+        FinanceInvalidReference,
+        match="Somente documentos fiscais de entrada",
+    ):
+        service._validate_fiscal_obligation_operation(SimpleNamespace(operation_type="sale"))
+
+
+@pytest.mark.parametrize("operation_type", ["purchase", "inbound", "entry", "entrada", "compra"])
+def test_inbound_fiscal_operations_are_eligible_for_payable(operation_type):
+    service = _service()
+
+    assert service._validate_fiscal_obligation_operation(
+        SimpleNamespace(operation_type=operation_type)
+    ) is None

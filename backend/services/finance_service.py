@@ -1517,6 +1517,11 @@ class FinanceService:
         )
         if not document:
             raise FinanceNotFound("Documento fiscal")
+        # Outbound fiscal documents represent sales and must never become
+        # payables.  Without this guard, the Finance screen could convert a
+        # NFC-e/NF-e generated from an order into an expense, duplicating the
+        # revenue as a supplier obligation and distorting the DRE.
+        self._validate_fiscal_obligation_operation(document)
         existing_document = (
             self._db.query(FinanceObligation)
             .filter(FinanceObligation.tenant_id == self._tenant_id, FinanceObligation.fiscal_document_id == document_id)
@@ -1563,6 +1568,24 @@ class FinanceService:
             raise
         self._db.refresh(row)
         return self._serialize_obligation(row)
+
+    @staticmethod
+    def _validate_fiscal_obligation_operation(document: FiscalDocument) -> None:
+        """Allow only inbound fiscal documents to create supplier payables."""
+        operation_type = (document.operation_type or "").strip().lower()
+        inbound_operation_types = {
+            "purchase",
+            "purchase_invoice",
+            "inbound",
+            "inbound_purchase",
+            "entry",
+            "entrada",
+            "compra",
+        }
+        if operation_type not in inbound_operation_types:
+            raise FinanceInvalidReference(
+                "Somente documentos fiscais de entrada podem gerar obrigacao a pagar."
+            )
 
     def reconcile_obligation(self, obligation_id: str) -> dict:
         row = self._get_obligation(obligation_id)
