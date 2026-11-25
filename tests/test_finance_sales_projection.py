@@ -12,6 +12,9 @@ class _Query:
     def filter(self, *args):
         return self
 
+    def join(self, *args, **kwargs):
+        return self
+
     def all(self):
         return self.rows
 

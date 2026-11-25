@@ -91,16 +91,27 @@ class FinanceService:
             "projection_health": self.projection_health(),
         }
 
+    def _tenant_payments(self):
+        """Return payments owned by the tenant, including legacy rows.
+
+        Older installations can retain payments with a null tenant_id after
+        orders were already tenant-scoped. The order is the authoritative
+        ownership boundary for that compatibility case.
+        """
+        return (
+            self._db.query(Payment)
+            .join(Order, Order.id == Payment.order_id)
+            .filter(or_(
+                Payment.tenant_id == self._tenant_id,
+                and_(Payment.tenant_id.is_(None), Order.tenant_id == self._tenant_id),
+            ))
+        )
+
     def sales_overview(self) -> dict:
         """Read confirmed sales directly from the canonical payment records."""
-        payments = (
-            self._db.query(Payment)
-            .filter(
-                Payment.tenant_id == self._tenant_id,
-                Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
-            )
-            .all()
-        )
+        payments = self._tenant_payments().filter(
+            Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
+        ).all()
         by_day: dict[date, dict[str, float | int]] = {}
         for payment in payments:
             settled_at = payment.paid_at or payment.created_at
@@ -270,16 +281,9 @@ class FinanceService:
             raise FinanceInvalidReference("Limite de backfill financeiro invalido.")
         if not self._module_settings().get("auto_create_receivables"):
             return {"status": "disabled", "scanned": 0, "created": 0, "already_synced": 0, "skipped": 0, "failed": 0, "failures": []}
-        payments = (
-            self._db.query(Payment)
-            .filter(
-                Payment.tenant_id == self._tenant_id,
-                Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
-            )
-            .order_by(Payment.created_at.asc(), Payment.id.asc())
-            .limit(limit)
-            .all()
-        )
+        payments = self._tenant_payments().filter(
+            Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
+        ).order_by(Payment.created_at.asc(), Payment.id.asc()).limit(limit).all()
         result = {"status": "ok", "scanned": len(payments), "created": 0, "already_synced": 0, "skipped": 0, "failed": 0, "failures": []}
         for payment in payments:
             try:
@@ -529,14 +533,9 @@ class FinanceService:
         # disabled. This is an operational sales view sourced from confirmed
         # payments, not a second financial transaction stream.
         sales_by_day: dict[date, dict[str, float | int]] = {}
-        payments = (
-            self._db.query(Payment)
-            .filter(
-                Payment.tenant_id == self._tenant_id,
-                Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
-            )
-            .all()
-        )
+        payments = self._tenant_payments().filter(
+            Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]),
+        ).all()
         for payment in payments:
             settled_at = payment.paid_at or payment.created_at
             if settled_at is None:
