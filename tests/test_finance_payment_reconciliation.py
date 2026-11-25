@@ -12,6 +12,7 @@ from backend.core.tenant_context import TenantContext, TenantSource
 from backend.models.finance import (
     FinanceAccount, FinanceCategory, FinanceCounterparty, FinanceSettlement, FinanceTransaction,
 )
+from backend.models.gestao import GestaoModuleSettings
 from backend.models.order import Order
 from backend.models.payment import Payment
 from backend.services.finance_service import FinanceService
@@ -30,6 +31,7 @@ def db():
             Order.__table__, Payment.__table__, FinanceAccount.__table__,
             FinanceCategory.__table__, FinanceCounterparty.__table__,
             FinanceTransaction.__table__, FinanceSettlement.__table__,
+            GestaoModuleSettings.__table__,
         ],
     )
     with Session(engine) as session:
@@ -105,3 +107,88 @@ def test_cash_flow_includes_confirmed_unprojected_payment_once_and_respects_peri
     assert result["projected_income"] == 125.0
     assert "payment:payment-cash-old" not in {line["id"] for line in result["lines"]}
     assert "payment:payment-cash-pending" not in {line["id"] for line in result["lines"]}
+
+
+def test_sales_backfill_merges_legacy_settings_is_idempotent_and_is_tenant_scoped(db):
+    db.add_all([
+        GestaoModuleSettings(
+            id="finance-settings-a",
+            tenant_id="tenant-a",
+            module_key="finance",
+            title="Financeiro",
+            description="",
+            enabled=True,
+            status="active",
+            # Legacy payload intentionally omits auto_create_receivables.
+            settings_json='{"cash_basis_enabled": false}',
+        ),
+        GestaoModuleSettings(
+            id="finance-settings-b",
+            tenant_id="tenant-b",
+            module_key="finance",
+            title="Financeiro",
+            description="",
+            enabled=True,
+            status="active",
+            settings_json='{"auto_create_receivables": false}',
+        ),
+        Order(
+            id="order-legacy-settings-a",
+            tenant_id="tenant-a",
+            subtotal=80,
+            total=80,
+            sales_channel="delivery",
+            fulfillment_type="delivery",
+            status="paid",
+        ),
+        Order(
+            id="order-legacy-settings-b",
+            tenant_id="tenant-b",
+            subtotal=90,
+            total=90,
+            sales_channel="delivery",
+            fulfillment_type="delivery",
+            status="paid",
+        ),
+        Payment(
+            id="payment-legacy-settings-a",
+            tenant_id="tenant-a",
+            order_id="order-legacy-settings-a",
+            method="pix",
+            status="approved",
+            amount=80,
+            gateway="test",
+        ),
+        Payment(
+            id="payment-legacy-settings-b",
+            tenant_id="tenant-b",
+            order_id="order-legacy-settings-b",
+            method="pix",
+            status="approved",
+            amount=90,
+            gateway="test",
+        ),
+    ])
+    db.commit()
+
+    service_a = FinanceService(
+        db, "tenant-a", TenantContext(tenant_id="tenant-a", source=TenantSource.JOB)
+    )
+    first = service_a.backfill_sales()
+    second = service_a.backfill_sales()
+
+    assert first["created"] == 1
+    assert first["failed"] == 0
+    assert second["created"] == 0
+    assert second["already_synced"] == 1
+    assert db.query(FinanceTransaction).filter(
+        FinanceTransaction.tenant_id == "tenant-a",
+        FinanceTransaction.payment_id == "payment-legacy-settings-a",
+    ).count() == 1
+    assert db.query(FinanceTransaction).filter(
+        FinanceTransaction.payment_id == "payment-legacy-settings-b",
+    ).count() == 0
+
+    merged = service_a._module_settings()
+    assert merged["auto_create_receivables"] is True
+    assert merged["cash_basis_enabled"] is False
