@@ -38,6 +38,7 @@ import {
   financeApi,
   fiscalApi,
   gestaoApi,
+  marketplaceSettlementsApi,
   type FinanceAccount,
   type FinanceBankStatement,
   type FinanceBankStatementImportInput,
@@ -46,6 +47,7 @@ import {
   type FinancePaymentReconciliation,
   type FinanceDeliveryOverview,
   type FinanceDeliveryEarning,
+  type ApiMarketplaceSettlement,
   type FinanceCashFlow,
   type FinanceBudget,
   type FinanceBudgetInput,
@@ -255,10 +257,16 @@ function FinancePanel() {
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [deliveryOverview, setDeliveryOverview] = useState<FinanceDeliveryOverview | null>(null);
   const [deliveryEarnings, setDeliveryEarnings] = useState<FinanceDeliveryEarning[]>([]);
+  const [marketplaceSettlements, setMarketplaceSettlements] = useState<ApiMarketplaceSettlement[]>([]);
   const [deliveryLoading, setDeliveryLoading] = useState(false);
   const [courierPayLoading, setCourierPayLoading] = useState(false);
   const [courierPayMessage, setCourierPayMessage] = useState("");
   const [deliveryBackfillLoading, setDeliveryBackfillLoading] = useState(false);
+  const marketplaceSettlementTotals = useMemo(() => marketplaceSettlements.reduce((totals, settlement) => ({
+    expected: totals.expected + Number(settlement.expected_net_amount || 0),
+    received: totals.received + Number(settlement.received_net_amount || 0),
+    variance: totals.variance + Number(settlement.variance_amount || 0),
+  }), { expected: 0, received: 0, variance: 0 }), [marketplaceSettlements]);
   const [cmvBackfillLoading, setCmvBackfillLoading] = useState(false);
   const [salesBackfillLoading, setSalesBackfillLoading] = useState(false);
   const [refundBackfillLoading, setRefundBackfillLoading] = useState(false);
@@ -463,8 +471,8 @@ function FinancePanel() {
   useEffect(() => {
     if (activeModule !== "delivery" && activeModule !== "couriers") return;
     setDeliveryLoading(true);
-    Promise.all([financeApi.deliveryOverview(), financeApi.deliveryEarnings()])
-      .then(([overview, earnings]) => { setDeliveryOverview(overview); setDeliveryEarnings(earnings); })
+    Promise.all([financeApi.deliveryOverview(), financeApi.deliveryEarnings(), marketplaceSettlementsApi.list()])
+      .then(([overview, earnings, settlements]) => { setDeliveryOverview(overview); setDeliveryEarnings(earnings); setMarketplaceSettlements(settlements); })
       .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar os repasses dos entregadores."))
       .finally(() => setDeliveryLoading(false));
   }, [activeModule]);
@@ -545,9 +553,10 @@ function FinancePanel() {
     try {
       const result = await deliveryApi.payEarnings(earningIds);
       setCourierPayMessage(`${result.paid} repasse${result.paid === 1 ? "" : "s"} marcado${result.paid === 1 ? "" : "s"} como pago${result.paid === 1 ? "" : "s"}.`);
-      const [overview, earnings] = await Promise.all([financeApi.deliveryOverview(), financeApi.deliveryEarnings()]);
+      const [overview, earnings, settlements] = await Promise.all([financeApi.deliveryOverview(), financeApi.deliveryEarnings(), marketplaceSettlementsApi.list()]);
       setDeliveryOverview(overview);
       setDeliveryEarnings(earnings);
+      setMarketplaceSettlements(settlements);
     } catch (err) {
       setCourierPayMessage("");
       setError(err instanceof Error ? err.message : "Nao foi possivel pagar os repasses pendentes.");
@@ -1517,6 +1526,20 @@ function FinancePanel() {
                       {deliveryOverview.summaries.length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhum ganho de entregador registrado.</p> : <table className="w-full min-w-[620px] text-left text-sm">
                         <thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Entregador</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Quantidade</th><th className="px-3 py-3 text-right">Valor</th></tr></thead>
                         <tbody>{deliveryOverview.summaries.map((summary) => <tr key={`${summary.delivery_person_id}-${summary.status}`} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{summary.delivery_person_name}</td><td className="px-3 py-3 text-stone">{summary.status}</td><td className="px-3 py-3 text-stone">{summary.count}</td><td className="px-3 py-3 text-right font-black text-cream">{currency(summary.amount)}</td></tr>)}</tbody>
+                      </table>}
+                    </div>
+                  </div>
+                  <div className={panelClass}>
+                    <CardHeading icon={ShoppingBag} title="Settlements de marketplace" description="Consulta os registros manuais ja existentes por pedido e aplicativo. Esta tela nao cria, importa ou infere repasses de provedores." />
+                    <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                      <Metric title="Total esperado" value={currency(marketplaceSettlementTotals.expected)} subtitle="Liquido esperado" icon={CalendarCheck2} tone="success" />
+                      <Metric title="Total recebido" value={currency(marketplaceSettlementTotals.received)} subtitle="Liquido recebido" icon={CheckCircle2} tone="success" />
+                      <Metric title="Divergencia" value={currency(marketplaceSettlementTotals.variance)} subtitle="Recebido menos esperado" icon={AlertTriangle} tone={marketplaceSettlementTotals.variance === 0 ? "success" : "warn"} />
+                    </div>
+                    <div className="mt-4 overflow-x-auto">
+                      {marketplaceSettlements.length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-5 text-sm text-stone">Nenhum settlement manual registrado.</p> : <table className="w-full min-w-[980px] text-left text-sm">
+                        <thead className="border-b border-surface-03 text-xs uppercase tracking-wide text-stone"><tr><th className="px-3 py-3">Provedor</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Referencia</th><th className="px-3 py-3">Pedido</th><th className="px-3 py-3 text-right">Esperado</th><th className="px-3 py-3 text-right">Recebido</th><th className="px-3 py-3 text-right">Divergencia</th></tr></thead>
+                        <tbody>{marketplaceSettlements.map((settlement) => <tr key={settlement.id} className="border-b border-surface-03/70"><td className="px-3 py-3 font-bold text-cream">{settlement.provider}</td><td className="px-3 py-3 text-stone">{settlement.status}</td><td className="px-3 py-3 text-stone">{settlement.external_settlement_reference || "-"}</td><td className="px-3 py-3 text-stone">{settlement.order_id}</td><td className="px-3 py-3 text-right text-cream">{currency(settlement.expected_net_amount)}</td><td className="px-3 py-3 text-right text-cream">{currency(settlement.received_net_amount)}</td><td className={`px-3 py-3 text-right font-black ${settlement.variance_amount === 0 ? "text-emerald-300" : "text-amber-300"}`}>{currency(settlement.variance_amount)}</td></tr>)}</tbody>
                       </table>}
                     </div>
                   </div>

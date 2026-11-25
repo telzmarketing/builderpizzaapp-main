@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildApiBases, campaignsApi, companyDomainsApi, deliveryApi, financeApi, inventoryFoundationApi, inventoryReceiptApi, kdsApi, manualOrdersApi, platformDomainsApi, platformTenantsApi, preparationApi, productRecipesApi, type ManualOrderIn, type PreparationInputAllocation, type PreparationOrder } from "./api";
+import { buildApiBases, campaignsApi, companyDomainsApi, deliveryApi, financeApi, inventoryFoundationApi, inventoryReceiptApi, kdsApi, manualOrdersApi, marketplaceSettlementsApi, platformDomainsApi, platformTenantsApi, preparationApi, productRecipesApi, type ManualOrderIn, type PreparationInputAllocation, type PreparationOrder } from "./api";
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -125,6 +125,28 @@ describe("courier finance API", () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toMatch(/\/api\/delivery\/earnings\/pay$/);
     expect(JSON.parse(String(init.body))).toEqual({ earning_ids: ["earning-1", "earning-2"], paid_by: "admin" });
+  });
+});
+
+describe("marketplace settlement API", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    vi.stubGlobal("sessionStorage", memoryStorage());
+    vi.stubGlobal("window", { location: { pathname: "/painel/gestao/financeiro", replace: vi.fn() } });
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  it("lists existing settlements through the canonical read-only endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([]), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await marketplaceSettlementsApi.list({ provider: "ifood", status: "divergent" });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/gestao\/marketplace-settlements\?provider=ifood&status=divergent$/);
+    expect(init.method).toBe("GET");
+    expect(init.body).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
