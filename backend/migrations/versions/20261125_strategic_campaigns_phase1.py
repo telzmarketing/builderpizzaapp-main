@@ -11,8 +11,18 @@ depends_on = None
 
 
 def upgrade() -> None:
-    campaign_status = sa.Enum("draft", "scheduled", "active", "paused", "sold_out", "ended", "archived", name="strategiccampaignstatus")
-    campaign_status.create(op.get_bind(), checkfirst=True)
+    bind = op.get_bind()
+    bind.execute(sa.text(
+        """
+        DO $$
+        BEGIN
+            CREATE TYPE strategiccampaignstatus AS ENUM ('draft', 'scheduled', 'active', 'paused', 'sold_out', 'ended', 'archived');
+        EXCEPTION
+            WHEN duplicate_object THEN NULL;
+        END $$;
+        """
+    ))
+    campaign_status = sa.Enum("draft", "scheduled", "active", "paused", "sold_out", "ended", "archived", name="strategiccampaignstatus", create_type=False)
     op.create_table(
         "strategic_campaigns",
         sa.Column("id", sa.String(), primary_key=True),
