@@ -671,11 +671,7 @@ async function connectInstanceInternal(instanceId, body = {}) {
   state.socket = socket;
   callbackQueueFor(instanceId, state);
 
-  socket.ev.on("creds.update", (...updates) => {
-    if (isCurrentSocket(state, generation, socket)) return saveCreds(...updates);
-  });
-  socket.ev.on("messages.upsert", async ({ messages }) => {
-    if (!isCurrentSocket(state, generation, socket)) return;
+  async function enqueueInboundMessages(messages = [], source = "messages.upsert") {
     for (const item of messages || []) {
       const inbound = await extractInboundMessage(item, state);
       if (!isCurrentSocket(state, generation, socket)) return;
@@ -688,11 +684,25 @@ async function connectInstanceInternal(instanceId, body = {}) {
         payload: {
           received_at: nowIso(),
           instance_name: state.displayName,
+          source,
+          historical_sync: source === "messaging-history.set",
         },
       }).catch((error) => {
         if (isCurrentSocket(state, generation, socket)) state.lastError = error instanceof Error ? error.message : String(error);
       });
     }
+  }
+
+  socket.ev.on("creds.update", (...updates) => {
+    if (isCurrentSocket(state, generation, socket)) return saveCreds(...updates);
+  });
+  socket.ev.on("messages.upsert", async ({ messages }) => {
+    if (!isCurrentSocket(state, generation, socket)) return;
+    await enqueueInboundMessages(messages, "messages.upsert");
+  });
+  socket.ev.on("messaging-history.set", async ({ messages }) => {
+    if (!isCurrentSocket(state, generation, socket)) return;
+    await enqueueInboundMessages(messages, "messaging-history.set");
   });
   socket.ev.on("connection.update", async (update) => {
     if (!isCurrentSocket(state, generation, socket)) return;

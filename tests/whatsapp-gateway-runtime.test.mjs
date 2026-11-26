@@ -280,3 +280,54 @@ test("messages.upsert is normalized and delivered to the tenant callback endpoin
     delete process.env.WHATSAPP_GATEWAY_RUNTIME_DATA_DIR;
   }
 });
+
+test("messaging-history.set replays inbound history into the tenant callback endpoint", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "telz-wa-history-"));
+  process.env.WHATSAPP_GATEWAY_RUNTIME_TEST = "1";
+  process.env.WHATSAPP_GATEWAY_RUNTIME_DATA_DIR = directory;
+  const runtime = await import(`../server/whatsapp-gateway-runtime.mjs?history=${Date.now()}`);
+  const callbacks = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    callbacks.push({ url, headers: options.headers, body: JSON.parse(options.body) });
+    return { ok: true, async json() { return { ok: true, received: 1 }; } };
+  };
+  let socket;
+  runtime.__runtimeTest.setDependencies({
+    fetchVersion: async () => ({ version: undefined }),
+    authState: async () => ({ state: { creds: { registered: true } }, saveCreds() {} }),
+    makeSocket: () => {
+      socket = Object.assign(new EventEmitter(), {
+        ev: new EventEmitter(),
+        end() {},
+      });
+      return socket;
+    },
+  });
+
+  try {
+    await runtime.__runtimeTest.connectInstance("wa-history", { tenant_id: "tenant-a", name: "Gateway A" });
+    socket.ev.emit("messaging-history.set", {
+      messages: [{
+        key: { id: "historical-inbound-1", remoteJid: "5511888888888@s.whatsapp.net", fromMe: false },
+        pushName: "Cliente Historico",
+        message: { conversation: "Mensagem do historico" },
+      }],
+    });
+
+    for (let attempt = 0; attempt < 100 && callbacks.length === 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.equal(callbacks.length, 1);
+    assert.equal(callbacks[0].body.event_type, "message_received");
+    assert.equal(callbacks[0].body.message.id, "historical-inbound-1");
+    assert.equal(callbacks[0].body.message.body, "Mensagem do historico");
+    assert.equal(callbacks[0].body.payload.historical_sync, true);
+  } finally {
+    await runtime.__runtimeTest.disconnectInstance("wa-history");
+    globalThis.fetch = originalFetch;
+    await rm(directory, { recursive: true, force: true });
+    delete process.env.WHATSAPP_GATEWAY_RUNTIME_TEST;
+    delete process.env.WHATSAPP_GATEWAY_RUNTIME_DATA_DIR;
+  }
+});
