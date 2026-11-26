@@ -85,7 +85,7 @@ export default function OperationsContactPanel() {
       const [chatOpen, chatHuman, wa] = await Promise.all([
         chatbotAdminApi.listConversations("aberta", 1),
         chatbotAdminApi.listConversations("em_humano", 1),
-        agenteWhatsAppApi.listConversations({ limit: 100 }),
+        agenteWhatsAppApi.listConversations({ limit: 120 }),
       ]);
       const conversations = [...(chatOpen.items ?? []), ...(chatHuman.items ?? [])]
         .filter(isPendingChatbotConversation)

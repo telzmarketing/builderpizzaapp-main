@@ -78,6 +78,16 @@ export async function loadWhatsAppDetailSession<TSession, TGuardrails>(
   return session;
 }
 
+export function resolveWhatsAppConversationId(
+  rows: Array<Pick<ApiAgenteWhatsAppConversation, "id">>,
+  preferredId?: string | null,
+  currentId?: string | null,
+): string | null {
+  const requestedId = preferredId ?? currentId ?? null;
+  if (requestedId && rows.some((row) => row.id === requestedId)) return requestedId;
+  return rows[0]?.id ?? null;
+}
+
 const statusLabels: Record<ApiAgenteWhatsAppConversation["status"], string> = {
   open: "Aberta",
   waiting_human: "Fila",
@@ -337,6 +347,8 @@ export default function CrmAgenteWhatsApp() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailSessionId, setDetailSessionId] = useState<string | null>(null);
   const detailRequest = useRef(0);
+  const conversationListRequest = useRef(0);
+  const foregroundConversationRequest = useRef(0);
   const controlRevision = useRef(0);
   const actionInProgress = useRef(false);
   const selectedIdRef = useRef(selectedId);
@@ -361,6 +373,9 @@ export default function CrmAgenteWhatsApp() {
   const [channelSaving, setChannelSaving] = useState(false);
   const [error, setError] = useState("");
   const [dismissedPopupAlertId, setDismissedPopupAlertId] = useState<string | null>(null);
+
+  const conversationFiltersRef = useRef({ filter, search, agentFilter, periodFrom, periodTo });
+  conversationFiltersRef.current = { filter, search, agentFilter, periodFrom, periodTo };
 
   const selected = sessions.find((session) => session.id === selectedId) ?? null;
   const canSendHuman = whatsappAttendance(selected).canSendHuman && detailSessionId === selectedId;
@@ -408,25 +423,25 @@ export default function CrmAgenteWhatsApp() {
 
   async function loadSessions(preferredId?: string | null) {
     const revision = controlRevision.current;
+    const request = ++conversationListRequest.current;
+    const foregroundRequest = ++foregroundConversationRequest.current;
+    const activeFilters = conversationFiltersRef.current;
     setError("");
     setLoading(true);
     void loadAuxiliaryData(revision);
     try {
       const conversationRequest = agenteWhatsAppApi.listConversations({
-        status: filter === "all" ? undefined : filter,
-        search: search.trim() || undefined,
-        assigned_admin_id: agentFilter.trim() || undefined,
-        date_from: periodFrom || undefined,
-        date_to: periodTo || undefined,
+        status: activeFilters.filter === "all" ? undefined : activeFilters.filter,
+        search: activeFilters.search.trim() || undefined,
+        assigned_admin_id: activeFilters.agentFilter.trim() || undefined,
+        date_from: activeFilters.periodFrom || undefined,
+        date_to: activeFilters.periodTo || undefined,
         limit: 120,
       });
       const rows = await conversationRequest;
-      if (revision !== controlRevision.current) return;
-      if (revision !== controlRevision.current) {
-        setError("Conversas carregadas. O painel de métricas está temporariamente indisponível.");
-      }
+      if (request !== conversationListRequest.current || revision !== controlRevision.current) return;
       setSessions(rows);
-      const nextId = preferredId ?? selectedIdRef.current ?? rows[0]?.id ?? null;
+      const nextId = resolveWhatsAppConversationId(rows, preferredId, selectedIdRef.current);
       selectedIdRef.current = nextId;
       setSelectedId(nextId);
       if (nextId) await loadDetail(nextId);
@@ -435,9 +450,10 @@ export default function CrmAgenteWhatsApp() {
         setAiGuardrails(null);
       }
     } catch (err) {
+      if (request !== conversationListRequest.current || revision !== controlRevision.current) return;
       setError(err instanceof Error ? err.message : "Falha ao carregar o AGENTE WHATSAPP.");
     } finally {
-      setLoading(false);
+      if (foregroundRequest === foregroundConversationRequest.current) setLoading(false);
     }
   }
 
@@ -535,15 +551,17 @@ export default function CrmAgenteWhatsApp() {
     const interval = window.setInterval(() => {
       if (actionInProgress.current) return;
       const revision = controlRevision.current;
+      const request = ++conversationListRequest.current;
+      const activeFilters = conversationFiltersRef.current;
       agenteWhatsAppApi.listConversations({
-        status: filter === "all" ? undefined : filter,
-        search: search.trim() || undefined,
-        assigned_admin_id: agentFilter.trim() || undefined,
-        date_from: periodFrom || undefined,
-        date_to: periodTo || undefined,
+        status: activeFilters.filter === "all" ? undefined : activeFilters.filter,
+        search: activeFilters.search.trim() || undefined,
+        assigned_admin_id: activeFilters.agentFilter.trim() || undefined,
+        date_from: activeFilters.periodFrom || undefined,
+        date_to: activeFilters.periodTo || undefined,
         limit: 120,
       }).then((rows) => {
-        if (revision === controlRevision.current) setSessions(rows);
+        if (request === conversationListRequest.current && revision === controlRevision.current) setSessions(rows);
       }).catch(() => {});
       agenteWhatsAppApi.operationalMetrics().then(setOperationalMetrics).catch(() => {});
       agenteWhatsAppApi.listInternalAlerts({ status: "active", limit: 30 }).then(setInternalAlerts).catch(() => {});
@@ -560,6 +578,14 @@ export default function CrmAgenteWhatsApp() {
     return () => window.clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
+
+  useEffect(() => {
+    if (moduleTab !== "conversations") return;
+    void loadSessions(selectedIdRef.current);
+    // Opening the tab is an explicit refresh boundary. The latest filter values
+    // are read through conversationFiltersRef inside loadSessions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moduleTab]);
 
   async function updateSession(data: Partial<Pick<ApiAgenteWhatsAppConversation, "status" | "ai_enabled" | "automation_blocked">>) {
     if (!selected || actionInProgress.current) return;

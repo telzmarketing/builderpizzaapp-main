@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { loadWhatsAppDetailSession } from "./CrmAgenteWhatsApp";
+import { loadWhatsAppDetailSession, resolveWhatsAppConversationId } from "./CrmAgenteWhatsApp";
 
 describe("CrmAgenteWhatsApp detail loading", () => {
   it("returns the session and messages before optional guardrails resolve", async () => {
@@ -34,5 +34,21 @@ describe("CrmAgenteWhatsApp detail loading", () => {
     )).resolves.toEqual({ id: "session-2", messages: [{ id: "message-2" }] });
 
     await vi.waitFor(() => expect(onGuardrails).toHaveBeenCalledWith(null));
+  });
+});
+
+describe("CrmAgenteWhatsApp conversation selection", () => {
+  const rows = [{ id: "session-1" }, { id: "session-2" }];
+
+  it("keeps a selected conversation that still exists", () => {
+    expect(resolveWhatsAppConversationId(rows, null, "session-2")).toBe("session-2");
+  });
+
+  it("falls back to the first available conversation when the selected session was deleted", () => {
+    expect(resolveWhatsAppConversationId(rows, null, "deleted-session")).toBe("session-1");
+  });
+
+  it("clears the selection when there are no conversations", () => {
+    expect(resolveWhatsAppConversationId([], null, "deleted-session")).toBeNull();
   });
 });
