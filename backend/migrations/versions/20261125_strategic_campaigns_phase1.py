@@ -2,6 +2,7 @@
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "20261125_strategic_campaigns_phase1"
@@ -22,7 +23,20 @@ def upgrade() -> None:
         END $$;
         """
     ))
-    campaign_status = sa.Enum("draft", "scheduled", "active", "paused", "sold_out", "ended", "archived", name="strategiccampaignstatus", create_type=False)
+    # Use the PostgreSQL enum implementation explicitly.  The generic
+    # SQLAlchemy Enum may still emit CREATE TYPE while compiling the table,
+    # even when create_type=False, which breaks reruns after the type exists.
+    campaign_status = postgresql.ENUM(
+        "draft",
+        "scheduled",
+        "active",
+        "paused",
+        "sold_out",
+        "ended",
+        "archived",
+        name="strategiccampaignstatus",
+        create_type=False,
+    )
     op.create_table(
         "strategic_campaigns",
         sa.Column("id", sa.String(), primary_key=True),
@@ -86,4 +100,7 @@ def downgrade() -> None:
     op.drop_table("strategic_offers")
     op.drop_index("ix_strategic_campaigns_tenant_status", table_name="strategic_campaigns")
     op.drop_table("strategic_campaigns")
-    sa.Enum(name="strategiccampaignstatus").drop(op.get_bind(), checkfirst=True)
+    postgresql.ENUM(
+        name="strategiccampaignstatus",
+        create_type=False,
+    ).drop(op.get_bind(), checkfirst=True)
