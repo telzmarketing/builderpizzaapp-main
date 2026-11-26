@@ -2198,6 +2198,11 @@ class OrderService:
             self._consume_inventory_for_effective_sale(order.id)
         if new_status in {"cancelled", "refunded"}:
             self._reverse_inventory_for_cancelled_sale(order.id)
+        if new_status == "cancelled" and order.strategic_campaign_id:
+            from backend.services.strategic_campaign_capacity_service import StrategicCampaignCapacityService
+            StrategicCampaignCapacityService(
+                self._db, order.tenant_id
+            ).release_for_cancelled_order(order.id, now=now)
         sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
         from backend.services.automation_event_producer import AutomationEventProducer
         AutomationEventProducer(self._db, order.tenant_id).order_status_changed(

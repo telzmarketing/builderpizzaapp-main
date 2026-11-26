@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useId, type PointerEvent } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ChevronLeft, Minus, Plus, AlertCircle, Check, Loader2, Search, X, ZoomIn } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import CategorySeal from "@/components/CategorySeal";
@@ -361,6 +361,7 @@ export interface ProductConfiguratorProps {
 
 export default function Product({ productId, catalog, embedded = false, onBack, onAdd, flavorConfig }: ProductConfiguratorProps = {}) {
   const { id: routeId } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const id = productId ?? routeId;
   const navigate = useNavigate();
   const { products: storeProducts, addToCart: addStoreItem, multiFlavorsConfig: storeFlavorConfig, siteContent, loading: appLoading, customer } = useApp();
@@ -832,6 +833,12 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
       } : undefined,
       showBorderOptions && selectedBorder ? { id: selectedBorder.id, name: selectedBorder.name, priceAddition: borderAddition } : null,
       showProductOptions ? selectedOptionSelections : [],
+      undefined,
+      searchParams.get("strategic_offer_id") ? {
+        offerId: searchParams.get("strategic_offer_id")!,
+        campaignId: searchParams.get("strategic_campaign_id"),
+        campaignSlug: searchParams.get("strategic_campaign_slug"),
+      } : undefined,
     );
     if (!embedded) {
       trackEvent("add_to_cart", totalPrice, { product_id: product.id, quantity, selected_size: selectedSize });

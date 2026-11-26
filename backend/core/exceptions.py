@@ -154,6 +154,14 @@ class IdempotencyConflict(DomainError):
     http_status = 409
 
 
+class StrategicCapacityConflict(DomainError):
+    http_status = 409
+
+
+class StrategicReservationIdempotencyConflict(DomainError):
+    http_status = 409
+
+
 class PaymentAmountMismatch(DomainError):
     def __init__(self, expected: float, received: float):
         super().__init__(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from copy import deepcopy
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -9,9 +10,24 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.core.exceptions import DomainError
 from backend.models.product import Product
+from backend.models.product_promotion import ProductPromotion
 from backend.models.campaign import PromotionalKit
 from backend.models.strategic_campaign import StrategicCampaign, StrategicCampaignStatus, StrategicCampaignVersion, StrategicOffer
-from backend.schemas.strategic_campaign import StrategicCampaignCreate, StrategicCampaignUpdate, StrategicOfferCreate, StrategicOfferUpdate, StrategicCommercialConfig
+from backend.schemas.strategic_campaign import (
+    STRATEGIC_CAMPAIGN_SNAPSHOT_SCHEMA_VERSION,
+    StrategicCampaignCreate,
+    StrategicCampaignDuplicate,
+    StrategicCampaignPublicOut,
+    StrategicCampaignSnapshot,
+    StrategicCampaignSnapshotCampaign,
+    StrategicCampaignSnapshotOffer,
+    StrategicCampaignUpdate,
+    StrategicCommercialConfig,
+    StrategicOfferCreate,
+    StrategicOfferDuplicate,
+    StrategicOfferReorder,
+    StrategicOfferUpdate,
+)
 
 
 class StrategicCampaignService:
@@ -32,24 +48,27 @@ class StrategicCampaignService:
             StrategicCampaign.tenant_id == self.tenant_id,
         ).order_by(StrategicCampaign.updated_at.desc()).all()
 
-    def get_public(self, slug: str) -> StrategicCampaign:
-        row = self.db.query(StrategicCampaign).options(selectinload(StrategicCampaign.offers)).filter(
+    def get_public(self, slug: str) -> StrategicCampaignPublicOut:
+        published_rows = self.db.query(StrategicCampaignVersion).join(
+            StrategicCampaign,
+            (StrategicCampaign.id == StrategicCampaignVersion.campaign_id)
+            & (StrategicCampaign.tenant_id == StrategicCampaignVersion.tenant_id)
+            & (StrategicCampaign.published_version == StrategicCampaignVersion.version),
+        ).filter(
             StrategicCampaign.tenant_id == self.tenant_id,
-            StrategicCampaign.slug == slug,
             StrategicCampaign.status == StrategicCampaignStatus.active,
-            StrategicCampaign.published_version.isnot(None),
-        ).first()
-        if not row:
-            raise DomainError("Campanha estratégica não encontrada.", code="StrategicCampaignNotFound")
-        now = datetime.now(timezone.utc)
-        if row.starts_at and row.starts_at > now or row.ends_at and row.ends_at <= now:
-            raise DomainError("Campanha estratégica fora do período de venda.", code="StrategicCampaignUnavailable")
-        return row
+        ).all()
+        for published in published_rows:
+            document = self._snapshot_document(published)
+            if document.campaign.slug == slug:
+                self._assert_public_period(document.campaign.starts_at, document.campaign.ends_at)
+                return document.as_public_campaign()
+        raise DomainError("Campanha estratégica não encontrada.", code="StrategicCampaignNotFound")
 
     def resolve_checkout_offer(self, offer_id: str) -> tuple[StrategicCampaign, StrategicOffer]:
         offer = self._offer(offer_id)
         campaign = self.get_public_by_id(offer.campaign_id)
-        if not offer.active:
+        if offer.archived_at is not None or not offer.active:
             raise DomainError("Oferta estratégica indisponível.", code="StrategicOfferUnavailable")
         now = datetime.now(timezone.utc)
         if offer.sales_starts_at and offer.sales_starts_at > now or offer.sales_ends_at and offer.sales_ends_at <= now:
@@ -77,8 +96,6 @@ class StrategicCampaignService:
     def update(self, campaign_id: str, payload: StrategicCampaignUpdate) -> StrategicCampaign:
         row = self._campaign(campaign_id)
         data = payload.model_dump(exclude_unset=True)
-        if row.published_version is not None and any(key in data for key in {"name", "commercial_name", "slug", "description", "starts_at", "ends_at", "visual_config", "commercial_config"}):
-            raise DomainError("Campanha publicada exige nova versao para alterar seu conteudo.", code="PublishedCampaignImmutable")
         if "slug" in data and data["slug"] != row.slug:
             self._assert_slug(data["slug"], current_id=row.id)
         self._assert_period(data.get("starts_at", row.starts_at), data.get("ends_at", row.ends_at))
@@ -91,16 +108,41 @@ class StrategicCampaignService:
         self.db.commit()
         return self._campaign(row.id)
 
+    def duplicate_campaign(self, campaign_id: str, payload: StrategicCampaignDuplicate) -> StrategicCampaign:
+        source = self._campaign(campaign_id)
+        slug = payload.slug or self._next_campaign_slug(source.slug)
+        self._assert_slug(slug)
+        duplicate = StrategicCampaign(
+            id=f"sc-{uuid.uuid4().hex[:12]}",
+            tenant_id=self.tenant_id,
+            name=payload.name or self._copy_label(source.name, 200),
+            commercial_name=source.commercial_name,
+            slug=slug,
+            description=source.description,
+            status=StrategicCampaignStatus.draft,
+            starts_at=source.starts_at,
+            ends_at=source.ends_at,
+            visual_config=deepcopy(source.visual_config or {}),
+            commercial_config=deepcopy(source.commercial_config or {}),
+            marketing_config=deepcopy(source.marketing_config or {}),
+            published_version=None,
+        )
+        self.db.add(duplicate)
+        for offer in sorted(source.offers, key=lambda item: (item.display_order, item.id)):
+            if offer.archived_at is None:
+                self.db.add(self._copy_offer(offer, duplicate.id, code=offer.code, title=offer.title))
+        self.db.commit()
+        return self._campaign(duplicate.id)
+
     def add_offer(self, campaign_id: str, payload: StrategicOfferCreate) -> StrategicOffer:
         campaign = self._campaign(campaign_id)
-        if campaign.published_version is not None:
-            raise DomainError("Campanha publicada não pode receber oferta sem nova versão.", code="PublishedCampaignImmutable")
         if self.db.query(StrategicOffer).filter(StrategicOffer.tenant_id == self.tenant_id, StrategicOffer.campaign_id == campaign_id, StrategicOffer.code == payload.code).first():
             raise DomainError("Código de oferta já utilizado nesta campanha.", code="StrategicOfferCodeConflict")
         if payload.product_id and not self.db.query(Product).filter(Product.tenant_id == self.tenant_id, Product.id == payload.product_id, Product.active.is_(True)).first():
             raise DomainError("Produto da oferta não encontrado.", code="StrategicOfferProductNotFound")
         if payload.kit_id and not self.db.query(PromotionalKit).filter(PromotionalKit.tenant_id == self.tenant_id, PromotionalKit.id == payload.kit_id, PromotionalKit.active.is_(True)).first():
             raise DomainError("Kit da oferta não encontrado.", code="StrategicOfferKitNotFound")
+        self._assert_offer_promotion(payload.product_id, payload.config)
         self._assert_offer_period(payload.sales_starts_at, payload.sales_ends_at, campaign)
         row = StrategicOffer(id=f"so-{uuid.uuid4().hex[:12]}", tenant_id=self.tenant_id, campaign_id=campaign_id, **payload.model_dump())
         self.db.add(row)
@@ -109,28 +151,97 @@ class StrategicCampaignService:
 
     def update_offer(self, offer_id: str, payload: StrategicOfferUpdate) -> StrategicOffer:
         row = self._offer(offer_id)
-        if self._campaign(row.campaign_id).published_version is not None:
-            raise DomainError("Oferta publicada é imutável.", code="PublishedCampaignImmutable")
+        self._assert_offer_not_archived(row)
+        campaign = self._campaign(row.campaign_id)
         data = payload.model_dump(exclude_unset=True)
         original = data.get("price_original", row.price_original)
         promotional = data.get("price_promotional", row.price_promotional)
         if promotional > original:
             raise DomainError("O preço promocional não pode superar o preço original.", code="InvalidStrategicOfferPrice")
-        self._assert_offer_period(data.get("sales_starts_at", row.sales_starts_at), data.get("sales_ends_at", row.sales_ends_at), self._campaign(row.campaign_id))
+        if "config" in data and data["config"] is not None:
+            self._assert_offer_promotion(row.product_id, data["config"])
+        self._assert_offer_period(data.get("sales_starts_at", row.sales_starts_at), data.get("sales_ends_at", row.sales_ends_at), campaign)
         for key, value in data.items():
             setattr(row, key, value)
         self.db.commit()
         return row
 
+    def duplicate_offer(self, offer_id: str, payload: StrategicOfferDuplicate) -> StrategicOffer:
+        source = self._offer(offer_id)
+        self._assert_offer_not_archived(source)
+        campaign = self._campaign(source.campaign_id)
+        code = payload.code or self._next_offer_code(source.campaign_id, source.code)
+        if self._offer_code_exists(source.campaign_id, code):
+            raise DomainError("Código de oferta já utilizado nesta campanha.", code="StrategicOfferCodeConflict")
+        current_offers = [offer for offer in campaign.offers if offer.archived_at is None]
+        display_order = max((offer.display_order for offer in current_offers), default=-1) + 1
+        duplicate = self._copy_offer(
+            source,
+            source.campaign_id,
+            code=code,
+            title=payload.title or self._copy_label(source.title, 200),
+            display_order=display_order,
+        )
+        self.db.add(duplicate)
+        self.db.commit()
+        return duplicate
+
+    def reorder_offers(self, campaign_id: str, payload: StrategicOfferReorder) -> list[StrategicOffer]:
+        campaign = self._campaign(campaign_id)
+        offers = self.db.query(StrategicOffer).filter(
+            StrategicOffer.tenant_id == self.tenant_id,
+            StrategicOffer.campaign_id == campaign_id,
+            StrategicOffer.archived_at.is_(None),
+        ).with_for_update().all()
+        current_ids = {offer.id for offer in offers}
+        if set(payload.offer_ids) != current_ids:
+            raise DomainError(
+                "A ordenação deve conter exatamente todas as ofertas não arquivadas da campanha.",
+                code="InvalidStrategicOfferOrder",
+            )
+        by_id = {offer.id: offer for offer in offers}
+        for position, ordered_offer_id in enumerate(payload.offer_ids):
+            by_id[ordered_offer_id].display_order = position
+        self.db.commit()
+        return [by_id[ordered_offer_id] for ordered_offer_id in payload.offer_ids]
+
+    def archive_offer(self, offer_id: str) -> StrategicOffer:
+        row = self._offer(offer_id)
+        self._assert_offer_not_archived(row)
+        self._campaign(row.campaign_id)
+        row.active = False
+        row.archived_at = datetime.now(timezone.utc)
+        self.db.commit()
+        return row
+
     def publish(self, campaign_id: str) -> StrategicCampaignVersion:
         row = self._campaign(campaign_id)
-        if not row.offers:
+        active_offers = [offer for offer in row.offers if offer.active and offer.archived_at is None]
+        if not active_offers:
             raise DomainError("Campanha precisa de ao menos uma oferta para publicar.", code="StrategicCampaignOfferRequired")
         version = (row.published_version or 0) + 1
-        snapshot = {
-            "campaign": {"id": row.id, "name": row.name, "commercial_name": row.commercial_name, "slug": row.slug, "description": row.description, "starts_at": row.starts_at.isoformat() if row.starts_at else None, "ends_at": row.ends_at.isoformat() if row.ends_at else None, "visual_config": row.visual_config or {}, "commercial_config": row.commercial_config or {}},
-            "offers": [{"id": o.id, "code": o.code, "title": o.title, "description": o.description, "product_id": o.product_id, "kit_id": o.kit_id, "price_original": str(o.price_original), "price_promotional": str(o.price_promotional), "quantity_limit": o.quantity_limit, "max_per_customer": o.max_per_customer, "sales_starts_at": o.sales_starts_at.isoformat() if o.sales_starts_at else None, "sales_ends_at": o.sales_ends_at.isoformat() if o.sales_ends_at else None, "show_when_sold_out": o.show_when_sold_out, "button_text": o.button_text, "image_desktop_url": o.image_desktop_url, "image_mobile_url": o.image_mobile_url, "badge_text": o.badge_text, "highlighted": o.highlighted, "config": o.config} for o in sorted(row.offers, key=lambda x: (x.display_order, x.id)) if o.active],
-        }
+        self._assert_public_slug_available(row.slug, row.id)
+        snapshot = StrategicCampaignSnapshot(
+            schema_version=STRATEGIC_CAMPAIGN_SNAPSHOT_SCHEMA_VERSION,
+            campaign=StrategicCampaignSnapshotCampaign(
+                id=row.id,
+                name=row.name,
+                commercial_name=row.commercial_name,
+                slug=row.slug,
+                description=row.description,
+                status=StrategicCampaignStatus.active,
+                starts_at=row.starts_at,
+                ends_at=row.ends_at,
+                visual_config=deepcopy(row.visual_config or {}),
+                commercial_config=deepcopy(row.commercial_config or {}),
+                marketing_config=deepcopy(row.marketing_config or {}),
+                published_version=version,
+            ),
+            offers=[
+                StrategicCampaignSnapshotOffer.model_validate(offer, from_attributes=True)
+                for offer in sorted(active_offers, key=lambda item: (item.display_order, item.id))
+            ],
+        ).model_dump(mode="json")
         published = StrategicCampaignVersion(id=f"scv-{uuid.uuid4().hex[:12]}", tenant_id=self.tenant_id, campaign_id=row.id, version=version, snapshot=snapshot)
         row.published_version = version
         row.status = StrategicCampaignStatus.active
@@ -143,6 +254,97 @@ class StrategicCampaignService:
         if not row:
             raise DomainError("Oferta estratégica não encontrada.", code="StrategicOfferNotFound")
         return row
+
+    @staticmethod
+    def _assert_offer_not_archived(offer: StrategicOffer) -> None:
+        if offer.archived_at is not None:
+            raise DomainError("Oferta estratégica já está arquivada.", code="StrategicOfferArchived")
+
+    def _assert_offer_promotion(self, product_id: str | None, config: dict) -> None:
+        promotion_id = config.get("product_promotion_id")
+        if not promotion_id:
+            return
+        promotion = self.db.query(ProductPromotion.id).filter(
+            ProductPromotion.id == promotion_id,
+            ProductPromotion.product_id == product_id,
+            ProductPromotion.tenant_id == self.tenant_id,
+            ProductPromotion.active.is_(True),
+        ).first()
+        if not promotion:
+            raise DomainError(
+                "A promoção da oferta não pertence ao produto e tenant informados.",
+                code="StrategicOfferPromotionNotFound",
+            )
+
+    def _next_campaign_slug(self, source_slug: str) -> str:
+        number = 1
+        while True:
+            suffix = "-copy" if number == 1 else f"-copy-{number}"
+            candidate = f"{source_slug[:180 - len(suffix)].rstrip('-')}{suffix}"
+            exists = self.db.query(StrategicCampaign.id).filter(
+                StrategicCampaign.tenant_id == self.tenant_id,
+                StrategicCampaign.slug == candidate,
+            ).first()
+            if not exists:
+                return candidate
+            number += 1
+
+    def _next_offer_code(self, campaign_id: str, source_code: str) -> str:
+        number = 1
+        while True:
+            suffix = "-copy" if number == 1 else f"-copy-{number}"
+            candidate = f"{source_code[:80 - len(suffix)].rstrip('-')}{suffix}"
+            if not self._offer_code_exists(campaign_id, candidate):
+                return candidate
+            number += 1
+
+    def _offer_code_exists(self, campaign_id: str, code: str) -> bool:
+        return self.db.query(StrategicOffer.id).filter(
+            StrategicOffer.tenant_id == self.tenant_id,
+            StrategicOffer.campaign_id == campaign_id,
+            StrategicOffer.code == code,
+        ).first() is not None
+
+    def _copy_offer(
+        self,
+        source: StrategicOffer,
+        campaign_id: str,
+        *,
+        code: str,
+        title: str,
+        display_order: int | None = None,
+    ) -> StrategicOffer:
+        return StrategicOffer(
+            id=f"so-{uuid.uuid4().hex[:12]}",
+            tenant_id=self.tenant_id,
+            campaign_id=campaign_id,
+            code=code,
+            title=title,
+            description=source.description,
+            product_id=source.product_id,
+            kit_id=source.kit_id,
+            price_original=source.price_original,
+            price_promotional=source.price_promotional,
+            active=source.active,
+            display_order=source.display_order if display_order is None else display_order,
+            quantity_limit=source.quantity_limit,
+            max_per_customer=source.max_per_customer,
+            sales_starts_at=source.sales_starts_at,
+            sales_ends_at=source.sales_ends_at,
+            show_when_sold_out=source.show_when_sold_out,
+            button_text=source.button_text,
+            image_desktop_url=source.image_desktop_url,
+            image_mobile_url=source.image_mobile_url,
+            badge_text=source.badge_text,
+            highlighted=source.highlighted,
+            config=deepcopy(source.config or {}),
+            archived_at=None,
+        )
+
+    @staticmethod
+    def _copy_label(value: str, max_length: int) -> str:
+        suffix = " (cópia)"
+        return f"{value[:max_length - len(suffix)].rstrip()}{suffix}"
 
     @staticmethod
     def _assert_offer_period(starts_at, ends_at, campaign: StrategicCampaign) -> None:
@@ -161,6 +363,54 @@ class StrategicCampaignService:
             query = query.filter(StrategicCampaign.id != current_id)
         if query.first():
             raise DomainError("Slug já utilizado neste tenant.", code="StrategicCampaignSlugConflict")
+        self._assert_public_slug_available(slug, current_id)
+
+    def _assert_public_slug_available(self, slug: str, current_id: str | None = None) -> None:
+        published_rows = self.db.query(StrategicCampaignVersion).join(
+            StrategicCampaign,
+            (StrategicCampaign.id == StrategicCampaignVersion.campaign_id)
+            & (StrategicCampaign.tenant_id == StrategicCampaignVersion.tenant_id)
+            & (StrategicCampaign.published_version == StrategicCampaignVersion.version),
+        ).filter(StrategicCampaign.tenant_id == self.tenant_id).all()
+        for published in published_rows:
+            if current_id and published.campaign_id == current_id:
+                continue
+            if self._snapshot_document(published).campaign.slug == slug:
+                raise DomainError("Slug já utilizado neste tenant.", code="StrategicCampaignSlugConflict")
+
+    @staticmethod
+    def _snapshot_document(version: StrategicCampaignVersion) -> StrategicCampaignSnapshot:
+        try:
+            snapshot = deepcopy(version.snapshot or {})
+            snapshot.setdefault("schema_version", STRATEGIC_CAMPAIGN_SNAPSHOT_SCHEMA_VERSION)
+            campaign = snapshot.get("campaign")
+            if isinstance(campaign, dict):
+                campaign.setdefault("status", StrategicCampaignStatus.active.value)
+                campaign.setdefault("marketing_config", {})
+                campaign.setdefault("published_version", version.version)
+            offers = snapshot.get("offers")
+            if isinstance(offers, list):
+                for display_order, offer in enumerate(offers):
+                    if isinstance(offer, dict):
+                        offer.setdefault("campaign_id", version.campaign_id)
+                        offer.setdefault("active", True)
+                        offer.setdefault("display_order", display_order)
+                        offer.setdefault("archived_at", None)
+            return StrategicCampaignSnapshot.model_validate(snapshot)
+        except Exception as exc:
+            raise DomainError(
+                "Snapshot publicado da campanha está inválido.",
+                code="InvalidStrategicCampaignSnapshot",
+            ) from exc
+
+    @staticmethod
+    def _assert_public_period(starts_at, ends_at) -> None:
+        now = datetime.now(timezone.utc)
+        if starts_at and starts_at > now or ends_at and ends_at <= now:
+            raise DomainError(
+                "Campanha estratégica fora do período de venda.",
+                code="StrategicCampaignUnavailable",
+            )
 
     @staticmethod
     def _assert_period(starts_at, ends_at) -> None:

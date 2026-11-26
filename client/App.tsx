@@ -459,6 +459,7 @@ const AdminFrete = lazy(() => import("./pages/admin/AdminFrete"));
 const StoreOperation = lazy(() => import("./pages/admin/StoreOperation"));
 const AdminCampanhas = lazy(() => import("./pages/admin/AdminCampanhas"));
 const StrategicCampaigns = lazy(() => import("./pages/admin/StrategicCampaigns"));
+const StrategicCampaignDetail = lazy(() => import("./pages/admin/StrategicCampaignDetail"));
 const AdminPaidTraffic = lazy(() => import("./pages/admin/PaidTraffic"));
 const AdminChatbot = lazy(() => import("./pages/admin/AdminChatbot"));
 const AdminAparencia = lazy(() => import("./pages/admin/Aparencia"));
@@ -698,6 +699,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/funcionamento" element={<StoreOperation />} />
                 <Route path="/painel/campanhas" element={<AdminCampanhas />} />
                 <Route path="/painel/marketing/campanhas-estrategicas" element={<StrategicCampaigns />} />
+                <Route path="/painel/marketing/campanhas-estrategicas/:campaignId/:section?" element={<StrategicCampaignDetail />} />
                 <Route path="/painel/promocoes" element={<AdminCampanhas />} />
                 <Route path="/painel/trafego-pago" element={<AdminPaidTraffic />} />
                 <Route path="/painel/chatbot"    element={<AdminChatbot />} />

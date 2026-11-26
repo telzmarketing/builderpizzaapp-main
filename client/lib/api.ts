@@ -1191,6 +1191,7 @@ export interface ApiStrategicOffer {
   badge_text: string | null;
   highlighted: boolean;
   config: Record<string, unknown>;
+  archived_at: string | null;
 }
 
 export interface ApiStrategicCampaign {
@@ -1209,7 +1210,74 @@ export interface ApiStrategicCampaign {
   offers: ApiStrategicOffer[];
 }
 
-export type StrategicOfferInput = Omit<ApiStrategicOffer, "id" | "campaign_id" | "active" | "config"> & {
+export interface ApiStrategicCapacitySlot {
+  id: string;
+  campaign_id: string;
+  offer_id: string | null;
+  label: string | null;
+  starts_at: string;
+  ends_at: string;
+  capacity_total: number;
+  capacity_used: number;
+  blocked: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StrategicCapacitySlotCreate {
+  offer_id?: string | null;
+  label?: string | null;
+  starts_at: string;
+  ends_at: string;
+  capacity_total: number;
+  blocked?: boolean;
+}
+
+export type StrategicCapacitySlotUpdate = Partial<Omit<StrategicCapacitySlotCreate, "offer_id">>;
+
+export type StrategicReservationStatus = "held" | "confirmed" | "released" | "expired" | "cancelled";
+export type StrategicReservationPaymentMode = "no_payment" | "partial" | "full";
+
+export interface ApiStrategicReservation {
+  id: string;
+  campaign_id: string;
+  offer_id: string | null;
+  slot_id: string;
+  customer_reference: string;
+  quantity: number;
+  status: StrategicReservationStatus;
+  payment_mode: StrategicReservationPaymentMode;
+  amount_total: number;
+  amount_paid: number;
+  order_id: string | null;
+  operational_released_at: string | null;
+  idempotency_key: string;
+  expires_at: string | null;
+  confirmed_at: string | null;
+  released_at: string | null;
+  release_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StrategicReservationCreate {
+  slot_id: string;
+  offer_id?: string | null;
+  customer_reference: string;
+  quantity: number;
+  payment_mode: StrategicReservationPaymentMode;
+  amount_total: number;
+  amount_paid: number;
+  hold_minutes: number;
+  idempotency_key: string;
+}
+
+export interface StrategicReservationExpirationResult {
+  expired_count: number;
+  reservation_ids: string[];
+}
+
+export type StrategicOfferInput = Omit<ApiStrategicOffer, "id" | "campaign_id" | "active" | "config" | "archived_at"> & {
   config?: Record<string, unknown>;
 };
 
@@ -8810,14 +8878,38 @@ export const strategicCampaignsApi = {
   get: (id: string) => get<ApiStrategicCampaign>(`/strategic-campaigns/${id}`),
   create: (data: Pick<ApiStrategicCampaign, "name" | "commercial_name" | "slug" | "description" | "starts_at" | "ends_at"> & { commercial_config?: StrategicCommercialConfig; marketing_config?: StrategicMarketingConfig }) =>
     post<ApiStrategicCampaign>("/strategic-campaigns", data),
+  duplicate: (campaignId: string, data: { name?: string; slug?: string } = {}) =>
+    post<ApiStrategicCampaign>(`/strategic-campaigns/${campaignId}/duplicate`, data),
   update: (id: string, data: Partial<Pick<ApiStrategicCampaign, "name" | "commercial_name" | "slug" | "description" | "starts_at" | "ends_at" | "status" | "visual_config" | "commercial_config" | "marketing_config">>) =>
     put<ApiStrategicCampaign>(`/strategic-campaigns/${id}`, data),
   addOffer: (campaignId: string, data: Omit<StrategicOfferInput, "campaign_id">) =>
     post<ApiStrategicOffer>(`/strategic-campaigns/${campaignId}/offers`, data),
-  updateOffer: (offerId: string, data: Partial<Omit<StrategicOfferInput, "campaign_id">>) =>
+  updateOffer: (offerId: string, data: Partial<Omit<StrategicOfferInput, "campaign_id"> & Pick<ApiStrategicOffer, "active">>) =>
     put<ApiStrategicOffer>(`/strategic-campaigns/offers/${offerId}`, data),
+  duplicateOffer: (offerId: string, data: { code?: string; title?: string } = {}) =>
+    post<ApiStrategicOffer>(`/strategic-campaigns/offers/${offerId}/duplicate`, data),
+  reorderOffers: (campaignId: string, offerIds: string[]) =>
+    put<ApiStrategicOffer[]>(`/strategic-campaigns/${campaignId}/offers/reorder`, { offer_ids: offerIds }),
+  archiveOffer: (offerId: string) =>
+    post<ApiStrategicOffer>(`/strategic-campaigns/offers/${offerId}/archive`, {}),
   publish: (campaignId: string) =>
     post<{ id: string; campaign_id: string; version: number; snapshot: Record<string, unknown>; published_at: string }>(`/strategic-campaigns/${campaignId}/publish`, {}),
+  listCapacitySlots: (campaignId: string) =>
+    get<ApiStrategicCapacitySlot[]>(`/strategic-campaigns/${campaignId}/capacity-slots`),
+  createCapacitySlot: (campaignId: string, data: StrategicCapacitySlotCreate) =>
+    post<ApiStrategicCapacitySlot>(`/strategic-campaigns/${campaignId}/capacity-slots`, data),
+  updateCapacitySlot: (slotId: string, data: StrategicCapacitySlotUpdate) =>
+    put<ApiStrategicCapacitySlot>(`/strategic-campaigns/capacity-slots/${slotId}`, data),
+  listReservations: (campaignId: string, status?: StrategicReservationStatus) =>
+    get<ApiStrategicReservation[]>(`/strategic-campaigns/${campaignId}/reservations${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  createReservation: (campaignId: string, data: StrategicReservationCreate) =>
+    post<ApiStrategicReservation>(`/strategic-campaigns/${campaignId}/reservations`, data),
+  confirmReservation: (reservationId: string) =>
+    post<ApiStrategicReservation>(`/strategic-campaigns/reservations/${reservationId}/confirm`, {}),
+  releaseReservation: (reservationId: string, data: { reason: string; cancelled?: boolean }) =>
+    post<ApiStrategicReservation>(`/strategic-campaigns/reservations/${reservationId}/release`, { ...data, cancelled: data.cancelled ?? false }),
+  expireReservations: (campaignId: string) =>
+    post<StrategicReservationExpirationResult>(`/strategic-campaigns/${campaignId}/reservations/expire`, {}),
   publicBySlug: (slug: string) => get<ApiStrategicCampaign>(`/strategic-campaigns/public/${encodeURIComponent(slug)}`),
   metrics: (id: string, dateFrom?: string, dateTo?: string) => {
     const qs = new URLSearchParams();

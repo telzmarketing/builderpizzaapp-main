@@ -353,9 +353,10 @@ _PERMISSIONS = [
     ("approve", "Aprovar"),
     ("export",  "Exportar"),
     ("manage",  "Gerenciar Configurações"),
+    ("publish", "Publicar"),
 ]
 
-ALL_PERMS = ["view", "create", "edit", "delete", "approve", "export", "manage"]
+ALL_PERMS = ["view", "create", "edit", "delete", "approve", "export", "manage", "publish"]
 
 # {role_name: {module_key: [perm_keys]}}
 _ROLE_PERMISSIONS: dict = {
@@ -370,7 +371,7 @@ _ROLE_PERMISSIONS: dict = {
         "kits":             ["view", "create", "edit", "delete"],
         "clientes":         ["view", "create", "edit", "delete", "export"],
         "whatsapp":         ["view", "create", "edit", "delete"],
-        "marketing":        ["view", "create", "edit", "delete"],
+        "marketing":        ["view", "create", "edit", "delete", "publish"],
         "campanhas":        ["view", "create", "edit", "delete"],
         "relatorios":       ["view", "export"],
         "financeiro":       ["view", "export"],

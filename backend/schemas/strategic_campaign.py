@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.models.strategic_campaign import StrategicCampaignStatus
+
+
+STRATEGIC_CAMPAIGN_SNAPSHOT_SCHEMA_VERSION = 1
 
 
 class StrategicCommercialConfig(BaseModel):
@@ -49,6 +52,57 @@ class StrategicCampaignUpdate(BaseModel):
     marketing_config: StrategicMarketingConfig | None = None
 
 
+class StrategicCampaignDuplicate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    slug: str | None = Field(default=None, min_length=1, max_length=180)
+
+
+StrategicCatalogId = Annotated[str, Field(min_length=1, max_length=120)]
+
+
+class StrategicOfferRestrictions(BaseModel):
+    """Optional catalog constraints kept inside the existing offer config JSON."""
+
+    size_ids: list[StrategicCatalogId] | None = None
+    crust_ids: list[StrategicCatalogId] | None = None
+    border_ids: list[StrategicCatalogId] | None = None
+    drink_ids: list[StrategicCatalogId] | None = None
+    option_ids: list[StrategicCatalogId] | None = None
+    flavor_count: int | None = Field(default=None, ge=1, le=3)
+
+    model_config = ConfigDict(extra="allow")
+
+    @field_validator("size_ids", "crust_ids", "border_ids", "drink_ids", "option_ids")
+    @classmethod
+    def validate_unique_ids(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and len(value) != len(set(value)):
+            raise ValueError("As restricoes da oferta nao podem conter IDs repetidos.")
+        return value
+
+
+class StrategicOfferConfig(BaseModel):
+    pricing_mode: Literal["catalog", "product_promotion", "strategic_price"] | None = None
+    product_promotion_id: StrategicCatalogId | None = None
+    restrictions: StrategicOfferRestrictions | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+    @model_validator(mode="after")
+    def validate_pricing_reference(self):
+        if self.pricing_mode == "product_promotion" and not self.product_promotion_id:
+            raise ValueError("O modo product_promotion exige product_promotion_id.")
+        if self.product_promotion_id and self.pricing_mode not in {None, "product_promotion"}:
+            raise ValueError("product_promotion_id so pode ser usado com pricing_mode product_promotion.")
+        return self
+
+
+def _validated_offer_config(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    validated = StrategicOfferConfig.model_validate(value)
+    return validated.model_dump(mode="python", exclude_none=True, exclude_unset=True)
+
+
 class StrategicOfferCreate(BaseModel):
     code: str = Field(min_length=1, max_length=80)
     title: str = Field(min_length=1, max_length=200)
@@ -69,6 +123,11 @@ class StrategicOfferCreate(BaseModel):
     badge_text: str | None = Field(default=None, max_length=80)
     highlighted: bool = False
     config: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("config")
+    @classmethod
+    def validate_config(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return _validated_offer_config(value) or {}
 
     @model_validator(mode="after")
     def validate_reference_and_price(self):
@@ -100,6 +159,26 @@ class StrategicOfferUpdate(BaseModel):
     highlighted: bool | None = None
     config: dict[str, Any] | None = None
 
+    @field_validator("config")
+    @classmethod
+    def validate_config(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        return _validated_offer_config(value)
+
+
+class StrategicOfferDuplicate(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=80)
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class StrategicOfferReorder(BaseModel):
+    offer_ids: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_unique_offer_ids(self):
+        if len(self.offer_ids) != len(set(self.offer_ids)):
+            raise ValueError("A ordenação não pode conter ofertas repetidas.")
+        return self
+
 
 class StrategicOfferOut(BaseModel):
     id: str
@@ -124,6 +203,7 @@ class StrategicOfferOut(BaseModel):
     badge_text: str | None
     highlighted: bool
     config: dict[str, Any]
+    archived_at: datetime | None
 
     model_config = {"from_attributes": True}
 
@@ -154,3 +234,62 @@ class StrategicCampaignVersionOut(BaseModel):
     published_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class StrategicCampaignSnapshotCampaign(BaseModel):
+    id: str
+    name: str
+    commercial_name: str | None = None
+    slug: str
+    description: str | None = None
+    status: StrategicCampaignStatus = StrategicCampaignStatus.active
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    visual_config: dict[str, Any] = Field(default_factory=dict)
+    commercial_config: StrategicCommercialConfig = Field(default_factory=StrategicCommercialConfig)
+    marketing_config: StrategicMarketingConfig = Field(default_factory=StrategicMarketingConfig)
+    published_version: int = Field(ge=1)
+
+
+class StrategicCampaignSnapshotOffer(BaseModel):
+    id: str
+    campaign_id: str
+    code: str
+    title: str
+    description: str | None = None
+    product_id: str | None = None
+    kit_id: str | None = None
+    price_original: Decimal
+    price_promotional: Decimal
+    active: bool = True
+    display_order: int = 0
+    quantity_limit: int | None = None
+    max_per_customer: int | None = None
+    sales_starts_at: datetime | None = None
+    sales_ends_at: datetime | None = None
+    show_when_sold_out: bool = True
+    button_text: str | None = None
+    image_desktop_url: str | None = None
+    image_mobile_url: str | None = None
+    badge_text: str | None = None
+    highlighted: bool = False
+    config: dict[str, Any] = Field(default_factory=dict)
+    archived_at: datetime | None = None
+
+
+class StrategicCampaignSnapshot(BaseModel):
+    schema_version: Literal[STRATEGIC_CAMPAIGN_SNAPSHOT_SCHEMA_VERSION] = STRATEGIC_CAMPAIGN_SNAPSHOT_SCHEMA_VERSION
+    campaign: StrategicCampaignSnapshotCampaign
+    offers: list[StrategicCampaignSnapshotOffer] = Field(default_factory=list)
+
+    def as_public_campaign(self) -> "StrategicCampaignPublicOut":
+        return StrategicCampaignPublicOut(
+            schema_version=self.schema_version,
+            **self.campaign.model_dump(),
+            offers=self.offers,
+        )
+
+
+class StrategicCampaignPublicOut(StrategicCampaignSnapshotCampaign):
+    schema_version: int = STRATEGIC_CAMPAIGN_SNAPSHOT_SCHEMA_VERSION
+    offers: list[StrategicCampaignSnapshotOffer] = Field(default_factory=list)
