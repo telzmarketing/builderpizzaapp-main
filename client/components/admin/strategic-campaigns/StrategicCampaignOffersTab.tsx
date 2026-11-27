@@ -950,14 +950,22 @@ export default function StrategicCampaignOffersTab({
                     </span>
                   </div>
                   <div className="flex items-baseline gap-2">
+                    {(() => {
+                      const promotionalPrice = Number(offer.price_promotional);
+                      const originalPrice = Number(offer.price_original);
+                      return (
+                        <>
                     <strong className="text-xl text-gold">
-                      R$ {offer.price_promotional.toFixed(2)}
+                      R$ {promotionalPrice.toFixed(2)}
                     </strong>
-                    {offer.price_original > offer.price_promotional && (
+                    {originalPrice > promotionalPrice && (
                       <span className="text-sm text-stone line-through">
-                        R$ {offer.price_original.toFixed(2)}
+                        R$ {originalPrice.toFixed(2)}
                       </span>
                     )}
+                        </>
+                      );
+                    })()}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button

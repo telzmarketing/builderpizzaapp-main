@@ -135,7 +135,7 @@ export default function StrategicCampaignOffers({
                 offer.reference_type === "mixed_subcategories"
                   ? "A partir de "
                   : ""}
-                R$ {offer.price_promotional.toFixed(2).replace(".", ",")}
+                R$ {Number(offer.price_promotional).toFixed(2).replace(".", ",")}
               </span>
             )}
             <span
