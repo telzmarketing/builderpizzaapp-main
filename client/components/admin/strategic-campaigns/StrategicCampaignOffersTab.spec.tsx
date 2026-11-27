@@ -8,8 +8,10 @@ import type {
 import {
   buildStrategicOfferConfig,
   buildStrategicOfferCommercialContract,
+  buildStrategicOfferImagePayload,
   calculateStrategicOfferPriceRange,
   getActiveCatalogParentCategories,
+  getStrategicOfferAdminImageUrl,
   getStrategicOfferComponents,
   getStrategicOfferReferenceType,
 } from "./StrategicCampaignOffersTab";
@@ -220,5 +222,31 @@ describe("strategic offer admin commercial contract", () => {
     expect(contract.components).toEqual([
       { subcategory_id: "traditional", quantity: 1, allow_repeated_products: true, restrictions: null },
     ]);
+  });
+
+  it("preserves tenant-scoped desktop and mobile image paths in create/update payloads", () => {
+    expect(
+      buildStrategicOfferImagePayload({
+        imageDesktopUrl: "  /uploads/tenant-1/desktop.webp  ",
+        imageMobileUrl: "/uploads/tenant-1/mobile.webp",
+      }),
+    ).toEqual({
+      image_desktop_url: "/uploads/tenant-1/desktop.webp",
+      image_mobile_url: "/uploads/tenant-1/mobile.webp",
+    });
+
+    expect(
+      buildStrategicOfferImagePayload({
+        imageDesktopUrl: "",
+        imageMobileUrl: "  ",
+      }),
+    ).toEqual({ image_desktop_url: null, image_mobile_url: null });
+
+    expect(
+      getStrategicOfferAdminImageUrl({
+        image_desktop_url: null,
+        image_mobile_url: "/uploads/tenant-1/mobile.webp",
+      }),
+    ).toContain("/uploads/tenant-1/mobile.webp");
   });
 });

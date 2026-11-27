@@ -83,6 +83,46 @@ O procedimento está em `docs/strategic-campaigns-release-runbook.md`.
 | Indicadores por canal | `entry_channel` separado da atribuição publicitária | Landing, PDV, Operações, telefone, WhatsApp e balcão reconciliados |
 | Aparência Visual | Coluna visual existente preservada; mudanças limitadas ao contrato comercial e preview | Comparação visual autenticada desktop/mobile sem regressão |
 
+## Atualização complementar — 2026-11-27
+
+Os requisitos complementares foram auditados contra a implementação atual. Esta atualização é aditiva e não substitui o histórico C0–C11 acima. Não houve alteração de código nesta atualização documental.
+
+### Status complementar
+
+| Frente | Estado | Evidência atual | Bloqueio para aceite |
+|---|---|---|---|
+| Autenticação, cadastro e endereços | Parcialmente implementado | Fluxo canônico de sessão, login, registro, endereço e checkout existente | Carrinho/contexto de campanha ainda não têm restauração durável e E2E após login/registro/refresh. |
+| Landing, configurador e checkout | Implementado como integração canônica | Landing, configurador, carrinho, quote, OrderService e pagamento são reutilizados | Falta prova autenticada completa e decisão sobre alias `/campanha/:slug` versus `/campanha-estrategica/:slug`. |
+| Pagamentos | Parcialmente implementado | Pix/cartão, webhooks, idempotência e restrições comerciais existentes | Ciclo público de pagamento parcial, reserva, pendência, expiração, cancelamento e reembolso ainda não está fechado. |
+| Agendamento | Parcialmente implementado | Políticas de lead time e loja aberta/fechada no domínio canônico | Checkout ainda usa `datetime-local`; falta disponibilidade pública com slots e bloqueios por modalidade. |
+| Capacidade e reservas | Implementado no domínio administrativo; não integrado integralmente ao checkout | Serviço possui locks, limites, expiração, release e bind | P0: provar hold atômico e concorrência real antes de criar pedido/pagamento, inclusive canais compartilhados. |
+| Automações WhatsApp por campanha | Ausente | Gateway, outbox, templates e automações globais existem | Faltam agregado estratégico, geração idempotente, precedência, editor, eventos e métricas por campanha. |
+| CRM/histórico unificado | Parcialmente implementado | CRM, timeline e histórico geral existentes | Falta vínculo pesquisável de campanha/oferta/pedido/reserva/pagamento/agendamento/mensagem. |
+| Dashboard de automações | Ausente | Dashboards globais e métricas comerciais/marketing existentes | Faltam programadas, enviadas, entregues, falhas, confirmações, lembretes e taxa por campanha. |
+| E2E integral | Não comprovado | Testes focados de contratos, composição, capacidade e gateway existentes | Falta cenário autenticado e multicanal completo em PostgreSQL real, sem mensagens/cobranças reais. |
+
+### Riscos P0–P2 e gates adicionados
+
+- **P0 — capacidade:** duas sessões independentes devem disputar a mesma vaga/unidade e produzir no máximo uma confirmação; o gate exige PostgreSQL real, hold, bind, expiração, cancelamento e idempotência.
+- **P0 — jornada autenticada:** login/registro/refresh não podem perder composição, campanha, desconto, UTM ou agendamento; o gate exige E2E de cliente existente e novo.
+- **P1 — disponibilidade e pagamento:** slots devem ser gerados pelo backend e o estado financeiro/reserva deve permanecer correto em pendência, parcial, confirmação, expiração, cancelamento e reembolso.
+- **P1 — automações:** nenhum envio sem evento persistido, vínculo de campanha e deduplicação; alteração de agendamento deve cancelar lembretes antigos e preservar o histórico.
+- **P2 — operação e observabilidade:** landing, PDV e Operações devem compartilhar composição/preço/disponibilidade; CRM e dashboard devem usar fontes persistidas e respeitar tenant/RBAC/LGPD.
+
+### Próxima fatia
+
+O próximo checkpoint deve implementar e validar, nesta ordem:
+
+1. snapshot durável e contrato de retorno da jornada de campanha após autenticação;
+2. endpoint público de disponibilidade com datas, intervalos, bloqueios, modalidade e capacidade;
+3. hold transacional integrado ao quote/checkout, bind ao pedido e release por expiração/cancelamento;
+4. agregado aditivo de automação estratégica, geração idempotente e eventos de pedido/pagamento/agendamento;
+5. editor, histórico, CRM e dashboard somente depois dos contratos acima estarem comprovados.
+
+### Critério de avanço
+
+Não promover esta frente para `Aprovado` por existência de rota, modelo ou teste isolado. O avanço exige evidências do fluxo inteiro, concorrência PostgreSQL, isolamento entre tenants, reprocessamento idempotente, builds/CI do SHA e validação visual autenticada. Falhas de WhatsApp devem permanecer fora da transação comercial e não podem cancelar checkout, pagamento ou produção.
+
 ### Evidência ainda obrigatória para concluir C11
 
 1. Alembic upgrade em banco vazio e em cópia representativa, com head único e classificação de rollback.
@@ -93,3 +133,20 @@ O procedimento está em `docs/strategic-campaigns-release-runbook.md`.
 6. Regressão de produto, combo, promoção convencional e pedidos sem campanha.
 
 Nenhum deploy em produção integra C11 nesta etapa.
+## Atualizacao de validacao - 2026-11-27
+
+Esta rodada implementou snapshot duravel do carrinho/contexto do cliente,
+persistencia e exibicao das imagens desktop/mobile das ofertas, contrato publico
+de disponibilidade C6 e o agregado C12 de automacoes WhatsApp por campanha.
+As automacoes sao apenas definicoes idempotentes protegidas por RBAC nesta
+etapa; nao houve envio real, editor, outbox, CRM ou dashboard especifico.
+
+Evidencias: 13 testes backend focados aprovados, 16 testes frontend focados
+aprovados, compileall, typecheck global e git diff --check aprovados. A cadeia
+tem head unico `20261127_strategic_campaign_automations_c12`; a geracao offline
+completa ainda esbarra em uma migracao historica que usa introspeccao de schema
+incompativel com MockConnection, antes de chegar a C12.
+
+O aceite integral continua pendente de PostgreSQL real, concorrencia de hold no
+checkout, E2E autenticado/multitenant, eventos/outbox efetivos, integracao de
+CRM/dashboard e validacao visual autenticada.

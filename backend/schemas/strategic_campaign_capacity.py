@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -44,6 +44,42 @@ class StrategicCapacitySlotOut(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class StrategicCampaignAvailabilitySlotOut(BaseModel):
+    """Public, read-only representation of one selectable campaign interval."""
+
+    id: str
+    offer_id: str | None
+    label: str | None
+    starts_at: datetime
+    ends_at: datetime
+    local_date: date
+    capacity_total: int
+    capacity_used: int
+    remaining_capacity: int
+    blocked: bool
+    schedule_available: bool
+    available: bool
+    unavailable_reason: Literal[
+        "capacity_exhausted",
+        "blocked",
+        "outside_store_schedule",
+        "ended",
+    ] | None = None
+
+
+class StrategicCampaignAvailabilityDateOut(BaseModel):
+    date: date
+    slots: list[StrategicCampaignAvailabilitySlotOut]
+
+
+class StrategicCampaignAvailabilityOut(BaseModel):
+    campaign_id: str
+    offer_id: str | None
+    timezone: str
+    generated_at: datetime
+    dates: list[StrategicCampaignAvailabilityDateOut]
 
 
 class StrategicReservationCreate(BaseModel):

@@ -57,6 +57,7 @@ from backend.models import (  # noqa: F401
     salao_page,
     shipping,
     shipping_v2,
+    strategic_campaign,
     store_operation,
     store_notification,
     theme,
@@ -110,6 +111,10 @@ class _OfflineScalarResult:
 
     def all(self):
         return list(self._rows)
+
+    def first(self):
+        """Match SQLAlchemy's Result API for historical migration preflights."""
+        return self._rows[0] if self._rows else self._value
 
 
 def _configure_offline_preflight_adapter() -> None:

@@ -19,6 +19,7 @@ import {
   categoriesApi,
   productsApi,
   strategicCampaignsApi,
+  resolveAssetUrl,
   type ApiProduct,
   type ApiProductCategory,
   type ApiPromotionalKit,
@@ -262,6 +263,26 @@ export function buildStrategicOfferConfig(
   if (draft.pricingStrategy === "fixed_price")
     config.fixed_promotional_price = value;
   return config;
+}
+
+/**
+ * Keep image fields in the same shape for create and update requests.
+ * Uploads return tenant-scoped asset paths; the API must receive those paths
+ * unchanged so ownership and canonical serving remain server-controlled.
+ */
+export function buildStrategicOfferImagePayload(
+  draft: Pick<OfferDraft, "imageDesktopUrl" | "imageMobileUrl">,
+) {
+  return {
+    image_desktop_url: draft.imageDesktopUrl.trim() || null,
+    image_mobile_url: draft.imageMobileUrl.trim() || null,
+  };
+}
+
+export function getStrategicOfferAdminImageUrl(
+  offer: Pick<ApiStrategicOffer, "image_desktop_url" | "image_mobile_url">,
+) {
+  return resolveAssetUrl(offer.image_desktop_url || offer.image_mobile_url || "");
 }
 
 export function buildStrategicOfferCommercialContract(
@@ -721,8 +742,7 @@ export default function StrategicCampaignOffersTab({
         sales_ends_at: toIso(draft.salesEndsAt),
         show_when_sold_out: draft.showWhenSoldOut,
         button_text: draft.buttonText.trim() || null,
-        image_desktop_url: draft.imageDesktopUrl || null,
-        image_mobile_url: draft.imageMobileUrl || null,
+        ...buildStrategicOfferImagePayload(draft),
         badge_text: draft.badgeText.trim() || null,
         highlighted: draft.highlighted,
         display_order: editing?.display_order ?? campaign.offers.length,
@@ -901,9 +921,9 @@ export default function StrategicCampaignOffersTab({
                 key={offer.id}
                 className="overflow-hidden rounded-2xl border border-surface-03 bg-surface-01"
               >
-                {offer.image_desktop_url ? (
+                {(offer.image_desktop_url || offer.image_mobile_url) ? (
                   <img
-                    src={offer.image_desktop_url}
+                    src={getStrategicOfferAdminImageUrl(offer)}
                     alt=""
                     className="h-40 w-full object-cover"
                   />

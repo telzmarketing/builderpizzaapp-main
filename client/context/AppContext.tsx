@@ -160,6 +160,41 @@ export type { OrderStatus };
 function productsScopeKey() {
   return `${window.location.host.toLowerCase()}:${readPlatformSupportSession()?.tenant_id || "public"}`;
 }
+
+/** Storage is scoped to the public host and the resolved tenant. Never persist auth/payment secrets here. */
+export function tenantStorageScope(): string {
+  const host = window.location.host.toLowerCase();
+  const tenant = readPlatformSupportSession()?.tenant_id || "public";
+  return `${host}:${tenant}`;
+}
+
+export function cartStorageKey(scope = tenantStorageScope()): string {
+  return `telz:cart:v2:${scope}`;
+}
+
+export function safeCheckoutReturnPath(value?: string | null): string | null {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value, window.location.origin);
+    if (parsed.origin !== window.location.origin || !parsed.pathname.startsWith("/")) return null;
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return null;
+  }
+}
+
+function readStoredCart(scope = tenantStorageScope()): CartItem[] {
+  try {
+    const raw = localStorage.getItem(cartStorageKey(scope));
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is CartItem => Boolean(item && typeof item === "object" && "cartItemId" in item && "productId" in item));
+  } catch {
+    return [];
+  }
+}
+
 function getInitialProductsState() {
   // Always resolve the public host again; never rehydrate another tenant from localStorage.
   return {
@@ -653,7 +688,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<Pizza[]>(initialProducts.products);
   const [productsLoaded, setProductsLoaded] = useState(initialProducts.loaded);
   const [productsError, setProductsError] = useState("");
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cart, setCart] = useState<CartItem[]>(() => readStoredCart(productsScopeKey()));
+  const skipCartPersistenceRef = useRef(false);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [campaignBanners, setCampaignBanners] = useState<ApiCampaign[]>([]);
   const [orders, setOrders] = useState<ApiOrder[]>([]);
@@ -688,9 +724,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     loadedDataRef.current.clear();
     setProducts([]);
     setProductsLoaded(false);
-    setCart([]);
+    skipCartPersistenceRef.current = true;
+    setCart(readStoredCart(catalogScope));
     void loadCatalogData(getStoreRefreshPlan(window.location.pathname)).catch(() => {});
   }, [catalogScope]);
+
+  useEffect(() => {
+    if (skipCartPersistenceRef.current) {
+      skipCartPersistenceRef.current = false;
+      return;
+    }
+    try {
+      const key = cartStorageKey(catalogScope);
+      if (cart.length === 0) localStorage.removeItem(key);
+      else localStorage.setItem(key, JSON.stringify(cart));
+    } catch {
+      // Storage can be disabled/full; the in-memory cart remains usable.
+    }
+  }, [cart, catalogScope]);
   useEffect(() => {
     const invalidate = () => { loadedDataRef.current.delete("products"); };
     window.addEventListener("catalog-products-changed", invalidate);

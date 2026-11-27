@@ -30,7 +30,12 @@ import {
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { groupCartItems } from "@/lib/cartKits";
 import { scheduleShippingQuote } from "@/lib/checkoutShipping";
-import { useApp, type CartItem } from "@/context/AppContext";
+import {
+  safeCheckoutReturnPath,
+  tenantStorageScope,
+  useApp,
+  type CartItem,
+} from "@/context/AppContext";
 import {
   couponsApi,
   customersApi,
@@ -228,7 +233,15 @@ export default function Checkout() {
       strategicCommercialConfig.require_scheduled_order);
   const c = siteContent.pages.checkout;
 
-  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("delivery");
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>(() => {
+    try {
+      const raw = sessionStorage.getItem(`telz:checkout-draft:v1:${tenantStorageScope()}`);
+      const parsed = raw ? JSON.parse(raw) as { deliveryMode?: DeliveryMode } : null;
+      return parsed?.deliveryMode === "pickup" ? "pickup" : "delivery";
+    } catch {
+      return "delivery";
+    }
+  });
   const [selectedAddressId, setSelectedAddressId] = useState<
     string | "new" | null
   >(null);
@@ -282,7 +295,26 @@ export default function Checkout() {
   const [storeStatus, setStoreStatus] = useState<StoreOperationStatus | null>(
     null,
   );
-  const [scheduledFor, setScheduledFor] = useState("");
+  const [scheduledFor, setScheduledFor] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem(`telz:checkout-draft:v1:${tenantStorageScope()}`);
+      const parsed = raw ? JSON.parse(raw) as { scheduledFor?: string } : null;
+      return typeof parsed?.scheduledFor === "string" ? parsed.scheduledFor : "";
+    } catch {
+      return "";
+    }
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        `telz:checkout-draft:v1:${tenantStorageScope()}`,
+        JSON.stringify({ deliveryMode, scheduledFor }),
+      );
+    } catch {
+      // Session storage is optional; checkout state remains in memory.
+    }
+  }, [deliveryMode, scheduledFor]);
   const [checkoutAddresses, setCheckoutAddresses] = useState<
     ApiAddress[] | null
   >(null);
@@ -789,7 +821,8 @@ export default function Checkout() {
   }, [promotionBlocksCoupons, couponApplied]);
 
   if (!customer && !createdOrder) {
-    navigate("/conta?redirect=/checkout", { replace: true });
+    const returnPath = safeCheckoutReturnPath(`${window.location.pathname}${window.location.search}${window.location.hash}`) || "/checkout";
+    navigate(`/conta?redirect=${encodeURIComponent(returnPath)}`, { replace: true });
     return null;
   }
 

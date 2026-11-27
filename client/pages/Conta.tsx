@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight, Edit2, Check, User, Mail, Phone,
   MapPin, Home, Hash, Eye, EyeOff, LogOut, Plus, Trash2, Shield, Lock,
 } from "lucide-react";
-import { useApp } from "@/context/AppContext";
+import { safeCheckoutReturnPath, useApp } from "@/context/AppContext";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { lgpdApi, customersApi, type ApiLgpdPolicy, type ApiAddress } from "@/lib/api";
@@ -195,7 +195,7 @@ function LgpdModal({
 export default function Conta() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const redirectAfterLogin = searchParams.get("redirect") || null;
+  const redirectAfterLogin = safeCheckoutReturnPath(searchParams.get("redirect"));
   const {
     orders, siteContent, customer,
     emailLogin, registerCustomer, googleLogin,

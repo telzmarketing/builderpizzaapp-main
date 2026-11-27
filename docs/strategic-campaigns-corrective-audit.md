@@ -219,6 +219,61 @@ Executado em 2026-11-25:
 Esses resultados validam apenas o código atualmente existente. Eles não são
 evidência de conclusão do fluxo comercial ou do aceite corretivo.
 
+## Atualização complementar — 2026-11-27
+
+Esta seção preserva a auditoria histórica acima e incorpora os requisitos complementares de autenticação, checkout, agendamento, capacidade, pagamentos, automações WhatsApp, CRM, eventos, histórico, dashboard e aceite multicanal. A classificação abaixo é baseada na inspeção do repositório e nos testes focados disponíveis; não representa aceite de produção.
+
+### Implementado e reutilizável
+
+- Autenticação, cadastro, sessão do cliente, endereços e retorno convencional para o checkout já existem no fluxo canônico.
+- Landing pública, configurador, carrinho, quote, checkout, pedidos, pagamentos, webhooks e idempotência são reutilizáveis; a validação server-side de oferta e preço permanece obrigatória.
+- Regras comerciais de venda imediata, pré-venda, loja fechada, agendamento mínimo/máximo e meios de pagamento existem no domínio canônico.
+- O domínio de capacidade/reserva possui tenant isolation, locks, limites, idempotência, expiração, liberação e vínculo ao pedido em suas rotas/serviços administrativos.
+- Infraestrutura transversal de eventos, outbox, retry, deduplicação, gateway WhatsApp, CRM e métricas globais existe e deve ser estendida, não duplicada.
+- As ofertas por referência de catálogo preservam o catálogo canônico, seleção independente por grupo e composição comercial agrupada; isso não prova a jornada pública completa.
+
+### Parcial ou não comprovado
+
+| Área | Classificação atual | Evidência/pendência bloqueadora |
+|---|---|---|
+| Autenticação e carrinho | Parcial | O carrinho vive em memória React; falta snapshot durável, retorno completo da campanha e teste de login/registro com preservação de composição, agendamento, desconto e atribuição. |
+| URL pública | Parcial | O código usa `/campanha-estrategica/:slug`, enquanto o requisito complementar exemplifica `/campanha/:slug`; decidir compatibilidade antes de distribuir links. |
+| Pagamento de campanha | Parcial | Pix/cartão, webhooks e restrições existem; pagamento parcial, pagamento de reserva, expiração e estados completos ainda não estão provados no checkout público da campanha. |
+| Agendamento | Parcial | O checkout aceita `datetime-local`; falta endpoint público de disponibilidade e seleção de datas/intervalos gerados, bloqueios e capacidade por entrega/retirada. |
+| Capacidade | P0 incompleto | Reservas administrativas existem, mas não há prova de hold atômico durante o checkout público antes da criação do pedido e do pagamento. |
+| WhatsApp estratégico | Ausente | Não há automações vinculadas à campanha, precedência sobre automações globais, catálogo de eventos, editor, histórico ou métricas específicas. |
+| Eventos operacionais | Ausente para campanha | Ainda falta publicar eventos de reserva, pagamento, agendamento, KDS, expedição, entrega, retirada, cancelamento e reembolso com vínculo de campanha/oferta/pedido. |
+| CRM e auditoria | Parcial | Há CRM e histórico gerais, mas falta visão unificada por campanha com oferta, pedido, pagamento, agendamento, mensagem, versão, provedor e falha. |
+| Dashboard | Parcial | Métricas comerciais/marketing existem; indicadores de automações programadas, enviadas, entregues, falhas, confirmações e lembretes por campanha não estão no dashboard. |
+| Aceite integral | Ausente | Não há E2E autenticado completo landing → configurador → carrinho → login/registro → endereço → slot → pagamento → operação → CRM em PostgreSQL concorrente. |
+
+### Riscos prioritários e resolução obrigatória
+
+| Prioridade | Risco | Gate bloqueador | Resolução e rollback |
+|---|---|---|---|
+| P0 | Overselling ou conflito entre campanhas, pedidos convencionais e canais | Duas sessões PostgreSQL independentes disputando a última vaga/unidade devem produzir uma única confirmação | Integrar hold, quote, pedido, pagamento, bind, confirmação e release em transação/idempotência; manter a oferta desativável e preservar pedidos já confirmados. |
+| P0 | Perda de carrinho/contexto durante login, registro ou refresh | E2E deve recuperar composição, campanha, oferta, UTM, desconto e agendamento após autenticação | Persistir snapshot tenant/cliente/sessão, revalidar no servidor e restaurar somente dados válidos; fallback para checkout convencional sem apagar histórico. |
+| P1 | Horário inválido ou indisponível escolhido em campo livre | Matriz de datas, intervalos, bloqueios, lead time, entrega/retirada e capacidade | Criar contrato público de disponibilidade e renderizar slots; manter rejeição server-side e voltar ao estado anterior em falha. |
+| P1 | Estado financeiro ou reserva incorreto em pagamento pendente/parcial/expirado | Testes de Pix pendente, confirmação, expiração, cancelamento, reembolso e liberação | Integrar o ciclo de reserva ao provedor e aos webhooks idempotentes; nunca marcar quitado sem confirmação e nunca bloquear produção por falha de WhatsApp. |
+| P1 | Mensagens duplicadas ou enviadas para o evento errado | Reprocessamento, webhook repetido, alteração de horário e precedência global/campanha sem duplicidade | Criar chaves de negócio, automação específica e fallback explícito; preservar histórico e suspender somente o disparo incompatível. |
+| P2 | Histórico e indicadores fragmentados ou fictícios | Consulta por campanha/oferta/pedido/cliente/status/provedor reconciliada com outbox e gateway | Materializar fontes persistidas, exibir indisponível quando faltar dado e restringir acesso por RBAC/LGPD. |
+| P2 | Divergência de contrato público e canais | Landing, loja, PDV, Operações, WhatsApp, telefone e balcão com a mesma composição e atribuição | Definir alias de URL e `entry_channel`, reutilizar ManualOrderComposer e OrderService; rollback por feature flag sem criar checkout paralelo. |
+
+### Gates de aceite complementar
+
+1. Contratos de disponibilidade, reserva, pagamento parcial, eventos estratégicos e automações aprovados sem quebrar APIs canônicas.
+2. PostgreSQL real descartável comprova concorrência, locks, expiração, cancelamento, idempotência e isolamento entre tenants.
+3. E2E autenticado comprova cliente existente, novo cadastro, retorno após login, preservação do carrinho, endereço, slot, pagamento, histórico e CRM.
+4. Nenhum pedido é criado sem quote/revalidação server-side; nenhuma mensagem é enviada sem evento persistido e deduplicado.
+5. WhatsApp permanece fail-open para pedido, pagamento, produção e checkout; falhas ficam no outbox e no histórico.
+6. O editor e o dashboard específicos da campanha mostram precedência, personalização, versão, estado de envio e métricas verificáveis.
+7. Testes de landing, PDV e Operações reconciliam preço, disponibilidade, cliente, pedido, financeiro, estoque, CMV, KDS e CRM.
+8. O aceite integral dos 50 passos complementares ocorre apenas com evidências autenticadas, visuais e operacionais; código ou teste unitário isolado não fecha o gate.
+
+### Próxima fatia autorizada do plano C0–C10
+
+Executar primeiro a fatia de fundação segura: (a) contrato de snapshot/retorno da jornada autenticada; (b) endpoint público de disponibilidade; (c) vínculo transacional de hold de capacidade ao checkout; e (d) modelo aditivo de automação estratégica com `strategic_campaign_id`, `offer_id`, `order_id`, `dedupe_key` e versão. Somente após os testes de PostgreSQL e E2E dessa fatia avançar para editor WhatsApp, CRM, dashboard e integrações operacionais. Nenhuma mensagem real ou cobrança real deve ser usada nos testes.
+
 ## Critério para declarar conclusão
 
 Somente declarar o submódulo concluído quando a matriz estiver integralmente
@@ -226,3 +281,17 @@ atendida, o cenário administrativo/comercial de 40 passos passar pela interface
 as integrações operacionais e financeiras forem reconciliadas e as evidências
 visuais e automatizadas estiverem anexadas. A existência de endpoint, model ou
 componente isolado não constitui aceite.
+## Evidencia complementar da implementacao - 2026-11-27
+
+Foram implementadas e validadas nesta rodada as fatias de snapshot duravel do
+carrinho/contexto, imagens de oferta no payload de criacao/edicao e no painel,
+endpoint publico de disponibilidade C6 e modelo/migracao C12 de automacoes
+WhatsApp por campanha. Nenhum disparo real foi executado.
+
+Os testes focados passaram (13 backend e 18 frontend), assim como compileall,
+typecheck global e git diff --check. A cadeia Alembic possui head unico C12;
+geracao offline completa ainda encontra uma incompatibilidade historica de
+introspeccao com MockConnection. Isso nao fecha o aceite integral: ainda faltam
+migracao PostgreSQL real, concorrencia, hold transacional integrado ao checkout,
+E2E autenticado/multitenant, eventos/outbox, editor, CRM/dashboard e captura
+visual autenticada.

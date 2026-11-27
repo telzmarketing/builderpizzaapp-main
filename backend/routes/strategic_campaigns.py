@@ -24,6 +24,7 @@ from backend.schemas.strategic_campaign import (
     StrategicOfferConfigurationOut,
 )
 from backend.schemas.strategic_campaign_capacity import (
+    StrategicCampaignAvailabilityOut,
     StrategicCapacitySlotCreate,
     StrategicCapacitySlotOut,
     StrategicCapacitySlotUpdate,
@@ -34,10 +35,12 @@ from backend.schemas.strategic_campaign_capacity import (
     StrategicReservationOut,
     StrategicReservationRelease,
 )
+from backend.schemas.strategic_campaign_automation import StrategicCampaignAutomationOut, StrategicCampaignAutomationUpdate
 from backend.services.strategic_campaign_capacity_service import StrategicCampaignCapacityService
 from backend.services.strategic_campaign_service import StrategicCampaignService
 from backend.services.strategic_offer_composition_service import StrategicOfferCompositionService
 from backend.services.strategic_campaign_metrics_service import StrategicCampaignMetricsService
+from backend.services.strategic_campaign_automation_service import StrategicCampaignAutomationService
 
 router = APIRouter(prefix="/strategic-campaigns", tags=["strategic-campaigns"])
 view = require_rbac_permission("marketing", "view")
@@ -156,6 +159,39 @@ def campaign_metrics(
         raise DomainError(str(exc), code="InvalidMetricsPeriod") from exc
 
 
+@router.get("/{campaign_id}/automations")
+def list_campaign_automations(campaign_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(view)):
+    try:
+        rows = StrategicCampaignAutomationService(db, actor.tenant_id).list(campaign_id)
+        return ok([StrategicCampaignAutomationOut.model_validate(row) for row in rows])
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/{campaign_id}/automations/generate")
+def generate_campaign_automations(campaign_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(edit)):
+    try:
+        rows = StrategicCampaignAutomationService(db, actor.tenant_id).generate(campaign_id)
+        return ok([StrategicCampaignAutomationOut.model_validate(row) for row in rows])
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.patch("/{campaign_id}/automations/{automation_id}")
+def update_campaign_automation(
+    campaign_id: str,
+    automation_id: str,
+    body: StrategicCampaignAutomationUpdate,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(edit),
+):
+    try:
+        row = StrategicCampaignAutomationService(db, actor.tenant_id).update(campaign_id, automation_id, body)
+        return ok(StrategicCampaignAutomationOut.model_validate(row))
+    except DomainError as exc:
+        return err(exc)
+
+
 @router.put("/{campaign_id}")
 def update_campaign(campaign_id: str, body: StrategicCampaignUpdate, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(edit)):
     try:
@@ -232,6 +268,23 @@ def list_capacity_slots(campaign_id: str, db: Session = Depends(get_db), actor: 
         return ok([StrategicCapacitySlotOut.model_validate(row) for row in rows])
     except DomainError as exc:
         return err(exc)
+
+
+@router.get("/public/{campaign_id}/availability", response_model=None)
+def public_campaign_availability(
+    campaign_id: str,
+    request: Request,
+    offer_id: str | None = Query(default=None, min_length=1, max_length=120),
+    db: Session = Depends(get_db),
+):
+    context = resolve_public_tenant_context(request, db)
+    if context is None:
+        raise DomainError("Tenant publico nao resolvido.", code="PublicTenantRequired")
+    document = StrategicCampaignCapacityService(db, context.tenant_id).public_availability(
+        campaign_id,
+        offer_id,
+    )
+    return ok(StrategicCampaignAvailabilityOut.model_validate(document))
 
 
 @router.post("/{campaign_id}/capacity-slots", status_code=201)

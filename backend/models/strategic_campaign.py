@@ -46,6 +46,42 @@ class StrategicCampaign(Base):
 
     offers = relationship("StrategicOffer", back_populates="campaign", cascade="all, delete-orphan")
     versions = relationship("StrategicCampaignVersion", back_populates="campaign", cascade="all, delete-orphan")
+    automations = relationship("StrategicCampaignAutomation", back_populates="campaign", cascade="all, delete-orphan")
+
+
+class StrategicCampaignAutomation(Base):
+    """Campaign-scoped automation definition; execution remains owned by the automation engine."""
+
+    __tablename__ = "strategic_campaign_automations"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "campaign_id"],
+            ["strategic_campaigns.tenant_id", "strategic_campaigns.id"],
+            name="fk_strategic_campaign_automations_campaign",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "tenant_id", "campaign_id", "automation_key",
+            name="uq_strategic_campaign_automations_key",
+        ),
+        CheckConstraint("channel = 'whatsapp'", name="ck_strategic_campaign_automations_channel"),
+        Index("ix_strategic_campaign_automations_tenant_campaign", "tenant_id", "campaign_id"),
+    )
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
+    campaign_id = Column(String, nullable=False)
+    automation_key = Column(String(80), nullable=False)
+    event_key = Column(String(120), nullable=False)
+    channel = Column(String(20), nullable=False, default="whatsapp", server_default="whatsapp")
+    name = Column(String(200), nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True, server_default="true")
+    definition = Column(JSON, nullable=False, default=dict, server_default="{}")
+    generated_from = Column(JSON, nullable=False, default=dict, server_default="{}")
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    campaign = relationship("StrategicCampaign", back_populates="automations")
 
 
 class StrategicOffer(Base):

@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -21,7 +23,11 @@ from backend.models.strategic_campaign import (
 )
 from backend.models.order import Order, OrderStatus
 from backend.models.customer import Customer
+from backend.models.store_operation import StoreOperationSettings
 from backend.schemas.strategic_campaign_capacity import (
+    StrategicCampaignAvailabilityDateOut,
+    StrategicCampaignAvailabilityOut,
+    StrategicCampaignAvailabilitySlotOut,
     StrategicCapacitySlotCreate,
     StrategicCapacitySlotUpdate,
     StrategicReservationCreate,
@@ -118,6 +124,115 @@ class StrategicCampaignCapacityService:
             StrategicCapacitySlot.tenant_id == self.tenant_id,
             StrategicCapacitySlot.campaign_id == campaign_id,
         ).order_by(StrategicCapacitySlot.starts_at, StrategicCapacitySlot.id).all()
+
+    def public_availability(
+        self,
+        campaign_id: str,
+        offer_id: str | None = None,
+        *,
+        now: datetime | None = None,
+    ) -> StrategicCampaignAvailabilityOut:
+        """Return public campaign dates and slots without changing database state.
+
+        Expired holds are excluded from the calculated usage, but are not
+        released here. Expiration remains owned by the reservation lifecycle.
+        """
+        from backend.services.strategic_campaign_service import StrategicCampaignService
+        from backend.services.store_operation_service import StoreOperationService
+
+        campaign = StrategicCampaignService(self.db, self.tenant_id).get_public_by_id(campaign_id)
+        if offer_id is not None:
+            self._offer(campaign_id, offer_id)
+
+        generated_at = _as_utc(now or _utc_now())
+        settings = self.db.query(StoreOperationSettings).filter(
+            StoreOperationSettings.tenant_id == self.tenant_id,
+        ).first()
+        timezone_name = settings.timezone if settings else "America/Sao_Paulo"
+        try:
+            zone = ZoneInfo(timezone_name)
+        except Exception:
+            timezone_name = "America/Sao_Paulo"
+            zone = ZoneInfo(timezone_name)
+
+        slots = self.db.query(StrategicCapacitySlot).filter(
+            StrategicCapacitySlot.tenant_id == self.tenant_id,
+            StrategicCapacitySlot.campaign_id == campaign_id,
+        )
+        if campaign.ends_at:
+            slots = slots.filter(StrategicCapacitySlot.starts_at < _as_utc(campaign.ends_at))
+        if offer_id is not None:
+            slots = slots.filter(
+                (StrategicCapacitySlot.offer_id == offer_id)
+                | StrategicCapacitySlot.offer_id.is_(None),
+            )
+        rows = slots.order_by(StrategicCapacitySlot.starts_at, StrategicCapacitySlot.id).all()
+
+        reservations = self.db.query(StrategicReservation).filter(
+            StrategicReservation.tenant_id == self.tenant_id,
+            StrategicReservation.campaign_id == campaign_id,
+            StrategicReservation.status.in_(ACTIVE_RESERVATION_STATUSES),
+        ).all()
+        used_by_slot: dict[str, int] = defaultdict(int)
+        for reservation in reservations:
+            if reservation.status == "held" and (
+                reservation.expires_at is None or _as_utc(reservation.expires_at) <= generated_at
+            ):
+                continue
+            if offer_id is None or reservation.offer_id in {None, offer_id}:
+                used_by_slot[reservation.slot_id] += reservation.quantity
+
+        schedule = StoreOperationService(self.db, self.tenant_id)
+        grouped: dict[object, list[StrategicCampaignAvailabilitySlotOut]] = defaultdict(list)
+        for slot in rows:
+            starts_at = _as_utc(slot.starts_at)
+            ends_at = _as_utc(slot.ends_at)
+            if starts_at <= generated_at or ends_at <= generated_at:
+                continue
+            capacity_used = used_by_slot.get(slot.id, 0)
+            remaining = max(0, slot.capacity_total - capacity_used)
+            schedule_available = True
+            if settings is not None:
+                local_start = starts_at.astimezone(zone)
+                schedule_available, _, _ = schedule._is_open_at(
+                    local_start,
+                    settings,
+                    ignore_manual=True,
+                )
+            reason = None
+            if slot.blocked:
+                reason = "blocked"
+            elif remaining <= 0:
+                reason = "capacity_exhausted"
+            elif not schedule_available:
+                reason = "outside_store_schedule"
+            item = StrategicCampaignAvailabilitySlotOut(
+                id=slot.id,
+                offer_id=slot.offer_id,
+                label=slot.label,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                local_date=starts_at.astimezone(zone).date(),
+                capacity_total=slot.capacity_total,
+                capacity_used=capacity_used,
+                remaining_capacity=remaining,
+                blocked=slot.blocked,
+                schedule_available=schedule_available,
+                available=reason is None,
+                unavailable_reason=reason,
+            )
+            grouped[item.local_date].append(item)
+
+        return StrategicCampaignAvailabilityOut(
+            campaign_id=campaign_id,
+            offer_id=offer_id,
+            timezone=timezone_name,
+            generated_at=generated_at,
+            dates=[
+                StrategicCampaignAvailabilityDateOut(date=day, slots=items)
+                for day, items in sorted(grouped.items())
+            ],
+        )
 
     def create_slot(self, campaign_id: str, payload: StrategicCapacitySlotCreate) -> StrategicCapacitySlot:
         campaign = self._campaign(campaign_id)

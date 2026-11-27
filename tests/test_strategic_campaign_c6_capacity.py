@@ -18,7 +18,14 @@ from backend.models.strategic_campaign import (
     StrategicCampaign,
     StrategicCampaignStatus,
     StrategicCapacitySlot,
+    StrategicOffer,
     StrategicReservation,
+)
+from backend.models.store_operation import (
+    StoreOperationException,
+    StoreOperationInterval,
+    StoreOperationSettings,
+    StoreWeeklySchedule,
 )
 from backend.schemas.strategic_campaign_capacity import (
     StrategicCapacitySlotCreate,
@@ -43,8 +50,13 @@ def db():
         engine,
         tables=[
             StrategicCampaign.__table__,
+            StrategicOffer.__table__,
             StrategicCapacitySlot.__table__,
             StrategicReservation.__table__,
+            StoreOperationSettings.__table__,
+            StoreWeeklySchedule.__table__,
+            StoreOperationInterval.__table__,
+            StoreOperationException.__table__,
         ],
     )
     session = sessionmaker(bind=engine, expire_on_commit=False)()
@@ -226,3 +238,72 @@ def test_payment_modes_are_validated_by_schema():
         StrategicReservationCreate(**base, payment_mode="partial", amount_paid=Decimal("100.00"))
     with pytest.raises(ValidationError):
         StrategicReservationCreate(**base, payment_mode="full", amount_paid=Decimal("90.00"))
+
+
+def test_public_availability_groups_dates_and_ignores_expired_holds(db):
+    campaign = _campaign(db)
+    campaign.status = StrategicCampaignStatus.active
+    campaign.published_version = 1
+    db.add(StoreOperationSettings(
+        id="settings-tenant-1",
+        tenant_id="tenant-1",
+        allow_scheduled_orders=False,
+        timezone="America/Sao_Paulo",
+    ))
+    schedule = StoreWeeklySchedule(
+        id="schedule-friday",
+        tenant_id="tenant-1",
+        weekday=4,
+        active=True,
+    )
+    db.add(schedule)
+    db.flush()
+    db.add(StoreOperationInterval(
+        id="interval-friday",
+        tenant_id="tenant-1",
+        schedule_id=schedule.id,
+        open_time=datetime.strptime("18:00", "%H:%M").time(),
+        close_time=datetime.strptime("23:30", "%H:%M").time(),
+    ))
+    db.commit()
+
+    service = StrategicCampaignCapacityService(db, "tenant-1")
+    available = _slot(service, capacity=2)
+    available.starts_at = datetime(2026, 11, 27, 22, 0, tzinfo=timezone.utc)
+    available.ends_at = datetime(2026, 11, 27, 23, 0, tzinfo=timezone.utc)
+    db.commit()
+    held = service.create_reservation(
+        "campaign-1",
+        _reservation(available.id, "request-availability-1", hold_minutes=1),
+        now=NOW,
+    )
+    held.expires_at = NOW - timedelta(minutes=1)
+    db.commit()
+
+    blocked = service.create_slot(
+        "campaign-1",
+        StrategicCapacitySlotCreate(
+            label="Bloqueado",
+            starts_at=datetime(2026, 11, 28, 22, 0, tzinfo=timezone.utc),
+            ends_at=datetime(2026, 11, 28, 23, 0, tzinfo=timezone.utc),
+            capacity_total=2,
+            blocked=True,
+        ),
+    )
+
+    document = service.public_availability("campaign-1", now=NOW)
+    assert document.timezone == "America/Sao_Paulo"
+    slots = {slot.id: slot for day in document.dates for slot in day.slots}
+    assert slots[available.id].available is True
+    assert slots[available.id].capacity_used == 0
+    assert slots[available.id].remaining_capacity == 2
+    assert slots[blocked.id].available is False
+    assert slots[blocked.id].unavailable_reason == "blocked"
+
+
+def test_public_availability_remains_tenant_scoped(db):
+    _campaign(db, tenant_id="tenant-1")
+    service = StrategicCampaignCapacityService(db, "tenant-2")
+    with pytest.raises(DomainError) as error:
+        service.public_availability("campaign-1", now=NOW)
+    assert error.value.code == "StrategicCampaignNotFound"
