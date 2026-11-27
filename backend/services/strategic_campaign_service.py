@@ -197,7 +197,12 @@ class StrategicCampaignService:
             self._assert_offer_promotion(product_id, data["config"])
         if components is not None:
             self._assert_offer_components(reference_type, components)
-            row.components = self._component_rows(row.id, components)
+            # The component position is unique per offer.  Flush the orphaned
+            # rows before inserting the replacement set, otherwise SQLAlchemy
+            # may insert position 0/1 before deleting the old position 0/1.
+            row.components.clear()
+            self.db.flush()
+            row.components.extend(self._component_rows(row.id, components))
             row.composition_revision += 1
         if "config" in data or components is not None or "reference_type" in data:
             self._assert_selection_groups(reference_type, effective_config)

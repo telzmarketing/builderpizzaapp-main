@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 import backend.main  # noqa: F401
 from backend.core.exceptions import DomainError
 from backend.database import Base
-from backend.models.product import Product
+from backend.models.product import Product, ProductCategory
 from backend.models.product_promotion import ProductPromotion
 from backend.models.strategic_campaign import StrategicCampaign, StrategicOffer, StrategicOfferComponent
 from backend.schemas.strategic_campaign import StrategicOfferCreate, StrategicOfferUpdate
@@ -28,6 +28,7 @@ def db():
         engine,
         tables=[
             Product.__table__,
+            ProductCategory.__table__,
             ProductPromotion.__table__,
             StrategicCampaign.__table__,
             StrategicOffer.__table__,
@@ -210,3 +211,51 @@ def test_update_offer_cannot_bypass_promotion_ownership_validation(db):
 
     assert error.value.code == "StrategicOfferPromotionNotFound"
     assert offer.config["product_promotion_id"] == "promotion-1"
+
+
+def test_update_offer_replaces_components_before_reusing_positions(db):
+    campaign = _campaign(db)
+    db.add_all(
+        [
+            ProductCategory(id="category-1", tenant_id="tenant-1", name="Pizzas"),
+            ProductCategory(
+                id="subcategory-1",
+                tenant_id="tenant-1",
+                parent_id="category-1",
+                name="Tradicionais",
+            ),
+            Product(
+                id="subcategory-product-1",
+                tenant_id="tenant-1",
+                subcategory_id="subcategory-1",
+                name="Pizza Tradicional",
+                description="Produto de teste",
+                price=50,
+                active=True,
+            ),
+        ]
+    )
+    db.commit()
+    service = StrategicCampaignService(db, "tenant-1")
+    offer = service.add_offer(
+        campaign.id,
+        StrategicOfferCreate(
+            code="SUBCATEGORY-001",
+            title="Oferta por subcategoria",
+            reference_type="subcategory",
+            components=[{"subcategory_id": "subcategory-1", "quantity": 1}],
+            price_original=Decimal("50.00"),
+            price_promotional=Decimal("39.90"),
+        ),
+    )
+
+    updated = service.update_offer(
+        offer.id,
+        StrategicOfferUpdate(
+            components=[{"subcategory_id": "subcategory-1", "quantity": 1}],
+            image_desktop_url="/uploads/offer.webp",
+        ),
+    )
+
+    assert updated.image_desktop_url == "/uploads/offer.webp"
+    assert [(item.position, item.subcategory_id) for item in updated.components] == [(0, "subcategory-1")]
