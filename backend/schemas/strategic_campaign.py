@@ -282,8 +282,13 @@ class StrategicOfferOut(BaseModel):
     image_mobile_url: str | None
     badge_text: str | None
     highlighted: bool
-    config: dict[str, Any]
+    config: dict[str, Any] = Field(default_factory=dict)
     archived_at: datetime | None
+
+    @field_validator("config", mode="before")
+    @classmethod
+    def normalize_config(cls, value: dict[str, Any] | None) -> dict[str, Any]:
+        return value or {}
 
     model_config = {"from_attributes": True}
 

@@ -421,6 +421,9 @@ export function calculateStrategicOfferPriceRange(
 }
 
 function offerDraft(offer: ApiStrategicOffer): OfferDraft {
+  // Older offers may have been persisted before `config` became mandatory.
+  // Keep the admin editor usable while the API normalizes those records.
+  const config = offer.config ?? {};
   const sourceType = getStrategicOfferReferenceType(offer);
   const components = getStrategicOfferComponents(offer).map((component) => ({
     subcategoryId: component.subcategory_id,
@@ -428,7 +431,7 @@ function offerDraft(offer: ApiStrategicOffer): OfferDraft {
     allowRepeatedProducts: component.allow_repeated_products ?? true,
     restrictions: component.restrictions ?? null,
   }));
-  const savedGroups = offer.selection_groups ?? offer.config.selection_groups ?? [];
+  const savedGroups = offer.selection_groups ?? config.selection_groups ?? [];
   const selectionGroups = savedGroups.map((group) => ({
     categoryId: group.category_id,
     subcategoryIds: group.subcategory_ids,
@@ -436,14 +439,14 @@ function offerDraft(offer: ApiStrategicOffer): OfferDraft {
     quantity: String(group.quantity),
   }));
   const pricingStrategy =
-    offer.pricing_strategy ?? offer.config?.pricing_strategy ?? "fixed_price";
+    offer.pricing_strategy ?? config.pricing_strategy ?? "fixed_price";
   const pricingValue =
     pricingStrategy === "percentage"
-      ? (offer.discount_percent ?? offer.config.discount_percent)
+      ? (offer.discount_percent ?? config.discount_percent)
       : pricingStrategy === "fixed_discount"
-        ? (offer.discount_amount ?? offer.config.discount_amount)
+        ? (offer.discount_amount ?? config.discount_amount)
         : (offer.fixed_promotional_price ??
-          offer.config.fixed_promotional_price ??
+          config.fixed_promotional_price ??
           offer.price_promotional);
   return {
     code: offer.code,
