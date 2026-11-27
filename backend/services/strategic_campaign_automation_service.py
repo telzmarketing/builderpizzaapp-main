@@ -62,7 +62,7 @@ class StrategicCampaignAutomationService:
                     "name": "Lembrete do agendamento da campanha",
                 },
             ])
-        if commercial_config.get("sales_mode") == "preorder":
+        if commercial_config.get("sales_mode") in {"preorder", "hybrid"}:
             catalog.append({
                 "automation_key": "reservation_created",
                 "event_key": "strategic_campaign.reservation.created",

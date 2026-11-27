@@ -13,7 +13,7 @@ STRATEGIC_CAMPAIGN_SNAPSHOT_SCHEMA_VERSION = 1
 
 
 class StrategicCommercialConfig(BaseModel):
-    sales_mode: Literal["immediate", "preorder"] = "immediate"
+    sales_mode: Literal["immediate", "preorder", "hybrid"] = "immediate"
     allow_when_store_closed: bool = False
     require_scheduled_order: bool = False
     min_lead_minutes: int = Field(default=0, ge=0, le=43200)

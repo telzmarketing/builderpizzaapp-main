@@ -1367,7 +1367,7 @@ export interface ApiStrategicOfferConfiguration {
 }
 
 export interface StrategicCommercialConfig {
-  sales_mode: "immediate" | "preorder";
+  sales_mode: "immediate" | "preorder" | "hybrid";
   allow_when_store_closed: boolean;
   require_scheduled_order: boolean;
   min_lead_minutes: number;
@@ -1375,6 +1375,30 @@ export interface StrategicCommercialConfig {
   allowed_payment_methods: Array<
     "pix" | "credit_card" | "debit_card" | "pay_on_delivery"
   >;
+}
+
+export interface ApiStrategicCampaignAvailabilitySlot {
+  id: string;
+  offer_id: string | null;
+  label: string | null;
+  starts_at: string;
+  ends_at: string;
+  local_date: string;
+  capacity_total: number;
+  capacity_used: number;
+  remaining_capacity: number;
+  blocked: boolean;
+  schedule_available: boolean;
+  available: boolean;
+  unavailable_reason: "capacity_exhausted" | "blocked" | "outside_store_schedule" | "ended" | null;
+}
+
+export interface ApiStrategicCampaignAvailability {
+  campaign_id: string;
+  offer_id: string | null;
+  timezone: string;
+  generated_at: string;
+  dates: Array<{ date: string; slots: ApiStrategicCampaignAvailabilitySlot[] }>;
 }
 
 export interface StrategicMarketingConfig {
@@ -11541,6 +11565,10 @@ export const strategicCampaignsApi = {
   publicBySlug: (slug: string) =>
     get<ApiStrategicCampaign>(
       `/strategic-campaigns/public/${encodeURIComponent(slug)}`,
+    ),
+  publicAvailability: (campaignId: string, offerId?: string) =>
+    get<ApiStrategicCampaignAvailability>(
+      `/strategic-campaigns/public/${encodeURIComponent(campaignId)}/availability${offerId ? `?offer_id=${encodeURIComponent(offerId)}` : ""}`,
     ),
   metrics: (id: string, dateFrom?: string, dateTo?: string) => {
     const qs = new URLSearchParams();

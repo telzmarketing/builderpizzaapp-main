@@ -231,6 +231,9 @@ export default function Checkout() {
     !!strategicCommercialConfig &&
     (strategicCommercialConfig.sales_mode === "preorder" ||
       strategicCommercialConfig.require_scheduled_order);
+  const strategicAllowsClosedStore =
+    !!strategicCommercialConfig &&
+    strategicCommercialConfig.allow_when_store_closed;
   const c = siteContent.pages.checkout;
 
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>(() => {
@@ -295,11 +298,15 @@ export default function Checkout() {
   const [storeStatus, setStoreStatus] = useState<StoreOperationStatus | null>(
     null,
   );
+  const strategicNeedsScheduleWhileClosed =
+    !!storeStatus && !storeStatus.is_open && strategicAllowsClosedStore;
   const [scheduledFor, setScheduledFor] = useState(() => {
     try {
       const raw = sessionStorage.getItem(`telz:checkout-draft:v1:${tenantStorageScope()}`);
       const parsed = raw ? JSON.parse(raw) as { scheduledFor?: string } : null;
-      return typeof parsed?.scheduledFor === "string" ? parsed.scheduledFor : "";
+      return typeof parsed?.scheduledFor === "string"
+        ? parsed.scheduledFor
+        : sessionStorage.getItem("telz:strategic-scheduled-for") ?? "";
     } catch {
       return "";
     }
@@ -912,11 +919,12 @@ export default function Checkout() {
     }
     const mustSchedule =
       strategicRequiresSchedule ||
+      strategicNeedsScheduleWhileClosed ||
       (!!storeStatus &&
         !storeStatus.is_open &&
         storeStatus.allow_scheduled_orders);
     const campaignMayOrderWhileClosed =
-      !!strategicCommercialConfig?.allow_when_store_closed;
+      strategicAllowsClosedStore;
     if (
       storeStatus &&
       !storeStatus.is_open &&
@@ -1514,6 +1522,7 @@ export default function Checkout() {
 
       <div className="px-4 pt-6 pb-36 space-y-6">
         {strategicRequiresSchedule ||
+        strategicNeedsScheduleWhileClosed ||
         (storeStatus &&
           !storeStatus.is_open &&
           storeStatus.allow_scheduled_orders)
@@ -2594,7 +2603,7 @@ export default function Checkout() {
               (!!storeStatus &&
                 !storeStatus.is_open &&
                 !storeStatus.allow_scheduled_orders &&
-                !strategicCommercialConfig?.allow_when_store_closed)
+                !strategicAllowsClosedStore)
             }
             className="w-full bg-gold hover:bg-gold/90 disabled:opacity-60 disabled:cursor-not-allowed text-cream font-bold py-4 px-4 rounded-full text-center transition-colors text-lg active:scale-95 flex items-center justify-center gap-2"
           >
@@ -2604,7 +2613,7 @@ export default function Checkout() {
               : storeStatus &&
                   !storeStatus.is_open &&
                   !storeStatus.allow_scheduled_orders &&
-                  !strategicCommercialConfig?.allow_when_store_closed
+                  !strategicAllowsClosedStore
                 ? "Loja fechada"
                 : c.confirmButton}
           </button>

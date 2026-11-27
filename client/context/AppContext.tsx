@@ -117,6 +117,7 @@ export interface CartItem {
   strategicOfferId?: string | null;
   strategicCampaignSlug?: string | null;
   strategicGroup?: StrategicCartGroupMeta;
+  strategicScheduledFor?: string | null;
 }
 
 export interface StrategicCartMeta {
@@ -124,6 +125,7 @@ export interface StrategicCartMeta {
   offerId: string;
   campaignSlug?: string | null;
   group?: StrategicCartGroupMeta;
+  scheduledFor?: string | null;
 }
 
 export interface CartPromotionMeta {
@@ -1068,6 +1070,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         strategicOfferId: strategicOffer?.offerId ?? null,
         strategicCampaignSlug: strategicOffer?.campaignSlug ?? null,
         strategicGroup: strategicOffer?.group,
+        strategicScheduledFor: strategicOffer?.scheduledFor ?? null,
       },
     ]);
     const _td = getTrackingData();

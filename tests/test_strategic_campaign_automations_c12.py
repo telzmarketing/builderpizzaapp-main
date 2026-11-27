@@ -15,6 +15,11 @@ def test_catalog_is_derived_from_commercial_settings():
     assert "reservation_created" in {item["automation_key"] for item in preorder}
 
 
+def test_catalog_includes_reservation_for_hybrid():
+    hybrid = StrategicCampaignAutomationService._catalog({"sales_mode": "hybrid"})
+    assert "reservation_created" in {item["automation_key"] for item in hybrid}
+
+
 def test_commercial_config_fingerprint_is_order_independent():
     left = StrategicCampaignAutomationService._fingerprint({"sales_mode": "preorder", "min_lead_minutes": 30})
     right = StrategicCampaignAutomationService._fingerprint({"min_lead_minutes": 30, "sales_mode": "preorder"})

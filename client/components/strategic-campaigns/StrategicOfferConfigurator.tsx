@@ -126,7 +126,7 @@ export default function StrategicOfferConfigurator({
                 setFinishing(false);
               }
             }} className="mt-5 inline-flex min-h-12 items-center gap-2 rounded-xl bg-gold px-5 font-black text-black disabled:opacity-50">
-              {finishing && <Loader2 className="animate-spin" size={18} />} Adicionar oferta completa
+              {finishing && <Loader2 className="animate-spin" size={18} />} Finalizar compra
             </button>
           </div>
         )}

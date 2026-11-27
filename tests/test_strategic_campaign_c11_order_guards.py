@@ -97,6 +97,11 @@ def test_closed_store_requires_every_group_campaign_to_allow_it():
     assert OrderService._strategic_allows_closed_store(contexts) is False
 
 
+def test_hybrid_campaign_allows_closed_store_for_scheduled_checkout():
+    contexts = [(_campaign(sales_mode="hybrid", allow_when_store_closed=True), SimpleNamespace())]
+    assert OrderService._strategic_allows_closed_store(contexts) is True
+
+
 @pytest.mark.parametrize(
     ("strategy", "amount", "expected_promotional", "expected_discount"),
     [
