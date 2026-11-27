@@ -336,7 +336,7 @@ export default function StrategicCampaignRenderer({
                       )}
                       alt={offer.title}
                       loading={index < 2 ? "eager" : "lazy"}
-                      className={`${imageRatios[visual.offers.imageRatio]} w-full object-cover`}
+                      className={`${imageRatios[visual.offers.imageRatio]} w-full bg-black/20 object-contain`}
                     />
                   </picture>
                 )}
@@ -558,14 +558,14 @@ function ComplementarySection({
           <img
             src={resolveAssetUrl(desktop)}
             alt=""
-            className={`max-h-96 w-full object-cover ${rootRadius}`}
+            className={`max-h-96 w-full bg-black/20 object-contain ${rootRadius}`}
           />
         </picture>
       ) : (
         <img
           src={resolveAssetUrl(viewport === "mobile" ? mobile : desktop)}
           alt=""
-          className={`max-h-96 w-full object-cover ${rootRadius}`}
+          className={`max-h-96 w-full bg-black/20 object-contain ${rootRadius}`}
         />
       )
     ) : null;

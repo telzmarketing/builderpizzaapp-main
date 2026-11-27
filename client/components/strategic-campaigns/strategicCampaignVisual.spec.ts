@@ -16,7 +16,7 @@ describe("strategic campaign visual document", () => {
     expect(result.hero.title).toBe("Festival Gran Torino");
     expect(result.offers.columns).toBe(2);
     expect(result.theme.accentColor).toBe("#d9a441");
-    expect(result.hero).toMatchObject({ showTitle: true, imageDesktopUrl: "", imageMobileUrl: "", mediaFit: "cover" });
+    expect(result.hero).toMatchObject({ showTitle: true, imageDesktopUrl: "", imageMobileUrl: "", mediaFit: "contain" });
     expect(result.scrollIndicator).toEqual({ enabled: true, label: "Ver próxima oferta" });
   });
 

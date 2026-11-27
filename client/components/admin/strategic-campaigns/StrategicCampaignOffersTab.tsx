@@ -925,7 +925,7 @@ export default function StrategicCampaignOffersTab({
                   <img
                     src={getStrategicOfferAdminImageUrl(offer)}
                     alt=""
-                    className="h-40 w-full object-cover"
+                    className="h-40 w-full bg-surface-02 object-contain"
                   />
                 ) : (
                   <div className="flex h-28 items-center justify-center bg-surface-02 text-sm text-stone">

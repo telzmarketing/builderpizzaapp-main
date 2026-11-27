@@ -138,7 +138,8 @@ def public_campaign(slug: str, request: Request, db: Session = Depends(get_db)):
 @router.get("/{campaign_id}")
 def get_campaign(campaign_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(view)):
     try:
-        return StrategicCampaignService(db, actor.tenant_id)._campaign(campaign_id)
+        campaign = StrategicCampaignService(db, actor.tenant_id)._campaign(campaign_id)
+        return ok(StrategicCampaignOut.model_validate(campaign, from_attributes=True))
     except DomainError as exc:
         return err(exc)
 
@@ -220,7 +221,12 @@ def add_offer(campaign_id: str, body: StrategicOfferCreate, db: Session = Depend
 @router.put("/offers/{offer_id}")
 def update_offer(offer_id: str, body: StrategicOfferUpdate, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(edit)):
     try:
-        return StrategicCampaignService(db, actor.tenant_id).update_offer(offer_id, body)
+        # Do not expose the SQLAlchemy row directly.  Besides leaking ORM
+        # internals, that makes the response dependent on lazy relationship
+        # state and can turn a successful image update into a generic 500 while
+        # the UI reloads the offer.
+        offer = StrategicCampaignService(db, actor.tenant_id).update_offer(offer_id, body)
+        return ok(StrategicOfferOut.model_validate(offer, from_attributes=True))
     except DomainError as exc:
         return err(exc)
 

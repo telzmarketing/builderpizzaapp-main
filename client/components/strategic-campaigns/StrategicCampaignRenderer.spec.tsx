@@ -20,6 +20,8 @@ describe("StrategicCampaignRenderer", () => {
     expect(html).toContain("Pizza especial");
     expect(html).toContain("Configurar");
     expect(html).toContain("Regras");
+    expect(html).toContain("object-contain");
+    expect(html).not.toContain("aspect-[16/9] w-full object-cover");
   });
 
   it("does not render archived offers", () => {
