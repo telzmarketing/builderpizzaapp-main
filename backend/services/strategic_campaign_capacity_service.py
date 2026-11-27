@@ -20,6 +20,7 @@ from backend.models.strategic_campaign import (
     StrategicReservation,
 )
 from backend.models.order import Order, OrderStatus
+from backend.models.customer import Customer
 from backend.schemas.strategic_campaign_capacity import (
     StrategicCapacitySlotCreate,
     StrategicCapacitySlotUpdate,
@@ -57,15 +58,18 @@ class StrategicCampaignCapacityService:
             raise DomainError("Campanha estrategica nao encontrada.", code="StrategicCampaignNotFound")
         return row
 
-    def _offer(self, campaign_id: str, offer_id: str | None) -> StrategicOffer | None:
+    def _offer(self, campaign_id: str, offer_id: str | None, *, lock: bool = False) -> StrategicOffer | None:
         if offer_id is None:
             return None
-        row = self.db.query(StrategicOffer).filter(
+        query = self.db.query(StrategicOffer).filter(
             StrategicOffer.tenant_id == self.tenant_id,
             StrategicOffer.campaign_id == campaign_id,
             StrategicOffer.id == offer_id,
             StrategicOffer.archived_at.is_(None),
-        ).first()
+        )
+        if lock:
+            query = query.with_for_update()
+        row = query.first()
         if row is None:
             raise DomainError("Oferta estrategica nao encontrada na campanha.", code="StrategicOfferNotFound")
         return row
@@ -215,7 +219,21 @@ class StrategicCampaignCapacityService:
             raise DomainError("O slot nao pertence a campanha.", code="StrategicCapacitySlotCampaignMismatch")
         if payload.offer_id != slot.offer_id:
             raise DomainError("A oferta da reserva nao corresponde ao slot.", code="StrategicReservationOfferMismatch")
-        self._offer(campaign_id, payload.offer_id)
+        if payload.offer_id is not None:
+            from backend.services.strategic_offer_composition_service import StrategicOfferCompositionService
+            composition = StrategicOfferCompositionService(self.db, self.tenant_id)
+            published_campaign, offer = composition._published_offer(payload.offer_id, None, lock=True)
+            if published_campaign.id != campaign_id:
+                raise DomainError("A oferta da reserva nao pertence a campanha.", code="StrategicReservationOfferMismatch")
+            if offer.max_per_customer is not None and not self.db.query(Customer).filter(
+                Customer.tenant_id == self.tenant_id,
+                Customer.id == payload.customer_reference,
+            ).first():
+                raise DomainError(
+                    "Esta oferta exige um cliente cadastrado para reservar.",
+                    code="StrategicOfferCustomerRequired",
+                )
+            composition._assert_purchase_limits(offer, payload.quantity, payload.customer_reference)
 
         # Re-check after acquiring the slot lock. This closes the race between
         # two requests carrying the same tenant-scoped idempotency key.

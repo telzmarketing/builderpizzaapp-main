@@ -1,4 +1,7 @@
-import { clearAdminSession, shouldInvalidateAdminSession } from "./adminSession";
+import {
+  clearAdminSession,
+  shouldInvalidateAdminSession,
+} from "./adminSession";
 import { requireWhatsAppHumanAttendance } from "./whatsappAttendance";
 import { rememberPwaContext } from "./motoboyPwa";
 import { buildPlatformTenantListQuery } from "./platformMaster";
@@ -17,14 +20,24 @@ import {
  * Padrão de desenvolvimento: http://localhost:8000
  */
 
-const isLocalApiBase = (value: string) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(value);
+const isLocalApiBase = (value: string) =>
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(value);
 
-export function buildApiBases(rawApiBase: string, isProd: boolean, isDev: boolean): string[] {
+export function buildApiBases(
+  rawApiBase: string,
+  isProd: boolean,
+  isDev: boolean,
+): string[] {
   const configuredBase = rawApiBase.replace(/\/$/, "");
-  const primaryBase = configuredBase && !(isProd && isLocalApiBase(configuredBase))
-    ? configuredBase
-    : (isDev ? "http://localhost:8000" : "");
-  const canonicalApiBase = primaryBase.endsWith("/api") ? primaryBase : `${primaryBase}/api`;
+  const primaryBase =
+    configuredBase && !(isProd && isLocalApiBase(configuredBase))
+      ? configuredBase
+      : isDev
+        ? "http://localhost:8000"
+        : "";
+  const canonicalApiBase = primaryBase.endsWith("/api")
+    ? primaryBase
+    : `${primaryBase}/api`;
   const candidates = isProd
     ? [canonicalApiBase, primaryBase, ""]
     : [canonicalApiBase, primaryBase, "/api", ""];
@@ -40,7 +53,9 @@ const BASE = API_BASES[0] ?? "";
 const ASSET_BASE = BASE.endsWith("/api") ? BASE.slice(0, -4) : BASE;
 const UPLOAD_ASSET_BASE = BASE.endsWith("/api")
   ? BASE
-  : (import.meta.env.PROD ? `${BASE}/api` : BASE);
+  : import.meta.env.PROD
+    ? `${BASE}/api`
+    : BASE;
 const IMAGE_FILE_RE = /\.(apng|avif|gif|jpe?g|jfif|pjpeg|pjp|png|svg|webp)$/i;
 
 export class ApiRequestError extends Error {
@@ -48,7 +63,12 @@ export class ApiRequestError extends Error {
   readonly code?: string;
   readonly payload?: unknown;
 
-  constructor(message: string, status: number, code?: string, payload?: unknown) {
+  constructor(
+    message: string,
+    status: number,
+    code?: string,
+    payload?: unknown,
+  ) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
@@ -57,7 +77,10 @@ export class ApiRequestError extends Error {
   }
 }
 
-export function isApiRequestErrorStatus(error: unknown, status: number): boolean {
+export function isApiRequestErrorStatus(
+  error: unknown,
+  status: number,
+): boolean {
   return error instanceof ApiRequestError && error.status === status;
 }
 
@@ -65,11 +88,12 @@ export type ApiRuntimeHostSurface = RuntimeHostSurface;
 
 export function isAssetUrl(value?: string | null): boolean {
   const trimmed = value?.trim().replace(/\\/g, "/");
-  return !!trimmed && (
-    IMAGE_FILE_RE.test(trimmed) ||
-    trimmed.startsWith("data:") ||
-    trimmed.startsWith("http") ||
-    trimmed.startsWith("/")
+  return (
+    !!trimmed &&
+    (IMAGE_FILE_RE.test(trimmed) ||
+      trimmed.startsWith("data:") ||
+      trimmed.startsWith("http") ||
+      trimmed.startsWith("/"))
   );
 }
 
@@ -77,12 +101,15 @@ export function resolveAssetUrl(value?: string | null): string {
   const trimmed = value?.trim().replace(/\\/g, "/");
   if (!trimmed) return "";
   if (trimmed.startsWith("http") || trimmed.startsWith("data:")) return trimmed;
-  if (trimmed.startsWith("/api/uploads/")) return `${UPLOAD_ASSET_BASE}${trimmed.replace(/^\/api/, "")}`;
+  if (trimmed.startsWith("/api/uploads/"))
+    return `${UPLOAD_ASSET_BASE}${trimmed.replace(/^\/api/, "")}`;
   if (trimmed.startsWith("/uploads/")) return `${UPLOAD_ASSET_BASE}${trimmed}`;
   if (trimmed.startsWith("/")) return `${ASSET_BASE}${trimmed}`;
   if (trimmed.startsWith("uploads/")) return `${UPLOAD_ASSET_BASE}/${trimmed}`;
-  if (trimmed.startsWith("api/uploads/")) return `${UPLOAD_ASSET_BASE}/${trimmed.replace(/^api\//, "")}`;
-  if (IMAGE_FILE_RE.test(trimmed)) return `${UPLOAD_ASSET_BASE}/uploads/${trimmed}`;
+  if (trimmed.startsWith("api/uploads/"))
+    return `${UPLOAD_ASSET_BASE}/${trimmed.replace(/^api\//, "")}`;
+  if (IMAGE_FILE_RE.test(trimmed))
+    return `${UPLOAD_ASSET_BASE}/uploads/${trimmed}`;
   return trimmed;
 }
 
@@ -94,17 +121,25 @@ function encodeUploadPath(path: string): string {
     .join("/");
 }
 
-export function resolveOptimizedAssetUrl(value?: string | null, width = 640): string {
+export function resolveOptimizedAssetUrl(
+  value?: string | null,
+  width = 640,
+): string {
   const trimmed = value?.trim().replace(/\\/g, "/");
   if (!trimmed) return "";
-  if (trimmed.startsWith("http") || trimmed.startsWith("data:")) return resolveAssetUrl(trimmed);
+  if (trimmed.startsWith("http") || trimmed.startsWith("data:"))
+    return resolveAssetUrl(trimmed);
   if (/\.(svg|gif|avif)$/i.test(trimmed)) return resolveAssetUrl(trimmed);
 
   let uploadPath = "";
-  if (trimmed.startsWith("/api/uploads/")) uploadPath = trimmed.replace(/^\/api\/uploads\//, "");
-  else if (trimmed.startsWith("/uploads/")) uploadPath = trimmed.replace(/^\/uploads\//, "");
-  else if (trimmed.startsWith("api/uploads/")) uploadPath = trimmed.replace(/^api\/uploads\//, "");
-  else if (trimmed.startsWith("uploads/")) uploadPath = trimmed.replace(/^uploads\//, "");
+  if (trimmed.startsWith("/api/uploads/"))
+    uploadPath = trimmed.replace(/^\/api\/uploads\//, "");
+  else if (trimmed.startsWith("/uploads/"))
+    uploadPath = trimmed.replace(/^\/uploads\//, "");
+  else if (trimmed.startsWith("api/uploads/"))
+    uploadPath = trimmed.replace(/^api\/uploads\//, "");
+  else if (trimmed.startsWith("uploads/"))
+    uploadPath = trimmed.replace(/^uploads\//, "");
   else if (IMAGE_FILE_RE.test(trimmed)) uploadPath = trimmed;
 
   if (!uploadPath) return resolveAssetUrl(trimmed);
@@ -119,8 +154,14 @@ function authHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-function recoverUnauthorizedAdminSession(status: number, path: string): string | null {
-  const staffSurface = window.location.pathname.startsWith("/painel") || window.location.pathname === "/operacoes/novo-pedido" || window.location.pathname === "/operacoes/print-pedido";
+function recoverUnauthorizedAdminSession(
+  status: number,
+  path: string,
+): string | null {
+  const staffSurface =
+    window.location.pathname.startsWith("/painel") ||
+    window.location.pathname === "/operacoes/novo-pedido" ||
+    window.location.pathname === "/operacoes/print-pedido";
   if (path.startsWith("/auth/") || !staffSurface) return null;
   if (!shouldInvalidateAdminSession(status, path)) return null;
   if (readPlatformSupportSession()) {
@@ -128,16 +169,25 @@ function recoverUnauthorizedAdminSession(status: number, path: string): string |
     window.location.replace("/painel/plataforma");
     return "Sessao de suporte expirada. Restaurando o acesso Master...";
   }
-  rememberPwaContext(window.location.pathname, window.location.search, window.location.hash);
+  rememberPwaContext(
+    window.location.pathname,
+    window.location.search,
+    window.location.hash,
+  );
   clearAdminSession();
   window.location.replace("/painel/login");
   return "Sessao expirada. Redirecionando para o login...";
 }
 
-async function fetchApi(path: string, init: RequestInit, options?: { allowNonJson?: boolean }): Promise<Response> {
+async function fetchApi(
+  path: string,
+  init: RequestInit,
+  options?: { allowNonJson?: boolean },
+): Promise<Response> {
   let lastError: Error | null = null;
   const method = (init.method ?? "GET").toUpperCase();
-  const safeToRetry = method === "GET" || method === "HEAD" || method === "OPTIONS";
+  const safeToRetry =
+    method === "GET" || method === "HEAD" || method === "OPTIONS";
   const bases = safeToRetry ? API_BASES : API_BASES.slice(0, 1);
   for (const [index, base] of bases.entries()) {
     try {
@@ -145,7 +195,8 @@ async function fetchApi(path: string, init: RequestInit, options?: { allowNonJso
       if (!res.ok) {
         lastError = new Error(`HTTP ${res.status}`);
         const hasFallback = index < bases.length - 1;
-        if (hasFallback && [404, 405, 502, 503, 504].includes(res.status)) continue;
+        if (hasFallback && [404, 405, 502, 503, 504].includes(res.status))
+          continue;
       }
       if (res.ok && res.status !== 204 && !options?.allowNonJson) {
         const contentType = res.headers.get("content-type") ?? "";
@@ -163,20 +214,42 @@ async function fetchApi(path: string, init: RequestInit, options?: { allowNonJso
 }
 
 /** Low-level escape hatch for API surfaces that still need Response semantics. */
-export function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+export function apiFetch(
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
   return fetchApi(path, init);
 }
 
-export function apiDownload(path: string, init: RequestInit = {}): Promise<Response> {
-  return fetchApi(path, { method: "GET", ...init, headers: { ...authHeaders(), ...(init.headers ?? {}) } }, { allowNonJson: true });
+export function apiDownload(
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  return fetchApi(
+    path,
+    {
+      method: "GET",
+      ...init,
+      headers: { ...authHeaders(), ...(init.headers ?? {}) },
+    },
+    { allowNonJson: true },
+  );
 }
 
 /** Centralized browser request for explicitly external, non-API resources. */
-export function externalFetch(url: string, init: RequestInit = {}): Promise<Response> {
+export function externalFetch(
+  url: string,
+  init: RequestInit = {},
+): Promise<Response> {
   return fetch(url, init);
 }
 
-async function requestForm<T>(method: string, path: string, body: FormData, extraHeaders?: HeadersInit): Promise<T> {
+async function requestForm<T>(
+  method: string,
+  path: string,
+  body: FormData,
+  extraHeaders?: HeadersInit,
+): Promise<T> {
   const res = await fetchApi(path, {
     method,
     headers: {
@@ -198,7 +271,9 @@ async function requestForm<T>(method: string, path: string, body: FormData, extr
       const detail = data?.error?.message ?? data?.detail;
       code = data?.error?.code ?? data?.detail?.code;
       if (Array.isArray(detail)) {
-        message = detail.map((e: { msg?: string }) => e.msg ?? String(e)).join("; ");
+        message = detail
+          .map((e: { msg?: string }) => e.msg ?? String(e))
+          .join("; ");
       } else if (typeof detail === "string") {
         message = detail;
       }
@@ -217,7 +292,7 @@ async function request<T>(
   method: string,
   path: string,
   body?: unknown,
-  extraHeaders?: HeadersInit
+  extraHeaders?: HeadersInit,
 ): Promise<T> {
   const res = await fetchApi(path, {
     method,
@@ -241,7 +316,9 @@ async function request<T>(
       const detail = data?.error?.message ?? data?.detail;
       code = data?.error?.code ?? data?.detail?.code;
       if (Array.isArray(detail)) {
-        message = detail.map((e: { msg?: string }) => e.msg ?? String(e)).join("; ");
+        message = detail
+          .map((e: { msg?: string }) => e.msg ?? String(e))
+          .join("; ");
       } else if (typeof detail === "string") {
         message = detail;
       }
@@ -251,7 +328,12 @@ async function request<T>(
     throw new ApiRequestError(message, res.status, code, payload);
   }
 
-  if (method !== "GET" && path.startsWith("/products") && typeof window !== "undefined") window.dispatchEvent?.(new Event("catalog-products-changed"));
+  if (
+    method !== "GET" &&
+    path.startsWith("/products") &&
+    typeof window !== "undefined"
+  )
+    window.dispatchEvent?.(new Event("catalog-products-changed"));
   // 204 No Content
   if (res.status === 204) return undefined as unknown as T;
 
@@ -264,7 +346,7 @@ export function apiRequest<T>(
   method: string,
   path: string,
   body?: unknown,
-  extraHeaders?: HeadersInit
+  extraHeaders?: HeadersInit,
 ): Promise<T> {
   return request<T>(method, path, body, extraHeaders);
 }
@@ -275,12 +357,21 @@ export const runtimeSurfaceApi = {
 
 const get = <T>(path: string) => request<T>("GET", path);
 const post = <T>(path: string, body: unknown) => request<T>("POST", path, body);
-const postForm = <T>(path: string, body: FormData, extraHeaders?: HeadersInit) => requestForm<T>("POST", path, body, extraHeaders);
+const postForm = <T>(
+  path: string,
+  body: FormData,
+  extraHeaders?: HeadersInit,
+) => requestForm<T>("POST", path, body, extraHeaders);
 const put = <T>(path: string, body: unknown) => request<T>("PUT", path, body);
-const patch = <T>(path: string, body: unknown) => request<T>("PATCH", path, body);
+const patch = <T>(path: string, body: unknown) =>
+  request<T>("PATCH", path, body);
 const del = <T>(path: string) => request<T>("DELETE", path);
 
-function rememberOrderAccess(order: { id: string; delivery_phone?: string | null; customer_id?: string | null }) {
+function rememberOrderAccess(order: {
+  id: string;
+  delivery_phone?: string | null;
+  customer_id?: string | null;
+}) {
   try {
     sessionStorage.setItem(
       `order_access:${order.id}`,
@@ -299,7 +390,10 @@ function orderAccessHeaders(orderId: string): HeadersInit {
     const raw = sessionStorage.getItem(`order_access:${orderId}`);
     if (raw) {
       const access = JSON.parse(raw) as { customer_id?: string | null };
-      Object.assign(headers, customerAccessHeaders(access.customer_id ?? undefined));
+      Object.assign(
+        headers,
+        customerAccessHeaders(access.customer_id ?? undefined),
+      );
     } else {
       Object.assign(headers, customerAccessHeaders());
     }
@@ -327,14 +421,18 @@ function customerAccessHeaders(customerId?: string): HeadersInit {
   }
 }
 
-function paymentMutationHeaders(orderId: string, operation: string): HeadersInit {
+function paymentMutationHeaders(
+  orderId: string,
+  operation: string,
+): HeadersInit {
   const headers = new Headers(orderAccessHeaders(orderId));
   const storageKey = `payment_idempotency:${operation}:${orderId}`;
   let key = sessionStorage.getItem(storageKey);
   if (!key) {
-    key = typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    key =
+      typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     sessionStorage.setItem(storageKey, key);
   }
   headers.set("Idempotency-Key", key);
@@ -421,7 +519,9 @@ export type ApiProductCategoryCapabilityKey =
   | "enable_border"
   | "enable_promotions";
 
-export type ApiProductCategoryCapabilities = Partial<Record<ApiProductCategoryCapabilityKey, boolean>>;
+export type ApiProductCategoryCapabilities = Partial<
+  Record<ApiProductCategoryCapabilityKey, boolean>
+>;
 
 /**
  * Category capabilities may arrive flattened on the product or nested under
@@ -429,13 +529,16 @@ export type ApiProductCategoryCapabilities = Partial<Record<ApiProductCategoryCa
  * Returning null lets callers preserve the legacy behavior in that case.
  */
 export function getProductCategoryCapabilities(
-  source?: Partial<ApiProductCategory> & {
-    category_capabilities?: ApiProductCategoryCapabilities | null;
-    categoryCapabilities?: ApiProductCategoryCapabilities | null;
-  } | null,
+  source?:
+    | (Partial<ApiProductCategory> & {
+        category_capabilities?: ApiProductCategoryCapabilities | null;
+        categoryCapabilities?: ApiProductCategoryCapabilities | null;
+      })
+    | null,
 ): ApiProductCategoryCapabilities | null {
   if (!source) return null;
-  const nested = source.category_capabilities ?? source.categoryCapabilities ?? {};
+  const nested =
+    source.category_capabilities ?? source.categoryCapabilities ?? {};
   const resolved = {} as ApiProductCategoryCapabilities;
   const keys: ApiProductCategoryCapabilityKey[] = [
     "enable_sizes",
@@ -456,7 +559,11 @@ export function getProductCategoryCapabilities(
   return found ? resolved : null;
 }
 
-export type ApiProductOptionSelectionType = "single" | "multiple" | "quantity" | "text";
+export type ApiProductOptionSelectionType =
+  | "single"
+  | "multiple"
+  | "quantity"
+  | "text";
 
 export interface ApiProductOption {
   id: string;
@@ -484,7 +591,7 @@ export interface ApiProductOptionGroup {
 export interface ApiHomeCatalogConfig {
   id: string;
   mode: "all" | "categories" | "products";
-  selected_categories: string;  // JSON string
+  selected_categories: string; // JSON string
   selected_product_ids: string; // JSON string
   show_promotions: boolean;
   show_promotions_link: boolean;
@@ -509,7 +616,7 @@ export interface ApiProduct {
   enable_dough?: boolean;
   enable_border?: boolean;
   enable_promotions?: boolean;
-  product_type: string | null;  // "pizza" | "drink" | "other"
+  product_type: string | null; // "pizza" | "drink" | "other"
   rating: number;
   active: boolean;
   visible_delivery?: boolean;
@@ -545,13 +652,26 @@ export interface ApiProduct {
   best_seller_badge_mode?: "off" | "manual" | "auto";
   show_best_seller_badge?: boolean;
   inventory_available?: boolean;
-  inventory_status?: "disabled" | "not_configured" | "available" | "unavailable" | string | null;
+  inventory_status?:
+    | "disabled"
+    | "not_configured"
+    | "available"
+    | "unavailable"
+    | string
+    | null;
   inventory_unavailable_message?: string | null;
 }
 
 /** Public catalog precedence: active promotion landing, permanent product landing, normal product. */
-export const getProductLandingUrl = (product: Pick<ApiProduct, "id" | "product_landing_url" | "promotion_landing_url">) =>
-  product.promotion_landing_url || product.product_landing_url || `/product/${product.id}`;
+export const getProductLandingUrl = (
+  product: Pick<
+    ApiProduct,
+    "id" | "product_landing_url" | "promotion_landing_url"
+  >,
+) =>
+  product.promotion_landing_url ||
+  product.product_landing_url ||
+  `/product/${product.id}`;
 
 export interface ApiBestSellerConfig {
   id: string;
@@ -560,7 +680,10 @@ export interface ApiBestSellerConfig {
   updated_at: string;
 }
 
-export type ProductPromotionDiscountType = "fixed_price" | "amount_off" | "percent_off";
+export type ProductPromotionDiscountType =
+  | "fixed_price"
+  | "amount_off"
+  | "percent_off";
 
 export interface ApiProductPromotionCombination {
   id?: string;
@@ -598,10 +721,22 @@ export interface ApiProductPromotion {
 
 export type ApiPromotionLandingStatus = "draft" | "published";
 export type ApiPromotionLandingType = "product" | "promotion";
-export type ApiPromotionLandingImagePosition = "center" | "top" | "bottom" | "left" | "right";
+export type ApiPromotionLandingImagePosition =
+  | "center"
+  | "top"
+  | "bottom"
+  | "left"
+  | "right";
 export type ApiPromotionLandingAlignment = "left" | "center" | "right";
-export type ApiPromotionLandingOverlay = "dark-gradient" | "dark" | "light" | "brand";
-export type ApiPromotionLandingMediaSlot = "image_url" | "image_url_2" | "video_url";
+export type ApiPromotionLandingOverlay =
+  | "dark-gradient"
+  | "dark"
+  | "light"
+  | "brand";
+export type ApiPromotionLandingMediaSlot =
+  | "image_url"
+  | "image_url_2"
+  | "video_url";
 
 export interface ApiPromotionLandingPage {
   id: string;
@@ -1039,9 +1174,20 @@ export interface MarketingVisitorData {
     location_captured_at?: string | null;
   }>;
   common_events: Array<{ name: string; count: number }>;
-  utm_breakdown?: Array<{ source: string; medium: string | null; campaign: string | null; sessions: number; conversions: number }>;
+  utm_breakdown?: Array<{
+    source: string;
+    medium: string | null;
+    campaign: string | null;
+    sessions: number;
+    conversions: number;
+  }>;
   devices?: Array<{ device_type: string; count: number; pct: number }>;
-  top_products?: Array<{ product_name: string; views: number; add_to_cart: number; orders: number }>;
+  top_products?: Array<{
+    product_name: string;
+    views: number;
+    add_to_cart: number;
+    orders: number;
+  }>;
   funnel?: Array<{ label: string; value: number }>;
 }
 
@@ -1138,7 +1284,78 @@ export interface ApiPromotionalKit {
   items: ApiKitItem[];
 }
 
-export type StrategicCampaignStatus = "draft" | "scheduled" | "active" | "paused" | "sold_out" | "ended" | "archived";
+export type StrategicCampaignStatus =
+  | "draft"
+  | "scheduled"
+  | "active"
+  | "paused"
+  | "sold_out"
+  | "ended"
+  | "archived";
+
+export type StrategicOfferReferenceType =
+  | "product"
+  | "kit"
+  | "subcategory"
+  | "mixed_subcategories";
+export type StrategicOfferPricingStrategy =
+  | "catalog"
+  | "percentage"
+  | "fixed_discount"
+  | "fixed_price";
+
+export interface StrategicOfferComponent {
+  subcategory_id: string | null;
+  kit_id?: string | null;
+  quantity: number;
+  allow_repeated_products?: boolean;
+  restrictions?: Record<string, unknown> | null;
+}
+
+export interface ApiStrategicOfferConfig extends Record<string, unknown> {
+  reference_type?: StrategicOfferReferenceType;
+  components?: StrategicOfferComponent[];
+  pricing_strategy?: StrategicOfferPricingStrategy;
+  discount_percent?: number | null;
+  discount_amount?: number | null;
+  fixed_promotional_price?: number | null;
+}
+
+export interface ApiAvailableStrategicCampaign {
+  id: string;
+  name: string;
+  commercial_name: string;
+  slug: string;
+  published_version: number;
+  offers_available: number;
+}
+
+export interface ApiStrategicOfferConfigurationStep {
+  key: string;
+  step_key?: string;
+  position: number;
+  subcategory_id: string;
+  subcategory_name?: string;
+  eligible_products: ApiProduct[];
+  restrictions?: Record<string, unknown>;
+}
+
+export interface ApiStrategicOfferConfiguration {
+  offer_id: string;
+  campaign_id: string;
+  campaign_version: number;
+  composition_revision: number;
+  reference_type: StrategicOfferReferenceType;
+  pricing_strategy: "catalog" | StrategicOfferPricingStrategy;
+  price_range: {
+    minimum: number;
+    maximum: number;
+    original_minimum?: number;
+    original_maximum?: number;
+    fixed_promotional: number | null;
+  };
+  steps: ApiStrategicOfferConfigurationStep[];
+}
 
 export interface StrategicCommercialConfig {
   sales_mode: "immediate" | "preorder";
@@ -1146,7 +1363,9 @@ export interface StrategicCommercialConfig {
   require_scheduled_order: boolean;
   min_lead_minutes: number;
   max_lead_days: number | null;
-  allowed_payment_methods: Array<"pix" | "credit_card" | "debit_card" | "pay_on_delivery">;
+  allowed_payment_methods: Array<
+    "pix" | "credit_card" | "debit_card" | "pay_on_delivery"
+  >;
 }
 
 export interface StrategicMarketingConfig {
@@ -1159,13 +1378,24 @@ export interface StrategicCampaignMetrics {
   campaign_id: string;
   campaign_name: string;
   period: { date_from: string; date_to: string };
-  funnel: { views: number; offer_clicks: number; offer_scrolls: number; checkout_starts: number; sessions: number; paid_orders: number };
+  funnel: {
+    views: number;
+    offer_clicks: number;
+    offer_scrolls: number;
+    checkout_starts: number;
+    sessions: number;
+    paid_orders: number;
+  };
   revenue: number;
   planned_budget: number | null;
   spend: number | null;
   roas: number | null;
   conversion_rate: number | null;
-  attribution: { source: string; spend_source: string | null; warning: string | null };
+  attribution: {
+    source: string;
+    spend_source: string | null;
+    warning: string | null;
+  };
 }
 
 export interface ApiStrategicOffer {
@@ -1176,6 +1406,13 @@ export interface ApiStrategicOffer {
   description: string | null;
   product_id: string | null;
   kit_id: string | null;
+  reference_type: StrategicOfferReferenceType;
+  components: StrategicOfferComponent[];
+  pricing_strategy: StrategicOfferPricingStrategy;
+  discount_percent: number | null;
+  discount_amount: number | null;
+  fixed_promotional_price: number | null;
+  composition_revision: number;
   price_original: number;
   price_promotional: number;
   active: boolean;
@@ -1185,12 +1422,14 @@ export interface ApiStrategicOffer {
   sales_starts_at: string | null;
   sales_ends_at: string | null;
   show_when_sold_out: boolean;
+  available?: boolean;
+  remaining_quantity?: number | null;
   button_text: string | null;
   image_desktop_url: string | null;
   image_mobile_url: string | null;
   badge_text: string | null;
   highlighted: boolean;
-  config: Record<string, unknown>;
+  config: ApiStrategicOfferConfig;
   archived_at: string | null;
 }
 
@@ -1233,9 +1472,16 @@ export interface StrategicCapacitySlotCreate {
   blocked?: boolean;
 }
 
-export type StrategicCapacitySlotUpdate = Partial<Omit<StrategicCapacitySlotCreate, "offer_id">>;
+export type StrategicCapacitySlotUpdate = Partial<
+  Omit<StrategicCapacitySlotCreate, "offer_id">
+>;
 
-export type StrategicReservationStatus = "held" | "confirmed" | "released" | "expired" | "cancelled";
+export type StrategicReservationStatus =
+  | "held"
+  | "confirmed"
+  | "released"
+  | "expired"
+  | "cancelled";
 export type StrategicReservationPaymentMode = "no_payment" | "partial" | "full";
 
 export interface ApiStrategicReservation {
@@ -1277,8 +1523,16 @@ export interface StrategicReservationExpirationResult {
   reservation_ids: string[];
 }
 
-export type StrategicOfferInput = Omit<ApiStrategicOffer, "id" | "campaign_id" | "active" | "config" | "archived_at"> & {
-  config?: Record<string, unknown>;
+export type StrategicOfferInput = Omit<
+  ApiStrategicOffer,
+  | "id"
+  | "campaign_id"
+  | "active"
+  | "config"
+  | "archived_at"
+  | "composition_revision"
+> & {
+  config?: ApiStrategicOfferConfig;
 };
 
 export type { OperationalDrink } from "./operationalDrinks";
@@ -1336,7 +1590,11 @@ export type OrderStatus =
   | "cancelled"
   | "refunded";
 
-export type ApiPaymentSettlementStatus = "processing" | "pending" | "succeeded" | "failed";
+export type ApiPaymentSettlementStatus =
+  | "processing"
+  | "pending"
+  | "succeeded"
+  | "failed";
 
 export interface ApiPaymentSettlement {
   id: string;
@@ -1519,7 +1777,13 @@ export interface ApiCustomerDeliveryLocation {
 }
 
 export type MarketplaceProvider = "partner_99" | "ifood" | "keeta";
-export type MarketplaceSettlementStatus = "expected" | "partially_received" | "received" | "divergent" | "cancelled" | "quarantined";
+export type MarketplaceSettlementStatus =
+  | "expected"
+  | "partially_received"
+  | "received"
+  | "divergent"
+  | "cancelled"
+  | "quarantined";
 
 export interface ApiMarketplaceSettlementInput {
   provider: MarketplaceProvider;
@@ -1626,7 +1890,13 @@ export interface KdsDispatchOrder extends KdsKitchenOrder {
   cash_change_amount?: number | null;
   can_assign_driver: boolean;
   auto_assignment?: {
-    status: "assigned" | "unavailable" | "disabled" | "blocked" | "already_assigned" | string;
+    status:
+      | "assigned"
+      | "unavailable"
+      | "disabled"
+      | "blocked"
+      | "already_assigned"
+      | string;
     delivery_person_name?: string | null;
     message?: string | null;
   } | null;
@@ -1642,33 +1912,73 @@ export interface KdsDriver {
 
 export type KdsAuditoriaOrigin = "own" | "ifood" | "99food" | "keeta" | string;
 export interface KdsAuditoriaQueueEntry {
-  order_id: string; order_code?: string | null; order_origin?: KdsAuditoriaOrigin | null;
-  status: string; delivery_id: string; delivery_status: string;
-  delivery_person_id?: string | null; ready_for_pickup_at?: string | null;
+  order_id: string;
+  order_code?: string | null;
+  order_origin?: KdsAuditoriaOrigin | null;
+  status: string;
+  delivery_id: string;
+  delivery_status: string;
+  delivery_person_id?: string | null;
+  ready_for_pickup_at?: string | null;
 }
 export interface KdsAuditoriaOrderItem {
-  id: string; quantity: number; product_id: string; selected_size?: string | null;
-  selected_crust_type?: string | null; notes?: string | null; product_name?: string | null;
+  id: string;
+  quantity: number;
+  product_id: string;
+  selected_size?: string | null;
+  selected_crust_type?: string | null;
+  notes?: string | null;
+  product_name?: string | null;
 }
 export interface KdsAuditoriaItemConfirmation {
-  order_item_id: string; expected_quantity: number; confirmed_quantity: number; confirmed: boolean;
+  order_item_id: string;
+  expected_quantity: number;
+  confirmed_quantity: number;
+  confirmed: boolean;
 }
 export interface KdsAuditoriaVolume {
-  id: string; order_item_id: string; label_volume_id?: string | null; sequence: number; confirmed: boolean;
+  id: string;
+  order_item_id: string;
+  label_volume_id?: string | null;
+  sequence: number;
+  confirmed: boolean;
 }
 export interface KdsAuditoriaOrder {
-  order_id: string; order_code?: string | null; order_origin?: KdsAuditoriaOrigin | null;
-  delivery_id: string; delivery_status: string; audit_id?: string | null;
-  audit_status?: string | null; audit_items: KdsAuditoriaItemConfirmation[];
-  audit_volumes: KdsAuditoriaVolume[]; audit_evidence?: KdsAuditoriaEvidence[]; items: KdsAuditoriaOrderItem[];
+  order_id: string;
+  order_code?: string | null;
+  order_origin?: KdsAuditoriaOrigin | null;
+  delivery_id: string;
+  delivery_status: string;
+  audit_id?: string | null;
+  audit_status?: string | null;
+  audit_items: KdsAuditoriaItemConfirmation[];
+  audit_volumes: KdsAuditoriaVolume[];
+  audit_evidence?: KdsAuditoriaEvidence[];
+  items: KdsAuditoriaOrderItem[];
 }
 export interface KdsAuditoriaEvidence {
-  evidence_id: string; audit_id: string; asset_id: string; idempotent?: boolean;
-  evidence_type?: string; captured_at?: string | null; actor_id?: string | null; created_at?: string | null;
-  original_filename?: string | null; content_type?: string | null; byte_size?: number | null; visibility?: string | null;
-  url?: string | null; image_role?: "original" | "processed"; processing_status?: "not_processed" | "processed" | "failed" | string;
+  evidence_id: string;
+  audit_id: string;
+  asset_id: string;
+  idempotent?: boolean;
+  evidence_type?: string;
+  captured_at?: string | null;
+  actor_id?: string | null;
+  created_at?: string | null;
+  original_filename?: string | null;
+  content_type?: string | null;
+  byte_size?: number | null;
+  visibility?: string | null;
+  url?: string | null;
+  image_role?: "original" | "processed";
+  processing_status?: "not_processed" | "processed" | "failed" | string;
 }
-export interface KdsAuditoriaHandoff { audit_id: string; status: string; idempotent?: boolean; order_id?: string; }
+export interface KdsAuditoriaHandoff {
+  audit_id: string;
+  status: string;
+  idempotent?: boolean;
+  order_id?: string;
+}
 
 export interface KdsDispatchResult {
   order: KdsDispatchOrder;
@@ -1747,7 +2057,11 @@ export interface KdsAnalytics {
 /** Contratos da estação multioperador. A identidade do operador é sempre
  * derivada da sessão autenticada pelo backend; o cliente só envia comandos
  * versionados e idempotentes. */
-export type KdsPresenceState = "offline" | "available" | "in_production" | "paused";
+export type KdsPresenceState =
+  | "offline"
+  | "available"
+  | "in_production"
+  | "paused";
 
 export interface KdsOperatorPresence {
   operator_id: string;
@@ -1781,7 +2095,12 @@ export interface KdsProductionTask {
   product_name?: string | null;
   quantity?: string | null;
   /** Fase 8: cobertura de consumo da tentativa, derivada pelo backend. */
-  consumption_mode?: "attempts" | "legacy_covered" | "not_required" | string | null;
+  consumption_mode?:
+    | "attempts"
+    | "legacy_covered"
+    | "not_required"
+    | string
+    | null;
   consumption_operation_id?: string | null;
   composition_revision_id?: string | null;
   server_time?: string | null;
@@ -1827,7 +2146,14 @@ export interface KdsLabelPrinter {
 export interface KdsLabelTemplate {
   id: string;
   name: string;
-  label_type: "continuous" | "gap" | "black_mark" | "roll" | "sheet" | "seal" | "custom";
+  label_type:
+    | "continuous"
+    | "gap"
+    | "black_mark"
+    | "roll"
+    | "sheet"
+    | "seal"
+    | "custom";
   width_mm: number;
   height_mm: number;
   margin_top_mm: number;
@@ -1888,9 +2214,28 @@ export interface KdsLabelVolume {
 }
 
 export interface KdsLabelPreview {
-  order: { id: string; order_code?: string | null; status: string; fulfillment_type: string; customer_name?: string | null; notes?: string | null; order_origin?: string | null; partner_order_number?: string | null; partner_logo_url?: string | null; order_identification?: { display_name?: string; logo_url?: string | null } | null };
+  order: {
+    id: string;
+    order_code?: string | null;
+    status: string;
+    fulfillment_type: string;
+    customer_name?: string | null;
+    notes?: string | null;
+    order_origin?: string | null;
+    partner_order_number?: string | null;
+    partner_logo_url?: string | null;
+    order_identification?: {
+      display_name?: string;
+      logo_url?: string | null;
+    } | null;
+  };
   restaurant: { name: string; logo_url?: string | null };
-  version: { id: string; number: number; fingerprint: string; created_at: string };
+  version: {
+    id: string;
+    number: number;
+    fingerprint: string;
+    created_at: string;
+  };
   printer?: KdsLabelPrinter | null;
   template: KdsLabelTemplate;
   volumes: KdsLabelVolume[];
@@ -1918,7 +2263,10 @@ export interface KdsLabelPrintJob {
   last_error?: string | null;
 }
 
-export interface KdsLabelPrintResult { job: KdsLabelPrintJob; preview: KdsLabelPreview }
+export interface KdsLabelPrintResult {
+  job: KdsLabelPrintJob;
+  preview: KdsLabelPreview;
+}
 
 export interface KdsLabelTestPreview {
   test: true;
@@ -1938,8 +2286,16 @@ export interface KdsLabelTestPreview {
 
 export type KdsLabelPrinterInput = Pick<KdsLabelPrinter, "name"> &
   Partial<Omit<KdsLabelPrinter, "id" | "name" | "created_at" | "updated_at">>;
-export type KdsLabelTemplateInput = Pick<KdsLabelTemplate, "name" | "width_mm" | "height_mm"> &
-  Partial<Omit<KdsLabelTemplate, "id" | "name" | "width_mm" | "height_mm" | "created_at" | "updated_at">>;
+export type KdsLabelTemplateInput = Pick<
+  KdsLabelTemplate,
+  "name" | "width_mm" | "height_mm"
+> &
+  Partial<
+    Omit<
+      KdsLabelTemplate,
+      "id" | "name" | "width_mm" | "height_mm" | "created_at" | "updated_at"
+    >
+  >;
 
 export interface KdsLabelPrintInput {
   printer_id?: string | null;
@@ -1958,106 +2314,268 @@ export interface KdsLabelVolumeRule {
   updated_at?: string;
 }
 
-export type KdsLabelVolumeRuleInput = Pick<KdsLabelVolumeRule, "scope_type" | "scope_value" | "volumes_per_unit" | "active">;
+export type KdsLabelVolumeRuleInput = Pick<
+  KdsLabelVolumeRule,
+  "scope_type" | "scope_value" | "volumes_per_unit" | "active"
+>;
 
 /** Endpoints operacionais mínimos usados pelas estações KDS touch. */
 export const kdsApi = {
-  serveKitchenOrder: (orderId: string) => post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/serve`, {}),
+  serveKitchenOrder: (orderId: string) =>
+    post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/serve`, {}),
   overview: () => get<KdsOverview>("/kds/overview"),
   listKitchenOrders: (station?: string) =>
-    get<KdsKitchenOrder[]>(`/kds/kitchen/orders${station ? `?station=${encodeURIComponent(station)}` : ""}`),
+    get<KdsKitchenOrder[]>(
+      `/kds/kitchen/orders${station ? `?station=${encodeURIComponent(station)}` : ""}`,
+    ),
   startKitchenOrder: (orderId: string, station?: string) =>
-    post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/start${station ? `?station=${encodeURIComponent(station)}` : ""}`, {}),
+    post<KdsKitchenOrder>(
+      `/kds/kitchen/orders/${orderId}/start${station ? `?station=${encodeURIComponent(station)}` : ""}`,
+      {},
+    ),
   markKitchenOrderReady: (orderId: string, station?: string) =>
-    post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/ready${station ? `?station=${encodeURIComponent(station)}` : ""}`, {}),
+    post<KdsKitchenOrder>(
+      `/kds/kitchen/orders/${orderId}/ready${station ? `?station=${encodeURIComponent(station)}` : ""}`,
+      {},
+    ),
   completeKitchenPickup: (orderId: string) =>
     post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/pickup-complete`, {}),
   listDispatchOrders: () => get<KdsDispatchOrder[]>("/kds/dispatch/orders"),
   listDispatchDrivers: () => get<KdsDriver[]>("/kds/dispatch/drivers"),
-  completeDispatchUnit: (orderId: string, unitId: string, expectedVersion: number) =>
-    post<KdsDispatchOrder>(`/kds/dispatch/orders/${encodeURIComponent(orderId)}/units/${encodeURIComponent(unitId)}/complete`, { expected_version: expectedVersion }),
-  checkDispatchOven: (orderId: string, unitId: string, expectedVersion: number) =>
-    post<KdsDispatchOrder>(`/kds/dispatch/orders/${encodeURIComponent(orderId)}/units/${encodeURIComponent(unitId)}/check-oven`, { expected_version: expectedVersion }),
-  returnDispatchUnitsToKitchen: (orderId: string, productionUnitIds: string[], reason: string) =>
-    post<KdsKitchenOrder>(`/kds/dispatch/orders/${encodeURIComponent(orderId)}/return-to-kitchen`, { production_unit_ids: productionUnitIds, reason }),
-  assignDispatchOrder: (orderId: string, deliveryPersonId: string, estimatedMinutes = 40) =>
+  completeDispatchUnit: (
+    orderId: string,
+    unitId: string,
+    expectedVersion: number,
+  ) =>
+    post<KdsDispatchOrder>(
+      `/kds/dispatch/orders/${encodeURIComponent(orderId)}/units/${encodeURIComponent(unitId)}/complete`,
+      { expected_version: expectedVersion },
+    ),
+  checkDispatchOven: (
+    orderId: string,
+    unitId: string,
+    expectedVersion: number,
+  ) =>
+    post<KdsDispatchOrder>(
+      `/kds/dispatch/orders/${encodeURIComponent(orderId)}/units/${encodeURIComponent(unitId)}/check-oven`,
+      { expected_version: expectedVersion },
+    ),
+  returnDispatchUnitsToKitchen: (
+    orderId: string,
+    productionUnitIds: string[],
+    reason: string,
+  ) =>
+    post<KdsKitchenOrder>(
+      `/kds/dispatch/orders/${encodeURIComponent(orderId)}/return-to-kitchen`,
+      { production_unit_ids: productionUnitIds, reason },
+    ),
+  assignDispatchOrder: (
+    orderId: string,
+    deliveryPersonId: string,
+    estimatedMinutes = 40,
+  ) =>
     post<KdsDispatchResult>(`/kds/dispatch/orders/${orderId}/assign`, {
       delivery_person_id: deliveryPersonId,
       estimated_minutes: estimatedMinutes,
     }),
   completeDispatchPickup: (orderId: string) =>
-    post<KdsDispatchOrder>(`/kds/dispatch/orders/${orderId}/pickup-complete`, {}),
+    post<KdsDispatchOrder>(
+      `/kds/dispatch/orders/${orderId}/pickup-complete`,
+      {},
+    ),
   myQueue: (station?: string) =>
-    get<KdsMyQueue>(`/kds/kitchen/my-queue${station ? `?station=${encodeURIComponent(station)}` : ""}`),
+    get<KdsMyQueue>(
+      `/kds/kitchen/my-queue${station ? `?station=${encodeURIComponent(station)}` : ""}`,
+    ),
   stockAlerts: () => get<KdsProductionTask[]>("/kds/kitchen/stock-alerts"),
-  setPresence: (body: { state: KdsPresenceState; expected_version: number; station_id?: string | null }, key: string) =>
-    request<KdsOperatorPresence>("POST", "/kds/kitchen/presence", body, { "Idempotency-Key": key }),
-  heartbeat: (body: { operational_session_id?: string; station_id?: string | null; expected_version?: number }, key: string) =>
-    request<KdsHeartbeat>("POST", "/kds/kitchen/heartbeat", body, { "Idempotency-Key": key }),
-  commandTask: (taskId: string, command: "start" | "confirm-stock" | "return-to-service" | "finish-assembly" | "start-oven" | "complete-oven" | "check" | "remake", body: Record<string, unknown>, key: string) =>
-    request<KdsProductionTask>("POST", `/kds/kitchen/tasks/${encodeURIComponent(taskId)}/${command}`, body, { "Idempotency-Key": key }),
-  redistribute: (body: { task_ids: string[]; from_operator_id?: string | null; to_operator_id: string; reason: string; expected_versions: Record<string, number> }, key: string) =>
-    request<KdsMyQueue>("POST", "/kds/management/redistributions", body, { "Idempotency-Key": key }),
+  setPresence: (
+    body: {
+      state: KdsPresenceState;
+      expected_version: number;
+      station_id?: string | null;
+    },
+    key: string,
+  ) =>
+    request<KdsOperatorPresence>("POST", "/kds/kitchen/presence", body, {
+      "Idempotency-Key": key,
+    }),
+  heartbeat: (
+    body: {
+      operational_session_id?: string;
+      station_id?: string | null;
+      expected_version?: number;
+    },
+    key: string,
+  ) =>
+    request<KdsHeartbeat>("POST", "/kds/kitchen/heartbeat", body, {
+      "Idempotency-Key": key,
+    }),
+  commandTask: (
+    taskId: string,
+    command:
+      | "start"
+      | "confirm-stock"
+      | "return-to-service"
+      | "finish-assembly"
+      | "start-oven"
+      | "complete-oven"
+      | "check"
+      | "remake",
+    body: Record<string, unknown>,
+    key: string,
+  ) =>
+    request<KdsProductionTask>(
+      "POST",
+      `/kds/kitchen/tasks/${encodeURIComponent(taskId)}/${command}`,
+      body,
+      { "Idempotency-Key": key },
+    ),
+  redistribute: (
+    body: {
+      task_ids: string[];
+      from_operator_id?: string | null;
+      to_operator_id: string;
+      reason: string;
+      expected_versions: Record<string, number>;
+    },
+    key: string,
+  ) =>
+    request<KdsMyQueue>("POST", "/kds/management/redistributions", body, {
+      "Idempotency-Key": key,
+    }),
 };
 
 export const kdsAuditoriaApi = {
   queue: () => get<KdsAuditoriaQueueEntry[]>("/kds/auditoria/queue"),
-  detail: (orderId: string) => get<KdsAuditoriaOrder>(`/kds/auditoria/orders/${encodeURIComponent(orderId)}`),
-  start: (orderId: string) => post<KdsAuditoriaOrder>(`/kds/auditoria/orders/${encodeURIComponent(orderId)}/start`, {}),
+  detail: (orderId: string) =>
+    get<KdsAuditoriaOrder>(
+      `/kds/auditoria/orders/${encodeURIComponent(orderId)}`,
+    ),
+  start: (orderId: string) =>
+    post<KdsAuditoriaOrder>(
+      `/kds/auditoria/orders/${encodeURIComponent(orderId)}/start`,
+      {},
+    ),
   confirmItem: (auditId: string, itemId: string, confirmedQuantity: number) =>
-    post<{ audit_id: string; order_item_id: string; confirmed_quantity: number; confirmed: boolean }>(`/kds/auditoria/${encodeURIComponent(auditId)}/items/${encodeURIComponent(itemId)}/confirm`, { confirmed_quantity: confirmedQuantity }),
+    post<{
+      audit_id: string;
+      order_item_id: string;
+      confirmed_quantity: number;
+      confirmed: boolean;
+    }>(
+      `/kds/auditoria/${encodeURIComponent(auditId)}/items/${encodeURIComponent(itemId)}/confirm`,
+      { confirmed_quantity: confirmedQuantity },
+    ),
   confirmVolume: (auditId: string, volumeId: string) =>
-    post<{ audit_id: string; volume_id: string; confirmed: boolean }>(`/kds/auditoria/${encodeURIComponent(auditId)}/volumes/${encodeURIComponent(volumeId)}/confirm`, {}),
-  addEvidence: (auditId: string, body: { asset_id: string; evidence_type: string; captured_at?: string | null; metadata_json?: string | null }) =>
-    post<KdsAuditoriaEvidence>(`/kds/auditoria/${encodeURIComponent(auditId)}/evidence`, body),
+    post<{ audit_id: string; volume_id: string; confirmed: boolean }>(
+      `/kds/auditoria/${encodeURIComponent(auditId)}/volumes/${encodeURIComponent(volumeId)}/confirm`,
+      {},
+    ),
+  addEvidence: (
+    auditId: string,
+    body: {
+      asset_id: string;
+      evidence_type: string;
+      captured_at?: string | null;
+      metadata_json?: string | null;
+    },
+  ) =>
+    post<KdsAuditoriaEvidence>(
+      `/kds/auditoria/${encodeURIComponent(auditId)}/evidence`,
+      body,
+    ),
   handoff: (auditId: string, idempotencyKey: string) =>
-    post<KdsAuditoriaHandoff>(`/kds/auditoria/${encodeURIComponent(auditId)}/handoff`, { idempotency_key: idempotencyKey }),
+    post<KdsAuditoriaHandoff>(
+      `/kds/auditoria/${encodeURIComponent(auditId)}/handoff`,
+      { idempotency_key: idempotencyKey },
+    ),
 };
 
 const labelDispatchBase = "/kds/dispatch";
 
 /** Tenant-scoped label configuration and order label operations. */
 export const kdsLabelsApi = {
-  listPrinters: () => get<KdsLabelPrinter[]>(`${labelDispatchBase}/label-printers`),
+  listPrinters: () =>
+    get<KdsLabelPrinter[]>(`${labelDispatchBase}/label-printers`),
   createPrinter: (data: KdsLabelPrinterInput) =>
     post<KdsLabelPrinter>(`${labelDispatchBase}/label-printers`, data),
   updatePrinter: (id: string, data: Partial<KdsLabelPrinterInput>) =>
     put<KdsLabelPrinter>(`${labelDispatchBase}/label-printers/${id}`, data),
-  deletePrinter: (id: string) => del<void>(`${labelDispatchBase}/label-printers/${id}`),
-  listTemplates: () => get<KdsLabelTemplate[]>(`${labelDispatchBase}/label-templates`),
+  deletePrinter: (id: string) =>
+    del<void>(`${labelDispatchBase}/label-printers/${id}`),
+  listTemplates: () =>
+    get<KdsLabelTemplate[]>(`${labelDispatchBase}/label-templates`),
   createTemplate: (data: KdsLabelTemplateInput) =>
     post<KdsLabelTemplate>(`${labelDispatchBase}/label-templates`, data),
   updateTemplate: (id: string, data: Partial<KdsLabelTemplateInput>) =>
     put<KdsLabelTemplate>(`${labelDispatchBase}/label-templates/${id}`, data),
-  deleteTemplate: (id: string) => del<void>(`${labelDispatchBase}/label-templates/${id}`),
-  getSettings: () => get<KdsLabelSettings>(`${labelDispatchBase}/label-settings`),
+  deleteTemplate: (id: string) =>
+    del<void>(`${labelDispatchBase}/label-templates/${id}`),
+  getSettings: () =>
+    get<KdsLabelSettings>(`${labelDispatchBase}/label-settings`),
   updateSettings: (data: KdsLabelSettings) =>
     put<KdsLabelSettings>(`${labelDispatchBase}/label-settings`, data),
-  listVolumeRules: () => get<KdsLabelVolumeRule[]>(`${labelDispatchBase}/label-volume-rules`),
+  listVolumeRules: () =>
+    get<KdsLabelVolumeRule[]>(`${labelDispatchBase}/label-volume-rules`),
   createVolumeRule: (data: KdsLabelVolumeRuleInput) =>
     post<KdsLabelVolumeRule>(`${labelDispatchBase}/label-volume-rules`, data),
   updateVolumeRule: (id: string, data: Partial<KdsLabelVolumeRuleInput>) =>
-    put<KdsLabelVolumeRule>(`${labelDispatchBase}/label-volume-rules/${id}`, data),
-  deleteVolumeRule: (id: string) => del<void>(`${labelDispatchBase}/label-volume-rules/${id}`),
-  preview: (orderId: string, printerId?: string | null, templateId?: string | null) => {
+    put<KdsLabelVolumeRule>(
+      `${labelDispatchBase}/label-volume-rules/${id}`,
+      data,
+    ),
+  deleteVolumeRule: (id: string) =>
+    del<void>(`${labelDispatchBase}/label-volume-rules/${id}`),
+  preview: (
+    orderId: string,
+    printerId?: string | null,
+    templateId?: string | null,
+  ) => {
     const query = new URLSearchParams();
     if (printerId) query.set("printer_id", printerId);
     if (templateId) query.set("template_id", templateId);
     const suffix = query.toString();
-    return get<KdsLabelPreview>(`${labelDispatchBase}/orders/${orderId}/labels/preview${suffix ? `?${suffix}` : ""}`);
+    return get<KdsLabelPreview>(
+      `${labelDispatchBase}/orders/${orderId}/labels/preview${suffix ? `?${suffix}` : ""}`,
+    );
   },
   print: (orderId: string, data: KdsLabelPrintInput) =>
-    post<KdsLabelPrintResult>(`${labelDispatchBase}/orders/${orderId}/labels/print`, data),
+    post<KdsLabelPrintResult>(
+      `${labelDispatchBase}/orders/${orderId}/labels/print`,
+      data,
+    ),
   reprint: (orderId: string, data: KdsLabelPrintInput & { reason: string }) =>
-    post<KdsLabelPrintResult>(`${labelDispatchBase}/orders/${orderId}/labels/reprint`, data),
+    post<KdsLabelPrintResult>(
+      `${labelDispatchBase}/orders/${orderId}/labels/reprint`,
+      data,
+    ),
   history: (orderId: string) =>
-    get<KdsLabelPrintJob[]>(`${labelDispatchBase}/orders/${orderId}/labels/history`),
+    get<KdsLabelPrintJob[]>(
+      `${labelDispatchBase}/orders/${orderId}/labels/history`,
+    ),
   test: (data: KdsLabelPrintInput) =>
-    post<{ job: KdsLabelPrintJob; preview: KdsLabelTestPreview }>(`${labelDispatchBase}/labels/test`, data),
+    post<{ job: KdsLabelPrintJob; preview: KdsLabelTestPreview }>(
+      `${labelDispatchBase}/labels/test`,
+      data,
+    ),
   markDialogOpened: (jobId: string) =>
-    post<KdsLabelPrintJob>(`${labelDispatchBase}/label-jobs/${jobId}/dialog-opened`, {}),
-  markTransportStatus: (jobId: string, data: { status: "sent" | "confirmed" | "error"; agent_job_id: string; external_job_id?: string; error?: string }) =>
-    post<KdsLabelPrintJob>(`${labelDispatchBase}/label-jobs/${jobId}/transport-status`, data),
+    post<KdsLabelPrintJob>(
+      `${labelDispatchBase}/label-jobs/${jobId}/dialog-opened`,
+      {},
+    ),
+  markTransportStatus: (
+    jobId: string,
+    data: {
+      status: "sent" | "confirmed" | "error";
+      agent_job_id: string;
+      external_job_id?: string;
+      error?: string;
+    },
+  ) =>
+    post<KdsLabelPrintJob>(
+      `${labelDispatchBase}/label-jobs/${jobId}/transport-status`,
+      data,
+    ),
 };
 
 // Order board contracts deliberately expose no customer identity, address,
@@ -2139,11 +2657,20 @@ async function readApiEnvelope<T>(response: Response): Promise<T> {
     try {
       const payload = await response.json();
       message = payload?.error?.message ?? payload?.detail ?? message;
-    } catch { /* response body is optional */ }
-    throw new ApiRequestError(typeof message === "string" ? message : `HTTP ${response.status}`, response.status);
+    } catch {
+      /* response body is optional */
+    }
+    throw new ApiRequestError(
+      typeof message === "string" ? message : `HTTP ${response.status}`,
+      response.status,
+    );
   }
   const payload = await response.json();
-  return (payload && typeof payload === "object" && "data" in payload ? payload.data : payload) as T;
+  return (
+    payload && typeof payload === "object" && "data" in payload
+      ? payload.data
+      : payload
+  ) as T;
 }
 
 // Unlike most legacy routers, the order-board surface is deliberately exposed
@@ -2152,11 +2679,18 @@ async function readApiEnvelope<T>(response: Response): Promise<T> {
 // http://localhost:8000/order-board after the first 404.
 const ORDER_BOARD_API_BASE = BASE.endsWith("/api") ? BASE : `${BASE}/api`;
 
-function orderBoardFetch(path: string, init: RequestInit = {}): Promise<Response> {
+function orderBoardFetch(
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
   return fetch(`${ORDER_BOARD_API_BASE}${path}`, init);
 }
 
-async function adminOrderBoardRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function adminOrderBoardRequest<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
   const response = await orderBoardFetch(path, {
     method,
     headers: {
@@ -2165,12 +2699,17 @@ async function adminOrderBoardRequest<T>(method: string, path: string, body?: un
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
-  const recoveryMessage = recoverUnauthorizedAdminSession(response.status, path);
+  const recoveryMessage = recoverUnauthorizedAdminSession(
+    response.status,
+    path,
+  );
   if (recoveryMessage) throw new Error(recoveryMessage);
   return readApiEnvelope<T>(response);
 }
 
-function normalizeOrderBoardSnapshot(snapshot: OrderBoardSnapshot): OrderBoardSnapshot {
+function normalizeOrderBoardSnapshot(
+  snapshot: OrderBoardSnapshot,
+): OrderBoardSnapshot {
   const startedAt = (order: OrderBoardOrder) => {
     if (order.status === "preparing") return order.preparation_started_at;
     if (order.status === "ready_for_pickup") return order.ready_for_pickup_at;
@@ -2187,41 +2726,87 @@ function normalizeOrderBoardSnapshot(snapshot: OrderBoardSnapshot): OrderBoardSn
 }
 
 export const orderBoardApi = {
-  createActivation: async () => readApiEnvelope<OrderBoardActivation>(await orderBoardFetch("/order-board/activations", {
-    method: "POST", credentials: "include",
-  })),
+  createActivation: async () =>
+    readApiEnvelope<OrderBoardActivation>(
+      await orderBoardFetch("/order-board/activations", {
+        method: "POST",
+        credentials: "include",
+      }),
+    ),
   activationStatus: async (activation: Pick<OrderBoardActivation, "id">) =>
-    readApiEnvelope<OrderBoardActivationStatus>(await orderBoardFetch(`/order-board/activations/${encodeURIComponent(activation.id)}/status`, {
-      method: "GET",
-      credentials: "include",
-    })),
-  snapshot: async (etag?: string | null): Promise<OrderBoardSnapshotResponse> => {
+    readApiEnvelope<OrderBoardActivationStatus>(
+      await orderBoardFetch(
+        `/order-board/activations/${encodeURIComponent(activation.id)}/status`,
+        {
+          method: "GET",
+          credentials: "include",
+        },
+      ),
+    ),
+  snapshot: async (
+    etag?: string | null,
+  ): Promise<OrderBoardSnapshotResponse> => {
     const response = await orderBoardFetch("/order-board/snapshot", {
       method: "GET",
       credentials: "include",
       headers: etag ? { "If-None-Match": etag } : undefined,
     });
-    if (response.status === 304) return { snapshot: null, etag: etag ?? null, notModified: true };
-    const snapshot = normalizeOrderBoardSnapshot(await readApiEnvelope<OrderBoardSnapshot>(response));
+    if (response.status === 304)
+      return { snapshot: null, etag: etag ?? null, notModified: true };
+    const snapshot = normalizeOrderBoardSnapshot(
+      await readApiEnvelope<OrderBoardSnapshot>(response),
+    );
     return { snapshot, etag: response.headers.get("etag"), notModified: false };
   },
-  heartbeat: async () => readApiEnvelope<{ device_id: string; last_seen_at: string }>(await orderBoardFetch("/order-board/heartbeat", {
-    method: "POST", credentials: "include",
-  })),
+  heartbeat: async () =>
+    readApiEnvelope<{ device_id: string; last_seen_at: string }>(
+      await orderBoardFetch("/order-board/heartbeat", {
+        method: "POST",
+        credentials: "include",
+      }),
+    ),
 };
 
 export const adminOrderBoardApi = {
-  getSettings: () => adminOrderBoardRequest<OrderBoardSettings>("GET", "/admin/order-board/settings"),
-  updateSettings: (settings: OrderBoardSettings) => adminOrderBoardRequest<OrderBoardSettings>("PUT", "/admin/order-board/settings", settings),
-  listDevices: () => adminOrderBoardRequest<OrderBoardDevice[]>("GET", "/admin/order-board/devices"),
+  getSettings: () =>
+    adminOrderBoardRequest<OrderBoardSettings>(
+      "GET",
+      "/admin/order-board/settings",
+    ),
+  updateSettings: (settings: OrderBoardSettings) =>
+    adminOrderBoardRequest<OrderBoardSettings>(
+      "PUT",
+      "/admin/order-board/settings",
+      settings,
+    ),
+  listDevices: () =>
+    adminOrderBoardRequest<OrderBoardDevice[]>(
+      "GET",
+      "/admin/order-board/devices",
+    ),
   approveActivation: (code: string, name: string) =>
-    adminOrderBoardRequest<OrderBoardDevice>("POST", "/admin/order-board/activations/approve", { code, name }),
+    adminOrderBoardRequest<OrderBoardDevice>(
+      "POST",
+      "/admin/order-board/activations/approve",
+      { code, name },
+    ),
   renameDevice: (id: string, name: string) =>
-    adminOrderBoardRequest<OrderBoardDevice>("PATCH", `/admin/order-board/devices/${encodeURIComponent(id)}`, { name }),
+    adminOrderBoardRequest<OrderBoardDevice>(
+      "PATCH",
+      `/admin/order-board/devices/${encodeURIComponent(id)}`,
+      { name },
+    ),
   revokeDevice: (id: string) =>
-    adminOrderBoardRequest<OrderBoardDevice>("POST", `/admin/order-board/devices/${encodeURIComponent(id)}/revoke`, {}),
+    adminOrderBoardRequest<OrderBoardDevice>(
+      "POST",
+      `/admin/order-board/devices/${encodeURIComponent(id)}/revoke`,
+      {},
+    ),
   deleteDevice: (id: string) =>
-    adminOrderBoardRequest<void>("DELETE", `/admin/order-board/devices/${encodeURIComponent(id)}`),
+    adminOrderBoardRequest<void>(
+      "DELETE",
+      `/admin/order-board/devices/${encodeURIComponent(id)}`,
+    ),
 };
 
 export interface CheckoutItemIn {
@@ -2241,7 +2826,35 @@ export interface CheckoutItemIn {
   selected_drink_variant_id?: string | null;
   selected_drink_variant_name?: string | null;
   notes?: string | null;
-  option_selections?: Array<{ group_id: string; group_name: string; option_id?: string; label: string; quantity?: number; price_addition: number }>;
+  option_selections?: Array<{
+    group_id: string;
+    group_name: string;
+    option_id?: string;
+    label: string;
+    quantity?: number;
+    price_addition: number;
+  }>;
+}
+
+export type StrategicEntryChannel =
+  | "landing_page"
+  | "pdv"
+  | "operations"
+  | "phone"
+  | "whatsapp"
+  | "counter";
+
+export interface StrategicOfferStepSelectionIn {
+  step_key: string;
+  item: CheckoutItemIn;
+}
+
+export interface StrategicOfferSelectionIn {
+  offer_id: string;
+  campaign_version: number;
+  composition_revision: number;
+  quantity: number;
+  selections: StrategicOfferStepSelectionIn[];
 }
 
 export interface CheckoutIn {
@@ -2264,12 +2877,20 @@ export interface CheckoutIn {
   discount_type?: "percentage" | "fixed" | null;
   discount_value?: number | null;
   customer_id?: string;
-  payment_method: "pix" | "credit_card" | "debit_card" | "cash" | "pay_on_delivery";
+  payment_method:
+    | "pix"
+    | "credit_card"
+    | "debit_card"
+    | "cash"
+    | "pay_on_delivery";
   delivery_payment_method?: "cash" | "card" | null;
   cash_needs_change?: boolean | null;
   cash_change_for?: number | null;
   campaign_id?: string | null;
   strategic_offer_id?: string | null;
+  strategic_offer_groups?: StrategicOfferSelectionIn[];
+  reservation_id?: string | null;
+  entry_channel?: StrategicEntryChannel;
   utm_source?: string | null;
   utm_medium?: string | null;
   utm_campaign?: string | null;
@@ -2526,7 +3147,12 @@ export interface InventoryPurchase {
   updated_at?: string | null;
 }
 
-export type InventoryReceiptDocumentStatus = "pending_review" | "ready" | "approved" | "rejected" | "cancelled";
+export type InventoryReceiptDocumentStatus =
+  | "pending_review"
+  | "ready"
+  | "approved"
+  | "rejected"
+  | "cancelled";
 
 export interface InventoryReceiptDocumentLine {
   id: string;
@@ -2714,8 +3340,16 @@ export interface InventoryOverview {
   balances: InventoryStockBalance[];
 }
 
-export type PurchasePlanningState = "confirmed" | "pending" | "estimated" | "blocked" | "unavailable";
-export type PurchasePlanningAction = "covered" | "purchase_required" | "review_required";
+export type PurchasePlanningState =
+  | "confirmed"
+  | "pending"
+  | "estimated"
+  | "blocked"
+  | "unavailable";
+export type PurchasePlanningAction =
+  | "covered"
+  | "purchase_required"
+  | "review_required";
 
 export interface PurchasePlanningNeed {
   item_id: string;
@@ -2761,33 +3395,97 @@ export interface PurchaseQuotationOffer {
   notes?: string | null;
 }
 export interface PurchaseQuotation {
-  id: string; tenant_id: string; requisition_id: string; code: string; status: "draft" | "open" | "closed" | "awarded" | "cancelled";
-  response_due?: string | null; notes?: string | null; version: number; awarded_supplier_id?: string | null; created_by_admin_id: string; created_at: string; updated_at: string;
-  suppliers: Array<{ supplier_id: string; supplier_name: string; status: string }>;
-  lines: Array<{ id: string; item_id: string; item_name: string; unit_id: string; unit_symbol: string; quantity: number; position: number }>;
+  id: string;
+  tenant_id: string;
+  requisition_id: string;
+  code: string;
+  status: "draft" | "open" | "closed" | "awarded" | "cancelled";
+  response_due?: string | null;
+  notes?: string | null;
+  version: number;
+  awarded_supplier_id?: string | null;
+  created_by_admin_id: string;
+  created_at: string;
+  updated_at: string;
+  suppliers: Array<{
+    supplier_id: string;
+    supplier_name: string;
+    status: string;
+  }>;
+  lines: Array<{
+    id: string;
+    item_id: string;
+    item_name: string;
+    unit_id: string;
+    unit_symbol: string;
+    quantity: number;
+    position: number;
+  }>;
   offers: PurchaseQuotationOffer[];
 }
 
 export interface PurchaseReceiptItem {
-  id: string; purchase_item_id: string; item_id: string; item_name: string; location_id: string;
-  quantity_received: number; quantity_rejected: number; unit_cost: number;
-  lot_code?: string | null; manufactured_on?: string | null; expires_on?: string | null; temperature_c?: number | null; quality_status?: "accepted" | "quarantine" | "rejected"; inspection_notes?: string | null;
+  id: string;
+  purchase_item_id: string;
+  item_id: string;
+  item_name: string;
+  location_id: string;
+  quantity_received: number;
+  quantity_rejected: number;
+  unit_cost: number;
+  lot_code?: string | null;
+  manufactured_on?: string | null;
+  expires_on?: string | null;
+  temperature_c?: number | null;
+  quality_status?: "accepted" | "quarantine" | "rejected";
+  inspection_notes?: string | null;
 }
 export interface PurchaseReceipt {
-  id: string; tenant_id: string; purchase_id: string; document_id?: string | null;
-  status: "draft" | "submitted" | "posted" | "rejected"; received_at: string;
-  notes?: string | null; version: number; received_by_admin_id: string;
-  created_at: string; updated_at: string; items: PurchaseReceiptItem[];
+  id: string;
+  tenant_id: string;
+  purchase_id: string;
+  document_id?: string | null;
+  status: "draft" | "submitted" | "posted" | "rejected";
+  received_at: string;
+  notes?: string | null;
+  version: number;
+  received_by_admin_id: string;
+  created_at: string;
+  updated_at: string;
+  items: PurchaseReceiptItem[];
 }
 export interface PurchaseDashboard {
   period: { date_from: string; date_to: string; generated_at: string };
   requisitions: { total: number; by_status: Record<string, number> };
   quotations: { total: number; by_status: Record<string, number> };
-  orders: { total: number; by_status: Record<string, number>; total_amount: number };
-  receipts: { total: number; by_status: Record<string, number>; posted: number; quantity_received: number; quantity_rejected: number };
-  inventory: { movement_count: number; quantity_in: number; received_value: number };
-  finance: { obligation_count: number; total_amount: number; pending_amount: number; paid_amount: number };
-  alerts: { overdue_quotations: number; overdue_orders: number; pending_requisitions: number };
+  orders: {
+    total: number;
+    by_status: Record<string, number>;
+    total_amount: number;
+  };
+  receipts: {
+    total: number;
+    by_status: Record<string, number>;
+    posted: number;
+    quantity_received: number;
+    quantity_rejected: number;
+  };
+  inventory: {
+    movement_count: number;
+    quantity_in: number;
+    received_value: number;
+  };
+  finance: {
+    obligation_count: number;
+    total_amount: number;
+    pending_amount: number;
+    paid_amount: number;
+  };
+  alerts: {
+    overdue_quotations: number;
+    overdue_orders: number;
+    pending_requisitions: number;
+  };
 }
 
 export type InventoryPortionUsage = "mandatory" | "optional" | "direct";
@@ -2929,12 +3627,31 @@ export interface CmvOverview {
   products: CmvProductCost[];
 }
 
-export type FinanceAccountType = "cash" | "bank" | "credit_card" | "wallet" | "other";
+export type FinanceAccountType =
+  | "cash"
+  | "bank"
+  | "credit_card"
+  | "wallet"
+  | "other";
 export type FinanceEntryType = "income" | "expense";
-export type FinanceTransactionStatus = "pending" | "partial" | "paid" | "cancelled";
-export type FinanceCounterpartyType = "supplier" | "customer" | "employee" | "partner" | "other";
+export type FinanceTransactionStatus =
+  | "pending"
+  | "partial"
+  | "paid"
+  | "cancelled";
+export type FinanceCounterpartyType =
+  | "supplier"
+  | "customer"
+  | "employee"
+  | "partner"
+  | "other";
 export type FinanceBankStatementStatus = "imported" | "reconciled" | "closed";
-export type FinanceBankStatementLineStatus = "unmatched" | "suggested" | "matched" | "ignored" | "divergent";
+export type FinanceBankStatementLineStatus =
+  | "unmatched"
+  | "suggested"
+  | "matched"
+  | "ignored"
+  | "divergent";
 
 export interface FinanceAccount {
   id: string;
@@ -3162,11 +3879,20 @@ export interface FinanceBi {
   gross_result: number;
   net_result: number;
   transaction_count: number;
-  by_origin: Array<{ origin_type: string; entry_type: FinanceEntryType; amount: number; count: number }>;
+  by_origin: Array<{
+    origin_type: string;
+    entry_type: FinanceEntryType;
+    amount: number;
+    count: number;
+  }>;
   by_category: FinanceBiDimension[];
   by_cost_center: FinanceBiDimension[];
   by_channel: FinanceBiDimension[];
-  sales_by_day: Array<{ date: string; gross_amount: number; order_count: number }>;
+  sales_by_day: Array<{
+    date: string;
+    gross_amount: number;
+    order_count: number;
+  }>;
 }
 
 export interface FinanceBankStatementLineInput {
@@ -3458,7 +4184,10 @@ export interface FinanceContract {
   updated_at?: string | null;
 }
 
-export type FinanceContractInput = Omit<FinanceContract, "id" | "tenant_id" | "counterparty_name" | "created_at" | "updated_at">;
+export type FinanceContractInput = Omit<
+  FinanceContract,
+  "id" | "tenant_id" | "counterparty_name" | "created_at" | "updated_at"
+>;
 
 export interface FinanceBackfillResult {
   status: string;
@@ -3467,13 +4196,39 @@ export interface FinanceBackfillResult {
   already_synced: number;
   skipped: number;
   failed: number;
-  failures: Array<{ payment_id?: string; purchase_id?: string; earning_id?: string; error?: string; reason?: string }>;
+  failures: Array<{
+    payment_id?: string;
+    purchase_id?: string;
+    earning_id?: string;
+    error?: string;
+    reason?: string;
+  }>;
 }
 
-export type FinanceAccountInput = Omit<FinanceAccount, "id" | "tenant_id" | "current_balance" | "created_at" | "updated_at">;
-export type FinanceCategoryInput = Omit<FinanceCategory, "id" | "tenant_id" | "parent_name" | "created_at" | "updated_at">;
-export type FinanceCounterpartyInput = Omit<FinanceCounterparty, "id" | "tenant_id" | "open_amount" | "created_at" | "updated_at">;
-export type FinanceTransactionInput = Omit<FinanceTransaction, "id" | "tenant_id" | "account_name" | "category_name" | "overdue" | "created_at" | "updated_at" | "created_by_admin_id" | "updated_by_admin_id">;
+export type FinanceAccountInput = Omit<
+  FinanceAccount,
+  "id" | "tenant_id" | "current_balance" | "created_at" | "updated_at"
+>;
+export type FinanceCategoryInput = Omit<
+  FinanceCategory,
+  "id" | "tenant_id" | "parent_name" | "created_at" | "updated_at"
+>;
+export type FinanceCounterpartyInput = Omit<
+  FinanceCounterparty,
+  "id" | "tenant_id" | "open_amount" | "created_at" | "updated_at"
+>;
+export type FinanceTransactionInput = Omit<
+  FinanceTransaction,
+  | "id"
+  | "tenant_id"
+  | "account_name"
+  | "category_name"
+  | "overdue"
+  | "created_at"
+  | "updated_at"
+  | "created_by_admin_id"
+  | "updated_by_admin_id"
+>;
 
 export interface FinanceSettlementInput {
   account_id?: string | null;
@@ -3641,16 +4396,36 @@ export interface FiscalOverview {
   missing_setup: string[];
 }
 
-export type FiscalCompanyInput = Omit<FiscalCompany, "id" | "tenant_id" | "created_at" | "updated_at">;
-export type FiscalCertificateInput = Omit<FiscalCertificate, "id" | "tenant_id" | "valid" | "created_at" | "updated_at">;
-export type FiscalSeriesInput = Omit<FiscalSeries, "id" | "tenant_id" | "created_at" | "updated_at">;
-export type FiscalProductProfileInput = Omit<FiscalProductProfile, "id" | "tenant_id" | "product_name" | "created_at" | "updated_at">;
+export type FiscalCompanyInput = Omit<
+  FiscalCompany,
+  "id" | "tenant_id" | "created_at" | "updated_at"
+>;
+export type FiscalCertificateInput = Omit<
+  FiscalCertificate,
+  "id" | "tenant_id" | "valid" | "created_at" | "updated_at"
+>;
+export type FiscalSeriesInput = Omit<
+  FiscalSeries,
+  "id" | "tenant_id" | "created_at" | "updated_at"
+>;
+export type FiscalProductProfileInput = Omit<
+  FiscalProductProfile,
+  "id" | "tenant_id" | "product_name" | "created_at" | "updated_at"
+>;
 
 export interface ApiPayment {
   id: string;
   order_id: string;
   method: "pix" | "credit_card" | "debit_card" | "cash";
-  status: "pending" | "approved" | "rejected" | "cancelled" | "expired" | "paid" | "failed" | "refunded";
+  status:
+    | "pending"
+    | "approved"
+    | "rejected"
+    | "cancelled"
+    | "expired"
+    | "paid"
+    | "failed"
+    | "refunded";
   amount: number;
   provider: string | null;
   provider_payment_id?: string | null;
@@ -3936,7 +4711,11 @@ export interface ApiCustomerIdentity {
   profile_level: "lead" | "partial" | "complete";
 }
 
-export type ApiCustomerContactRiskLevel = "low" | "attention" | "high" | "blocked";
+export type ApiCustomerContactRiskLevel =
+  | "low"
+  | "attention"
+  | "high"
+  | "blocked";
 
 export interface ApiCustomerContactRisk {
   customer_id?: string;
@@ -3963,7 +4742,14 @@ export interface ApiCustomerContactRiskEvent {
 }
 
 export interface ApiCustomerContactRiskOverridePayload {
-  action: "set_score" | "block" | "unblock" | "complaint" | "reported" | "opt_out" | "whatsapp_blocked";
+  action:
+    | "set_score"
+    | "block"
+    | "unblock"
+    | "complaint"
+    | "reported"
+    | "opt_out"
+    | "whatsapp_blocked";
   reason: string;
   score?: number;
 }
@@ -4062,7 +4848,10 @@ export interface ApiAgenteWhatsAppOperationalMetrics {
 }
 
 export interface ApiAgenteWhatsAppAudioMetrics {
-  period: { days: number; start_at: string; end_at: string } & Record<string, unknown>;
+  period: { days: number; start_at: string; end_at: string } & Record<
+    string,
+    unknown
+  >;
   audio: {
     inbound_messages: number;
     outbound_messages: number;
@@ -4114,11 +4903,13 @@ export interface ApiAgenteWhatsAppProductionReadiness {
   limits: Record<string, unknown>;
   rollout: string[];
   rollback: string[];
-  checks: Array<{
-    code: string;
-    ok: boolean;
-    message: string;
-  } & Record<string, unknown>>;
+  checks: Array<
+    {
+      code: string;
+      ok: boolean;
+      message: string;
+    } & Record<string, unknown>
+  >;
   generated_at: string | null;
 }
 
@@ -4222,7 +5013,12 @@ export interface ApiAgenteWhatsAppAITest {
 
 export interface ApiAgenteWhatsAppAudioSettings {
   enabled: boolean;
-  response_mode: "never" | "mirror_customer_audio" | "always" | "manual_only" | string;
+  response_mode:
+    | "never"
+    | "mirror_customer_audio"
+    | "always"
+    | "manual_only"
+    | string;
   tts_model: string;
   tts_voice: string;
   tts_format: "mp3" | "opus" | "aac" | "flac" | "wav" | "pcm" | string;
@@ -4655,7 +5451,8 @@ export interface ApiExitPopupConfig {
 
 export const exitPopupApi = {
   get: () => get<ApiExitPopupConfig>("/exit-popup"),
-  update: (body: Partial<ApiExitPopupConfig>) => put<ApiExitPopupConfig>("/exit-popup", body),
+  update: (body: Partial<ApiExitPopupConfig>) =>
+    put<ApiExitPopupConfig>("/exit-popup", body),
 };
 
 // ── Admin Users + RBAC ────────────────────────────────────────────────────────
@@ -4733,14 +5530,28 @@ export interface ApiEffectivePermissions {
 export const adminUsersApi = {
   list: () => get<ApiAdminUser[]>("/admin/users"),
   create: (body: {
-    name: string; email: string; password: string; active?: boolean;
-    phone?: string; role_id?: string; store_id?: string;
+    name: string;
+    email: string;
+    password: string;
+    active?: boolean;
+    phone?: string;
+    role_id?: string;
+    store_id?: string;
   }) => post<ApiAdminUser>("/admin/users", body),
-  update: (id: string, body: {
-    name?: string; email?: string; active?: boolean; password?: string;
-    phone?: string; role_id?: string | null; store_id?: string | null;
-  }) => put<ApiAdminUser>(`/admin/users/${id}`, body),
-  toggleStatus: (id: string) => patch<ApiAdminUser>(`/admin/users/${id}/status`, {}),
+  update: (
+    id: string,
+    body: {
+      name?: string;
+      email?: string;
+      active?: boolean;
+      password?: string;
+      phone?: string;
+      role_id?: string | null;
+      store_id?: string | null;
+    },
+  ) => put<ApiAdminUser>(`/admin/users/${id}`, body),
+  toggleStatus: (id: string) =>
+    patch<ApiAdminUser>(`/admin/users/${id}/status`, {}),
   resetPassword: (id: string, new_password: string) =>
     patch<null>(`/admin/users/${id}/reset-password`, { new_password }),
   remove: (id: string) => del<null>(`/admin/users/${id}`),
@@ -4754,24 +5565,33 @@ export const rbacApi = {
   updateRole: (id: string, body: { name?: string; description?: string }) =>
     put<ApiRole>(`/admin/roles/${id}`, body),
   deleteRole: (id: string) => del<null>(`/admin/roles/${id}`),
-  duplicateRole: (id: string) => post<ApiRole>(`/admin/roles/${id}/duplicate`, {}),
+  duplicateRole: (id: string) =>
+    post<ApiRole>(`/admin/roles/${id}/duplicate`, {}),
 
   // Modules & permissions
   listModules: () => get<ApiModule[]>("/admin/modules"),
   listPermissions: () => get<ApiPermission[]>("/admin/permissions"),
 
   // Role permission matrix
-  getRolePermissions: (roleId: string) => get<ApiRolePermission[]>(`/admin/roles/${roleId}/permissions`),
+  getRolePermissions: (roleId: string) =>
+    get<ApiRolePermission[]>(`/admin/roles/${roleId}/permissions`),
   updateRolePermissions: (roleId: string, permissions: ApiRolePermission[]) =>
     put<null>(`/admin/roles/${roleId}/permissions`, { permissions }),
 
   // User permission overrides
-  getUserPermissions: (userId: string) => get<ApiRolePermission[]>(`/admin/users/${userId}/permissions`),
+  getUserPermissions: (userId: string) =>
+    get<ApiRolePermission[]>(`/admin/users/${userId}/permissions`),
   updateUserPermissions: (userId: string, permissions: ApiRolePermission[]) =>
     put<null>(`/admin/users/${userId}/permissions`, { permissions }),
 
   // Audit logs
-  getAuditLogs: (params?: { user_id?: string; module_key?: string; action?: string; limit?: number; offset?: number }) => {
+  getAuditLogs: (params?: {
+    user_id?: string;
+    module_key?: string;
+    action?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
     const qs = new URLSearchParams();
     if (params?.user_id) qs.set("user_id", params.user_id);
     if (params?.module_key) qs.set("module_key", params.module_key);
@@ -4779,11 +5599,14 @@ export const rbacApi = {
     if (params?.limit) qs.set("limit", String(params.limit));
     if (params?.offset) qs.set("offset", String(params.offset));
     const q = qs.toString();
-    return get<{ total: number; items: ApiAuditLog[] }>(`/admin/audit-logs${q ? `?${q}` : ""}`);
+    return get<{ total: number; items: ApiAuditLog[] }>(
+      `/admin/audit-logs${q ? `?${q}` : ""}`,
+    );
   },
 
   // Effective permissions for current session
-  myPermissions: () => get<ApiEffectivePermissions>("/admin/auth/me/permissions"),
+  myPermissions: () =>
+    get<ApiEffectivePermissions>("/admin/auth/me/permissions"),
 };
 
 export interface ApiDashboard {
@@ -4925,10 +5748,7 @@ export interface ApiAdminTenantSelection {
   token_type: string;
 }
 
-export type ApiPlatformTenantStatus =
-  | "active"
-  | "suspended"
-  | "disabled";
+export type ApiPlatformTenantStatus = "active" | "suspended" | "disabled";
 export type ApiPlatformDomainStatus =
   | "pending"
   | "awaiting_dns"
@@ -4947,7 +5767,12 @@ export type ApiPlatformLicenseStatus =
   | "suspended"
   | "blocked"
   | "cancelled";
-export type ApiPlatformBillingStatus = "current" | "pending" | "overdue" | "courtesy" | "not_configured";
+export type ApiPlatformBillingStatus =
+  | "current"
+  | "pending"
+  | "overdue"
+  | "courtesy"
+  | "not_configured";
 
 export interface ApiPlatformPage<T> {
   items: T[];
@@ -4994,7 +5819,11 @@ export interface ApiPlatformUsersListParams {
 export type ApiPlatformSettingsStatus = "ok" | "attention" | "critical";
 export type ApiPlatformSettingsAlertSeverity = "info" | "warning" | "critical";
 export type ApiPlatformJwtSecretState = "configured" | "default" | "missing";
-export type ApiPlatformRolloutCategory = "isolation" | "runtime" | "security" | "access";
+export type ApiPlatformRolloutCategory =
+  | "isolation"
+  | "runtime"
+  | "security"
+  | "access";
 
 export interface ApiPlatformApplicationSettings {
   app_name: string;
@@ -5045,8 +5874,16 @@ export interface ApiPlatformSettings {
   alerts: ApiPlatformSettingsAlert[];
 }
 
-export type ApiPlatformOperationalStatus = "healthy" | "degraded" | "critical" | "unknown";
-export type ApiPlatformConnectionStatus = "healthy" | "degraded" | "failed" | "unknown";
+export type ApiPlatformOperationalStatus =
+  | "healthy"
+  | "degraded"
+  | "critical"
+  | "unknown";
+export type ApiPlatformConnectionStatus =
+  | "healthy"
+  | "degraded"
+  | "failed"
+  | "unknown";
 
 export interface ApiPlatformSessionRole {
   key: string;
@@ -5269,7 +6106,12 @@ export interface ApiPlatformStorageOverview {
   generated_at: string;
   stale: boolean;
   status: ApiPlatformOperationalStatus;
-  disk: { total_bytes: number; used_bytes: number; free_bytes: number; usage_percent: number };
+  disk: {
+    total_bytes: number;
+    used_bytes: number;
+    free_bytes: number;
+    usage_percent: number;
+  };
   uploads: { bytes: number; files: number };
   optimized: { bytes: number; files: number };
   baileys: { bytes: number; files: number };
@@ -5301,7 +6143,10 @@ export interface ApiPlatformBackupsOverview {
   age_seconds?: number | null;
   schedule?: string | null;
   components: ApiPlatformBackupComponent[];
-  restore_drill: { status: ApiPlatformOperationalStatus; last_tested_at?: string | null };
+  restore_drill: {
+    status: ApiPlatformOperationalStatus;
+    last_tested_at?: string | null;
+  };
 }
 
 export interface ApiPlatformBackupRun {
@@ -5318,10 +6163,13 @@ export interface ApiPlatformBackupRuns {
   items: ApiPlatformBackupRun[];
 }
 
-export function buildPlatformUsersQuery(params: ApiPlatformUsersListParams = {}): string {
+export function buildPlatformUsersQuery(
+  params: ApiPlatformUsersListParams = {},
+): string {
   const query = new URLSearchParams();
   if (params.page !== undefined) query.set("page", String(params.page));
-  if (params.page_size !== undefined) query.set("page_size", String(params.page_size));
+  if (params.page_size !== undefined)
+    query.set("page_size", String(params.page_size));
   if (params.q?.trim()) query.set("q", params.q.trim());
   if (params.status) query.set("status", params.status);
   if (params.role?.trim()) query.set("role", params.role.trim());
@@ -5457,7 +6305,13 @@ export interface ApiPlatformPlan {
   description?: string | null;
   plan_type?: "public" | "custom";
   status: "active" | "inactive" | "archived";
-  billing_cycle?: "monthly" | "quarterly" | "semiannual" | "annual" | "custom" | null;
+  billing_cycle?:
+    | "monthly"
+    | "quarterly"
+    | "semiannual"
+    | "annual"
+    | "custom"
+    | null;
   currency?: string;
   grace_period_days?: number;
   auto_renew_default?: boolean;
@@ -5484,7 +6338,13 @@ export interface ApiPlatformModule {
   key: string;
   name: string;
   description?: string | null;
-  module_group: "operation" | "delivery" | "management" | "marketing" | "crm" | "integrations";
+  module_group:
+    | "operation"
+    | "delivery"
+    | "management"
+    | "marketing"
+    | "crm"
+    | "integrations";
   active: boolean;
   display_order?: number;
   dependencies_json?: string;
@@ -5629,7 +6489,15 @@ export interface ApiPlatformInvoice {
   id: string;
   tenant_id: string;
   plan_id?: string | null;
-  status: "draft" | "pending" | "paid" | "overdue" | "cancelled" | "refunded" | "negotiated" | "courtesy";
+  status:
+    | "draft"
+    | "pending"
+    | "paid"
+    | "overdue"
+    | "cancelled"
+    | "refunded"
+    | "negotiated"
+    | "courtesy";
   period_start: string;
   period_end: string;
   base_amount: number;
@@ -5810,11 +6678,15 @@ export interface ApiPlatformBranding {
 
 export const platformBrandingApi = {
   get: () => get<ApiPlatformBranding>("/admin/platform/settings/branding"),
-  save: (branding: ApiPlatformBranding) => put<ApiPlatformBranding>("/admin/platform/settings/branding", branding),
+  save: (branding: ApiPlatformBranding) =>
+    put<ApiPlatformBranding>("/admin/platform/settings/branding", branding),
   upload: async (file: File): Promise<string> => {
     const form = new FormData();
     form.append("file", file);
-    const result = await postForm<{ url: string }>("/admin/platform/settings/branding/upload", form);
+    const result = await postForm<{ url: string }>(
+      "/admin/platform/settings/branding/upload",
+      form,
+    );
     return result.url;
   },
 };
@@ -5832,11 +6704,15 @@ export const platformHealthApi = {
 };
 
 export const platformIntegrationsApi = {
-  overview: () => get<ApiPlatformIntegrationsOverview>("/admin/platform/integrations/overview"),
+  overview: () =>
+    get<ApiPlatformIntegrationsOverview>(
+      "/admin/platform/integrations/overview",
+    ),
   connections: (params: { page?: number; page_size?: number } = {}) => {
     const query = new URLSearchParams();
     if (params.page !== undefined) query.set("page", String(params.page));
-    if (params.page_size !== undefined) query.set("page_size", String(params.page_size));
+    if (params.page_size !== undefined)
+      query.set("page_size", String(params.page_size));
     const suffix = query.toString();
     return get<ApiPlatformOperationalPage<ApiPlatformIntegrationConnection>>(
       `/admin/platform/integrations/connections${suffix ? `?${suffix}` : ""}`,
@@ -5850,7 +6726,8 @@ export const platformJobsApi = {
   items: (params: { page?: number; page_size?: number } = {}) => {
     const query = new URLSearchParams();
     if (params.page !== undefined) query.set("page", String(params.page));
-    if (params.page_size !== undefined) query.set("page_size", String(params.page_size));
+    if (params.page_size !== undefined)
+      query.set("page_size", String(params.page_size));
     const suffix = query.toString();
     return get<ApiPlatformOperationalPage<ApiPlatformJobItem>>(
       `/admin/platform/jobs/items${suffix ? `?${suffix}` : ""}`,
@@ -5859,11 +6736,13 @@ export const platformJobsApi = {
 };
 
 export const platformGatewayApi = {
-  overview: () => get<ApiPlatformGatewayOverview>("/admin/platform/gateway/overview"),
+  overview: () =>
+    get<ApiPlatformGatewayOverview>("/admin/platform/gateway/overview"),
   instances: (params: { page?: number; page_size?: number } = {}) => {
     const query = new URLSearchParams();
     if (params.page !== undefined) query.set("page", String(params.page));
-    if (params.page_size !== undefined) query.set("page_size", String(params.page_size));
+    if (params.page_size !== undefined)
+      query.set("page_size", String(params.page_size));
     const suffix = query.toString();
     return get<ApiPlatformOperationalPage<ApiPlatformGatewayInstance>>(
       `/admin/platform/gateway/instances${suffix ? `?${suffix}` : ""}`,
@@ -5879,35 +6758,42 @@ export const platformGatewayApi = {
 };
 
 export const platformErrorsApi = {
-  overview: () => get<ApiPlatformErrorsOverview>("/admin/platform/errors/overview"),
+  overview: () =>
+    get<ApiPlatformErrorsOverview>("/admin/platform/errors/overview"),
   list: (params: { page?: number; page_size?: number } = {}) => {
     const query = new URLSearchParams();
     if (params.page !== undefined) query.set("page", String(params.page));
-    if (params.page_size !== undefined) query.set("page_size", String(params.page_size));
+    if (params.page_size !== undefined)
+      query.set("page_size", String(params.page_size));
     const suffix = query.toString();
     return get<ApiPlatformOperationalPage<ApiPlatformErrorItem>>(
       `/admin/platform/errors${suffix ? `?${suffix}` : ""}`,
     );
   },
-  detail: (errorId: string) => get<ApiPlatformErrorDetail>(
-    `/admin/platform/errors/${encodeURIComponent(errorId)}`,
-  ),
-  acknowledge: (errorId: string, note: string) => post<ApiPlatformErrorDetail>(
-    `/admin/platform/errors/${encodeURIComponent(errorId)}/acknowledge`,
-    { note },
-  ),
-  resolve: (errorId: string, note: string) => post<ApiPlatformErrorDetail>(
-    `/admin/platform/errors/${encodeURIComponent(errorId)}/resolve`,
-    { note },
-  ),
+  detail: (errorId: string) =>
+    get<ApiPlatformErrorDetail>(
+      `/admin/platform/errors/${encodeURIComponent(errorId)}`,
+    ),
+  acknowledge: (errorId: string, note: string) =>
+    post<ApiPlatformErrorDetail>(
+      `/admin/platform/errors/${encodeURIComponent(errorId)}/acknowledge`,
+      { note },
+    ),
+  resolve: (errorId: string, note: string) =>
+    post<ApiPlatformErrorDetail>(
+      `/admin/platform/errors/${encodeURIComponent(errorId)}/resolve`,
+      { note },
+    ),
 };
 
 export const platformStorageApi = {
-  overview: () => get<ApiPlatformStorageOverview>("/admin/platform/storage/overview"),
+  overview: () =>
+    get<ApiPlatformStorageOverview>("/admin/platform/storage/overview"),
   tenants: (params: { page?: number; page_size?: number } = {}) => {
     const query = new URLSearchParams();
     if (params.page !== undefined) query.set("page", String(params.page));
-    if (params.page_size !== undefined) query.set("page_size", String(params.page_size));
+    if (params.page_size !== undefined)
+      query.set("page_size", String(params.page_size));
     const suffix = query.toString();
     return get<ApiPlatformOperationalPage<ApiPlatformTenantStorage>>(
       `/admin/platform/storage/tenants${suffix ? `?${suffix}` : ""}`,
@@ -5916,29 +6802,33 @@ export const platformStorageApi = {
 };
 
 export const platformBackupsApi = {
-  overview: () => get<ApiPlatformBackupsOverview>("/admin/platform/backups/overview"),
-  runs: (limit = 20) => get<ApiPlatformBackupRuns>(
-    `/admin/platform/backups/runs?limit=${encodeURIComponent(String(limit))}`,
-  ),
+  overview: () =>
+    get<ApiPlatformBackupsOverview>("/admin/platform/backups/overview"),
+  runs: (limit = 20) =>
+    get<ApiPlatformBackupRuns>(
+      `/admin/platform/backups/runs?limit=${encodeURIComponent(String(limit))}`,
+    ),
 };
 
 export const platformTenantsApi = {
   dashboard: () => get<ApiPlatformDashboard>("/admin/platform/dashboard"),
-  list: (params: {
-    page?: number;
-    page_size?: number;
-    q?: string;
-    status?: string;
-    sort_by?: string;
-    sort_dir?: "asc" | "desc";
-    tenant_id?: string;
-    email?: string;
-    plan_id?: string;
-    domain?: string;
-    billing_status?: string;
-    module?: string;
-    expiring_days?: number;
-  } = {}) => {
+  list: (
+    params: {
+      page?: number;
+      page_size?: number;
+      q?: string;
+      status?: string;
+      sort_by?: string;
+      sort_dir?: "asc" | "desc";
+      tenant_id?: string;
+      email?: string;
+      plan_id?: string;
+      domain?: string;
+      billing_status?: string;
+      module?: string;
+      expiring_days?: number;
+    } = {},
+  ) => {
     return get<ApiPlatformPage<ApiPlatformTenant>>(
       `/admin/platform/tenants?${buildPlatformTenantListQuery(params)}`,
     );
@@ -5948,23 +6838,36 @@ export const platformTenantsApi = {
   create: (data: ApiPlatformCompanyWizard) =>
     post<ApiPlatformProvisionResult>("/admin/platform/tenants", data),
   get: (tenantId: string) =>
-    get<ApiPlatformTenantDetail>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}`),
+    get<ApiPlatformTenantDetail>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}`,
+    ),
   update: (tenantId: string, data: ApiPlatformTenantUpdate) =>
-    patch<ApiPlatformTenantDetail>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}`, data),
+    patch<ApiPlatformTenantDetail>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}`,
+      data,
+    ),
   updateStatus: (tenantId: string, status: ApiPlatformTenantStatus) =>
-    patch<ApiPlatformTenant>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/status`, { status }),
+    patch<ApiPlatformTenant>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/status`,
+      { status },
+    ),
   action: (
     tenantId: string,
     action: "suspend" | "reactivate" | "archive",
     reason: string,
-  ) => post<ApiPlatformTenantDetail>(
-    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/${action}`,
-    { reason },
-  ),
+  ) =>
+    post<ApiPlatformTenantDetail>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/${action}`,
+      { reason },
+    ),
   users: (tenantId: string) =>
-    get<ApiPlatformTenantUser[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/users`),
+    get<ApiPlatformTenantUser[]>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users`,
+    ),
   invitations: (tenantId: string) =>
-    get<ApiPlatformInvitation[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/invitations`),
+    get<ApiPlatformInvitation[]>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/invitations`,
+    ),
   inviteUser: (
     tenantId: string,
     data: {
@@ -5977,18 +6880,20 @@ export const platformTenantsApi = {
       expires_in_hours?: number;
       reason: string;
     },
-  ) => post<{ invitation: ApiPlatformInvitation; invitation_token: string }>(
-    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/invitations`,
-    data,
-  ),
+  ) =>
+    post<{ invitation: ApiPlatformInvitation; invitation_token: string }>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/invitations`,
+      data,
+    ),
   resendInvitation: (
     tenantId: string,
     invitationId: string,
     data: { expires_in_hours?: number; reason: string },
-  ) => post<{ invitation: ApiPlatformInvitation; invitation_token: string }>(
-    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/invitations/${encodeURIComponent(invitationId)}/resend`,
-    data,
-  ),
+  ) =>
+    post<{ invitation: ApiPlatformInvitation; invitation_token: string }>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/invitations/${encodeURIComponent(invitationId)}/resend`,
+      data,
+    ),
   createUser: (tenantId: string, data: ApiPlatformTenantUserCreate) =>
     post<ApiPlatformTenantUser>(
       `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users`,
@@ -6002,61 +6907,74 @@ export const platformTenantsApi = {
       role_id?: string | null;
       reason: string;
     },
-  ) => patch<ApiPlatformTenantUser>(
-    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/role`,
-    data,
-  ),
+  ) =>
+    patch<ApiPlatformTenantUser>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/role`,
+      data,
+    ),
   updateUserStatus: (
     tenantId: string,
     userId: string,
     data: { status: ApiPlatformTenantMembershipStatus; reason: string },
-  ) => patch<ApiPlatformTenantUser>(
-    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/status`,
-    data,
-  ),
+  ) =>
+    patch<ApiPlatformTenantUser>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/status`,
+      data,
+    ),
   userAccessAction: (
     tenantId: string,
     userId: string,
     action: "block" | "reactivate",
     reason: string,
-  ) => post<ApiPlatformTenantUser>(
-    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/${action}`,
-    { reason },
-  ),
+  ) =>
+    post<ApiPlatformTenantUser>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/${action}`,
+      { reason },
+    ),
   resetUserPassword: (
     tenantId: string,
     userId: string,
     data: { password: string; force_password_change: boolean; reason: string },
-  ) => post<{ user_id: string; force_password_change: boolean }>(
-    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/reset-password`,
-    data,
-  ),
-  revokeUserSessions: (
-    tenantId: string,
-    userId: string,
-    reason: string,
-  ) => post<ApiPlatformTenantUser>(
-    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/revoke-sessions`,
-    { reason },
-  ),
+  ) =>
+    post<{ user_id: string; force_password_change: boolean }>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/reset-password`,
+      data,
+    ),
+  revokeUserSessions: (tenantId: string, userId: string, reason: string) =>
+    post<ApiPlatformTenantUser>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/revoke-sessions`,
+      { reason },
+    ),
   transferOwnership: (
     tenantId: string,
     new_owner_user_id: string,
     reason: string,
-  ) => post<{ previous_owner_user_id: string; new_owner_user_id: string }>(
-    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/transfer-ownership`,
-    { new_owner_user_id, reason },
-  ),
+  ) =>
+    post<{ previous_owner_user_id: string; new_owner_user_id: string }>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/transfer-ownership`,
+      { new_owner_user_id, reason },
+    ),
   security: (tenantId: string) =>
-    get<ApiPlatformTenantSecurity>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/security`),
+    get<ApiPlatformTenantSecurity>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/security`,
+    ),
   usage: (tenantId: string) =>
-    get<ApiPlatformUsageMetric[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/usage`),
+    get<ApiPlatformUsageMetric[]>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/usage`,
+    ),
   notes: (tenantId: string) =>
-    get<ApiPlatformTenantNote[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/notes`),
+    get<ApiPlatformTenantNote[]>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/notes`,
+    ),
   addNote: (tenantId: string, note: string) =>
-    post<ApiPlatformTenantNote>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/notes`, { note }),
+    post<ApiPlatformTenantNote>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/notes`,
+      { note },
+    ),
   modules: (tenantId: string) =>
-    get<ApiPlatformModule[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/modules`),
+    get<ApiPlatformModule[]>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/modules`,
+    ),
   updateModules: (
     tenantId: string,
     modules: Array<{
@@ -6072,34 +6990,61 @@ export const platformTenantsApi = {
     }>,
     reason: string,
   ) =>
-    put<ApiPlatformModule[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/modules`, {
-      modules,
-      reason,
-    }),
+    put<ApiPlatformModule[]>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/modules`,
+      {
+        modules,
+        reason,
+      },
+    ),
   license: (tenantId: string) =>
-    get<ApiPlatformLicense>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/license`),
+    get<ApiPlatformLicense>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/license`,
+    ),
   changePlan: (tenantId: string, plan_id: string, reason: string) =>
-    put<ApiPlatformTenantDetail>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/plan`, {
-      plan_id,
-      reason,
-    }),
+    put<ApiPlatformTenantDetail>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/plan`,
+      {
+        plan_id,
+        reason,
+      },
+    ),
   licenseAction: (
     tenantId: string,
-    action: "renew" | "extend" | "start_trial" | "convert" | "courtesy" | "grace" | "expire" | "cancel" | "suspend" | "block" | "reactivate",
+    action:
+      | "renew"
+      | "extend"
+      | "start_trial"
+      | "convert"
+      | "courtesy"
+      | "grace"
+      | "expire"
+      | "cancel"
+      | "suspend"
+      | "block"
+      | "reactivate",
     data: { days?: number; reason: string },
-  ) => post<ApiPlatformLicense>(
-    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/license/${action}`,
-    data,
-  ),
+  ) =>
+    post<ApiPlatformLicense>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/license/${action}`,
+      data,
+    ),
   listDomains: (tenantId: string) =>
-    get<ApiPlatformTenantDomain[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/domains`),
-  createDomain: (tenantId: string, data: { hostname: string; kind: "subdomain" | "custom" }) =>
+    get<ApiPlatformTenantDomain[]>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/domains`,
+    ),
+  createDomain: (
+    tenantId: string,
+    data: { hostname: string; kind: "subdomain" | "custom" },
+  ) =>
     post<ApiPlatformDomainCreation>(
       `/admin/platform/tenants/${encodeURIComponent(tenantId)}/domains`,
       data,
     ),
   invoices: (tenantId: string) =>
-    get<ApiPlatformInvoice[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/invoices`),
+    get<ApiPlatformInvoice[]>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/invoices`,
+    ),
   createInvoice: (
     tenantId: string,
     data: {
@@ -6111,12 +7056,17 @@ export const platformTenantsApi = {
       discount_amount?: number;
       status?: "draft" | "pending" | "courtesy";
       notes?: string;
-      items?: Array<{ description: string; quantity: number; unit_amount: number }>;
+      items?: Array<{
+        description: string;
+        quantity: number;
+        unit_amount: number;
+      }>;
     },
-  ) => post<ApiPlatformInvoice>(
-    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/invoices`,
-    data,
-  ),
+  ) =>
+    post<ApiPlatformInvoice>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/invoices`,
+      data,
+    ),
 };
 
 export const platformPlansApi = {
@@ -6124,7 +7074,10 @@ export const platformPlansApi = {
   create: (data: Omit<ApiPlatformPlan, "id" | "created_at" | "updated_at">) =>
     post<ApiPlatformPlan>("/admin/platform/plans", data),
   update: (id: string, data: Partial<ApiPlatformPlan> & { reason?: string }) =>
-    patch<ApiPlatformPlan>(`/admin/platform/plans/${encodeURIComponent(id)}`, data),
+    patch<ApiPlatformPlan>(
+      `/admin/platform/plans/${encodeURIComponent(id)}`,
+      data,
+    ),
 };
 
 export const platformModulesApi = {
@@ -6134,7 +7087,11 @@ export const platformModulesApi = {
   update: (
     id: string,
     data: Partial<Omit<ApiPlatformModuleWrite, "key">> & { reason: string },
-  ) => patch<ApiPlatformModule>(`/admin/platform/modules/${encodeURIComponent(id)}`, data),
+  ) =>
+    patch<ApiPlatformModule>(
+      `/admin/platform/modules/${encodeURIComponent(id)}`,
+      data,
+    ),
 };
 
 export interface ApiPlatformDomainCertificate {
@@ -6161,66 +7118,132 @@ export interface ApiPlatformDomainCertificate {
 export const companyDomainsApi = {
   list: () => get<ApiPlatformTenantDomain[]>("/admin/company/domains"),
   create: (data: { hostname: string; kind: "subdomain" | "custom" }) =>
-    post<ApiPlatformDomainCreation>("/admin/company/domains", { hostname: data.hostname, kind: data.kind }),
-  verify: (domainId: string) => post<ApiPlatformTenantDomain>(`/admin/company/domains/${encodeURIComponent(domainId)}/verify`, {}),
-  activate: (domainId: string) => post<ApiPlatformTenantDomain>(`/admin/company/domains/${encodeURIComponent(domainId)}/activate`, {}),
-  certificate: (domainId: string) => get<ApiPlatformDomainCertificate>(`/admin/company/domains/${encodeURIComponent(domainId)}/certificate`),
-  requestCertificate: (domainId: string, body: { email: string; accept_terms: true }, idempotencyKey: string) =>
-    request<ApiPlatformDomainCertificate>("POST", `/admin/company/domains/${encodeURIComponent(domainId)}/certificate`, { email: body.email, accept_terms: body.accept_terms }, { "Idempotency-Key": idempotencyKey }),
+    post<ApiPlatformDomainCreation>("/admin/company/domains", {
+      hostname: data.hostname,
+      kind: data.kind,
+    }),
+  verify: (domainId: string) =>
+    post<ApiPlatformTenantDomain>(
+      `/admin/company/domains/${encodeURIComponent(domainId)}/verify`,
+      {},
+    ),
+  activate: (domainId: string) =>
+    post<ApiPlatformTenantDomain>(
+      `/admin/company/domains/${encodeURIComponent(domainId)}/activate`,
+      {},
+    ),
+  certificate: (domainId: string) =>
+    get<ApiPlatformDomainCertificate>(
+      `/admin/company/domains/${encodeURIComponent(domainId)}/certificate`,
+    ),
+  requestCertificate: (
+    domainId: string,
+    body: { email: string; accept_terms: true },
+    idempotencyKey: string,
+  ) =>
+    request<ApiPlatformDomainCertificate>(
+      "POST",
+      `/admin/company/domains/${encodeURIComponent(domainId)}/certificate`,
+      { email: body.email, accept_terms: body.accept_terms },
+      { "Idempotency-Key": idempotencyKey },
+    ),
 };
 
 export const platformDomainsApi = {
   certificate: (domainId: string) =>
-    get<ApiPlatformDomainCertificate>(`/admin/platform/domains/${encodeURIComponent(domainId)}/certificate`),
-  requestCertificate: (domainId: string, body: { email: string; accept_terms: true }, idempotencyKey: string) =>
-    request<ApiPlatformDomainCertificate>("POST", `/admin/platform/domains/${encodeURIComponent(domainId)}/certificate`, body, { "Idempotency-Key": idempotencyKey }),
-  list: (params: { page?: number; page_size?: number; q?: string; status?: string } = {}) => {
+    get<ApiPlatformDomainCertificate>(
+      `/admin/platform/domains/${encodeURIComponent(domainId)}/certificate`,
+    ),
+  requestCertificate: (
+    domainId: string,
+    body: { email: string; accept_terms: true },
+    idempotencyKey: string,
+  ) =>
+    request<ApiPlatformDomainCertificate>(
+      "POST",
+      `/admin/platform/domains/${encodeURIComponent(domainId)}/certificate`,
+      body,
+      { "Idempotency-Key": idempotencyKey },
+    ),
+  list: (
+    params: {
+      page?: number;
+      page_size?: number;
+      q?: string;
+      status?: string;
+    } = {},
+  ) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== "") qs.set(key, String(value));
     });
-    return get<ApiPlatformPage<ApiPlatformTenantDomain>>(`/admin/platform/domains?${qs.toString()}`);
+    return get<ApiPlatformPage<ApiPlatformTenantDomain>>(
+      `/admin/platform/domains?${qs.toString()}`,
+    );
   },
   action: (
     domainId: string,
     action: "verify" | "activate" | "primary" | "suspend",
     reason?: string,
-  ) => post<ApiPlatformTenantDomain>(
-    `/admin/platform/domains/${encodeURIComponent(domainId)}/${action}`,
-    action === "suspend" ? { reason: reason || "Suspensao administrativa" } : {},
-  ),
+  ) =>
+    post<ApiPlatformTenantDomain>(
+      `/admin/platform/domains/${encodeURIComponent(domainId)}/${action}`,
+      action === "suspend"
+        ? { reason: reason || "Suspensao administrativa" }
+        : {},
+    ),
   remove: (domainId: string, reason: string) =>
-    request<ApiPlatformTenantDomain>("DELETE", `/admin/platform/domains/${encodeURIComponent(domainId)}`, { reason }),
+    request<ApiPlatformTenantDomain>(
+      "DELETE",
+      `/admin/platform/domains/${encodeURIComponent(domainId)}`,
+      { reason },
+    ),
 };
 
 export const platformAuditApi = {
-  list: (params: {
-    page?: number;
-    page_size?: number;
-    tenant_id?: string;
-    action?: string;
-    actor_user_id?: number;
-  } = {}) => {
+  list: (
+    params: {
+      page?: number;
+      page_size?: number;
+      tenant_id?: string;
+      action?: string;
+      actor_user_id?: number;
+    } = {},
+  ) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== "") qs.set(key, String(value));
     });
-    return get<ApiPlatformPage<ApiPlatformAuditLog>>(`/admin/platform/audit-logs?${qs.toString()}`);
+    return get<ApiPlatformPage<ApiPlatformAuditLog>>(
+      `/admin/platform/audit-logs?${qs.toString()}`,
+    );
   },
 };
 
 export const platformBillingApi = {
   recordPayment: (
     invoiceId: string,
-    data: { amount: number; paid_at: string; payment_method: string; reference?: string; notes?: string },
-  ) => post<{
-    payment: { id: string; amount: number; paid_at: string; reference?: string | null };
-    invoice: ApiPlatformInvoice;
-    idempotent_replay?: boolean;
-  }>(
-    `/admin/platform/invoices/${encodeURIComponent(invoiceId)}/payments`,
-    data,
-  ),
+    data: {
+      amount: number;
+      paid_at: string;
+      payment_method: string;
+      reference?: string;
+      notes?: string;
+    },
+  ) =>
+    post<{
+      payment: {
+        id: string;
+        amount: number;
+        paid_at: string;
+        reference?: string | null;
+      };
+      invoice: ApiPlatformInvoice;
+      idempotent_replay?: boolean;
+    }>(
+      `/admin/platform/invoices/${encodeURIComponent(invoiceId)}/payments`,
+      data,
+    ),
   applyDiscount: (invoiceId: string, amount: number, reason: string) =>
     post<ApiPlatformInvoice>(
       `/admin/platform/invoices/${encodeURIComponent(invoiceId)}/discount`,
@@ -6301,7 +7324,7 @@ export const authApi = {
   checkPhone: (phone: string) =>
     post<{ exists: boolean; customer_id?: string; name?: string }>(
       "/auth/check-phone",
-      { phone }
+      { phone },
     ),
 
   login: (phone: string, password: string) =>
@@ -6317,15 +7340,32 @@ export const authApi = {
     post<CustomerSession>("/auth/login-email", { email, password }),
 
   register: (data: {
-    name: string; email: string; password: string; phone: string;
-    street?: string; number?: string; complement?: string;
-    neighborhood?: string; city?: string; state?: string; zip_code?: string;
+    name: string;
+    email: string;
+    password: string;
+    phone: string;
+    street?: string;
+    number?: string;
+    complement?: string;
+    neighborhood?: string;
+    city?: string;
+    state?: string;
+    zip_code?: string;
     label?: string;
-    lgpd_consent: boolean; lgpd_policy_version?: string;
-    marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean;
+    lgpd_consent: boolean;
+    lgpd_policy_version?: string;
+    marketing_email_consent?: boolean;
+    marketing_whatsapp_consent?: boolean;
   }) => post<CustomerSession>("/auth/register", data),
-  me: () => request<{ customer: ApiCustomer }>("GET", "/auth/me", undefined, customerAccessHeaders()),
-  logout: () => request<null>("POST", "/auth/logout", {}, customerAccessHeaders()),
+  me: () =>
+    request<{ customer: ApiCustomer }>(
+      "GET",
+      "/auth/me",
+      undefined,
+      customerAccessHeaders(),
+    ),
+  logout: () =>
+    request<null>("POST", "/auth/logout", {}, customerAccessHeaders()),
 };
 
 // ─── LGPD ─────────────────────────────────────────────────────────────────────
@@ -6335,11 +7375,15 @@ export const lgpdApi = {
   list: () => get<ApiLgpdPolicy[]>("/admin/lgpd"),
   create: (data: Omit<ApiLgpdPolicy, "id" | "created_at" | "updated_at">) =>
     post<ApiLgpdPolicy>("/admin/lgpd", data),
-  update: (id: string, data: Partial<Omit<ApiLgpdPolicy, "id" | "created_at" | "updated_at">>) =>
-    put<ApiLgpdPolicy>(`/admin/lgpd/${id}`, data),
+  update: (
+    id: string,
+    data: Partial<Omit<ApiLgpdPolicy, "id" | "created_at" | "updated_at">>,
+  ) => put<ApiLgpdPolicy>(`/admin/lgpd/${id}`, data),
   remove: (id: string) => del<void>(`/admin/lgpd/${id}`),
-  activate: (id: string) => post<ApiLgpdPolicy>(`/admin/lgpd/${id}/activate`, {}),
-  seedDefault: () => post<{ message?: string; id?: string }>("/admin/lgpd/seed-default", {}),
+  activate: (id: string) =>
+    post<ApiLgpdPolicy>(`/admin/lgpd/${id}/activate`, {}),
+  seedDefault: () =>
+    post<{ message?: string; id?: string }>("/admin/lgpd/seed-default", {}),
 };
 
 // ─── Admin Auth ───────────────────────────────────────────────────────────────
@@ -6351,10 +7395,7 @@ export const adminAuthApi = {
       token_type: string;
       admin: ApiAdmin;
       password_change_required: boolean;
-    }>(
-      "/admin/auth/login",
-      { email, password }
-    ),
+    }>("/admin/auth/login", { email, password }),
 
   me: () => get<ApiAdmin>("/admin/auth/me"),
 
@@ -6375,8 +7416,14 @@ export const adminAuthApi = {
 // ─── Products ─────────────────────────────────────────────────────────────────
 
 export const productsApi = {
-  list: (activeOnly = true, productType?: string, channel?: "delivery" | "dine_in") => {
-    const qs = new URLSearchParams({ active_only: activeOnly ? "true" : "false" });
+  list: (
+    activeOnly = true,
+    productType?: string,
+    channel?: "delivery" | "dine_in",
+  ) => {
+    const qs = new URLSearchParams({
+      active_only: activeOnly ? "true" : "false",
+    });
     if (productType) qs.set("product_type", productType);
     if (channel) qs.set("channel", channel);
     const path = `/products?${qs.toString()}`;
@@ -6391,52 +7438,98 @@ export const productsApi = {
   create: (data: Omit<ApiProduct, "id" | "created_at" | "updated_at">) =>
     post<ApiProduct>("/products", data),
 
-  update: (id: string, data: Partial<Omit<ApiProduct, "id" | "created_at" | "updated_at">>) =>
-    put<ApiProduct>(`/products/${id}`, data),
+  update: (
+    id: string,
+    data: Partial<Omit<ApiProduct, "id" | "created_at" | "updated_at">>,
+  ) => put<ApiProduct>(`/products/${id}`, data),
 
   remove: (id: string) => del<void>(`/products/${id}`),
 
   optionGroups: {
     list: (productId: string, activeOnly = false) =>
-      get<ApiProductOptionGroup[]>(`/products/${productId}/option-groups${activeOnly ? "?active_only=true" : ""}`),
-    create: (productId: string, data: Omit<ApiProductOptionGroup, "id" | "product_id" | "options">) =>
+      get<ApiProductOptionGroup[]>(
+        `/products/${productId}/option-groups${activeOnly ? "?active_only=true" : ""}`,
+      ),
+    create: (
+      productId: string,
+      data: Omit<ApiProductOptionGroup, "id" | "product_id" | "options">,
+    ) =>
       post<ApiProductOptionGroup>(`/products/${productId}/option-groups`, data),
-    update: (productId: string, groupId: string, data: Partial<Omit<ApiProductOptionGroup, "id" | "product_id" | "options">>) =>
-      put<ApiProductOptionGroup>(`/products/${productId}/option-groups/${groupId}`, data),
+    update: (
+      productId: string,
+      groupId: string,
+      data: Partial<
+        Omit<ApiProductOptionGroup, "id" | "product_id" | "options">
+      >,
+    ) =>
+      put<ApiProductOptionGroup>(
+        `/products/${productId}/option-groups/${groupId}`,
+        data,
+      ),
     remove: (productId: string, groupId: string) =>
       del<void>(`/products/${productId}/option-groups/${groupId}`),
     options: {
-      create: (productId: string, groupId: string, data: Omit<ApiProductOption, "id" | "group_id">) =>
-        post<ApiProductOption>(`/products/${productId}/option-groups/${groupId}/options`, data),
-      update: (productId: string, groupId: string, optionId: string, data: Partial<Omit<ApiProductOption, "id" | "group_id">>) =>
-        put<ApiProductOption>(`/products/${productId}/option-groups/${groupId}/options/${optionId}`, data),
+      create: (
+        productId: string,
+        groupId: string,
+        data: Omit<ApiProductOption, "id" | "group_id">,
+      ) =>
+        post<ApiProductOption>(
+          `/products/${productId}/option-groups/${groupId}/options`,
+          data,
+        ),
+      update: (
+        productId: string,
+        groupId: string,
+        optionId: string,
+        data: Partial<Omit<ApiProductOption, "id" | "group_id">>,
+      ) =>
+        put<ApiProductOption>(
+          `/products/${productId}/option-groups/${groupId}/options/${optionId}`,
+          data,
+        ),
       remove: (productId: string, groupId: string, optionId: string) =>
-        del<void>(`/products/${productId}/option-groups/${groupId}/options/${optionId}`),
+        del<void>(
+          `/products/${productId}/option-groups/${groupId}/options/${optionId}`,
+        ),
     },
   },
 
   getMultiFlavorsConfig: () =>
     get<ApiMultiFlavorsConfig>("/products/config/multi-flavors"),
 
-  updateMultiFlavorsConfig: (data: Partial<Pick<ApiMultiFlavorsConfig, "max_flavors" | "pricing_rule" | "flavor_category_filters">>) =>
-    patch<ApiMultiFlavorsConfig>("/products/config/multi-flavors", data),
+  updateMultiFlavorsConfig: (
+    data: Partial<
+      Pick<
+        ApiMultiFlavorsConfig,
+        "max_flavors" | "pricing_rule" | "flavor_category_filters"
+      >
+    >,
+  ) => patch<ApiMultiFlavorsConfig>("/products/config/multi-flavors", data),
 
   getBestSellerConfig: () =>
     get<ApiBestSellerConfig>("/products/config/best-seller"),
 
-  updateBestSellerConfig: (data: { period_days?: number; top_count?: number }) =>
-    patch<ApiBestSellerConfig>("/products/config/best-seller", data),
+  updateBestSellerConfig: (data: {
+    period_days?: number;
+    top_count?: number;
+  }) => patch<ApiBestSellerConfig>("/products/config/best-seller", data),
 };
 
 export const categoriesApi = {
   list: (activeOnly = false) =>
-    get<ApiProductCategory[]>(`/products/categories${activeOnly ? "?active_only=true" : ""}`),
+    get<ApiProductCategory[]>(
+      `/products/categories${activeOnly ? "?active_only=true" : ""}`,
+    ),
 
-  create: (data: Omit<ApiProductCategory, "id" | "created_at" | "updated_at">) =>
-    post<ApiProductCategory>("/products/categories", data),
+  create: (
+    data: Omit<ApiProductCategory, "id" | "created_at" | "updated_at">,
+  ) => post<ApiProductCategory>("/products/categories", data),
 
-  update: (id: string, data: Partial<Omit<ApiProductCategory, "id" | "created_at" | "updated_at">>) =>
-    put<ApiProductCategory>(`/products/categories/${id}`, data),
+  update: (
+    id: string,
+    data: Partial<Omit<ApiProductCategory, "id" | "created_at" | "updated_at">>,
+  ) => put<ApiProductCategory>(`/products/categories/${id}`, data),
 
   remove: (id: string) => del<void>(`/products/categories/${id}`),
 };
@@ -6445,13 +7538,20 @@ export const categoriesApi = {
 
 export const sizesApi = {
   list: (productId: string, activeOnly = true) =>
-    get<ApiProductSize[]>(`/products/${productId}/sizes${activeOnly ? "" : "?active_only=false"}`),
+    get<ApiProductSize[]>(
+      `/products/${productId}/sizes${activeOnly ? "" : "?active_only=false"}`,
+    ),
 
-  create: (productId: string, data: Omit<ApiProductSize, "id" | "product_id" | "created_at">) =>
-    post<ApiProductSize>(`/products/${productId}/sizes`, data),
+  create: (
+    productId: string,
+    data: Omit<ApiProductSize, "id" | "product_id" | "created_at">,
+  ) => post<ApiProductSize>(`/products/${productId}/sizes`, data),
 
-  update: (productId: string, sizeId: string, data: Partial<Omit<ApiProductSize, "id" | "product_id" | "created_at">>) =>
-    put<ApiProductSize>(`/products/${productId}/sizes/${sizeId}`, data),
+  update: (
+    productId: string,
+    sizeId: string,
+    data: Partial<Omit<ApiProductSize, "id" | "product_id" | "created_at">>,
+  ) => put<ApiProductSize>(`/products/${productId}/sizes/${sizeId}`, data),
 
   remove: (productId: string, sizeId: string) =>
     del<void>(`/products/${productId}/sizes/${sizeId}`),
@@ -6460,7 +7560,11 @@ export const sizesApi = {
 // ─── Crust Types ──────────────────────────────────────────────────────────────
 
 export const crustApi = {
-  list: (productId: string, activeOnly = true, optionKind?: ApiProductCrustType["option_kind"]) => {
+  list: (
+    productId: string,
+    activeOnly = true,
+    optionKind?: ApiProductCrustType["option_kind"],
+  ) => {
     const query = new URLSearchParams();
     if (!activeOnly) query.set("active_only", "false");
     if (optionKind) query.set("option_kind", optionKind);
@@ -6468,10 +7572,18 @@ export const crustApi = {
     return get<ApiProductCrustType[]>(`/products/${productId}/crusts${suffix}`);
   },
 
-  create: (productId: string, data: Omit<ApiProductCrustType, "id" | "product_id" | "created_at">) =>
-    post<ApiProductCrustType>(`/products/${productId}/crusts`, data),
+  create: (
+    productId: string,
+    data: Omit<ApiProductCrustType, "id" | "product_id" | "created_at">,
+  ) => post<ApiProductCrustType>(`/products/${productId}/crusts`, data),
 
-  update: (productId: string, crustId: string, data: Partial<Omit<ApiProductCrustType, "id" | "product_id" | "created_at">>) =>
+  update: (
+    productId: string,
+    crustId: string,
+    data: Partial<
+      Omit<ApiProductCrustType, "id" | "product_id" | "created_at">
+    >,
+  ) =>
     put<ApiProductCrustType>(`/products/${productId}/crusts/${crustId}`, data),
 
   remove: (productId: string, crustId: string) =>
@@ -6480,21 +7592,66 @@ export const crustApi = {
 
 export const globalCatalogApi = {
   sizes: {
-    list: () => get<ApiGlobalCatalogItem[]>('/catalog/pizza-sizes'),
-    create: (data: { name: string; description?: string | null; sort_order?: number; active?: boolean; is_default?: boolean }) => post<ApiGlobalCatalogItem>('/catalog/pizza-sizes', data),
-    update: (id: string, data: Partial<{ name: string; description: string | null; sort_order: number; active: boolean; is_default: boolean }>) => put<ApiGlobalCatalogItem>(`/catalog/pizza-sizes/${id}`, data),
+    list: () => get<ApiGlobalCatalogItem[]>("/catalog/pizza-sizes"),
+    create: (data: {
+      name: string;
+      description?: string | null;
+      sort_order?: number;
+      active?: boolean;
+      is_default?: boolean;
+    }) => post<ApiGlobalCatalogItem>("/catalog/pizza-sizes", data),
+    update: (
+      id: string,
+      data: Partial<{
+        name: string;
+        description: string | null;
+        sort_order: number;
+        active: boolean;
+        is_default: boolean;
+      }>,
+    ) => put<ApiGlobalCatalogItem>(`/catalog/pizza-sizes/${id}`, data),
     remove: (id: string) => del<void>(`/catalog/pizza-sizes/${id}`),
   },
   doughTypes: {
-    list: () => get<ApiGlobalCatalogItem[]>('/catalog/dough-types'),
-    create: (data: { name: string; description?: string | null; price_addition?: number; sort_order?: number; active?: boolean }) => post<ApiGlobalCatalogItem>('/catalog/dough-types', data),
-    update: (id: string, data: Partial<{ name: string; description: string | null; price_addition: number; sort_order: number; active: boolean }>) => put<ApiGlobalCatalogItem>(`/catalog/dough-types/${id}`, data),
+    list: () => get<ApiGlobalCatalogItem[]>("/catalog/dough-types"),
+    create: (data: {
+      name: string;
+      description?: string | null;
+      price_addition?: number;
+      sort_order?: number;
+      active?: boolean;
+    }) => post<ApiGlobalCatalogItem>("/catalog/dough-types", data),
+    update: (
+      id: string,
+      data: Partial<{
+        name: string;
+        description: string | null;
+        price_addition: number;
+        sort_order: number;
+        active: boolean;
+      }>,
+    ) => put<ApiGlobalCatalogItem>(`/catalog/dough-types/${id}`, data),
     remove: (id: string) => del<void>(`/catalog/dough-types/${id}`),
   },
   crusts: {
-    list: () => get<ApiGlobalCatalogItem[]>('/catalog/pizza-crusts'),
-    create: (data: { name: string; description?: string | null; price_addition?: number; sort_order?: number; active?: boolean }) => post<ApiGlobalCatalogItem>('/catalog/pizza-crusts', data),
-    update: (id: string, data: Partial<{ name: string; description: string | null; price_addition: number; sort_order: number; active: boolean }>) => put<ApiGlobalCatalogItem>(`/catalog/pizza-crusts/${id}`, data),
+    list: () => get<ApiGlobalCatalogItem[]>("/catalog/pizza-crusts"),
+    create: (data: {
+      name: string;
+      description?: string | null;
+      price_addition?: number;
+      sort_order?: number;
+      active?: boolean;
+    }) => post<ApiGlobalCatalogItem>("/catalog/pizza-crusts", data),
+    update: (
+      id: string,
+      data: Partial<{
+        name: string;
+        description: string | null;
+        price_addition: number;
+        sort_order: number;
+        active: boolean;
+      }>,
+    ) => put<ApiGlobalCatalogItem>(`/catalog/pizza-crusts/${id}`, data),
     remove: (id: string) => del<void>(`/catalog/pizza-crusts/${id}`),
   },
 };
@@ -6504,9 +7661,17 @@ export const globalCatalogApi = {
  */
 export const productCatalogConfigurationApi = {
   get: (productId: string) =>
-    get<ApiProductCatalogConfiguration>(`/catalog/products/${productId}/configuration`),
-  update: (productId: string, data: Omit<ApiProductCatalogConfiguration, "product_id">) =>
-    put<ApiProductCatalogConfiguration>(`/catalog/products/${productId}/configuration`, data),
+    get<ApiProductCatalogConfiguration>(
+      `/catalog/products/${productId}/configuration`,
+    ),
+  update: (
+    productId: string,
+    data: Omit<ApiProductCatalogConfiguration, "product_id">,
+  ) =>
+    put<ApiProductCatalogConfiguration>(
+      `/catalog/products/${productId}/configuration`,
+      data,
+    ),
 };
 
 // ─── Drink Variants ───────────────────────────────────────────────────────────
@@ -6515,23 +7680,53 @@ export const productPromotionsApi = {
   list: (productId: string) =>
     get<ApiProductPromotion[]>(`/products/${productId}/promotions`),
 
-  create: (productId: string, data: Omit<ApiProductPromotion, "id" | "product_id" | "created_at" | "updated_at">) =>
-    post<ApiProductPromotion>(`/products/${productId}/promotions`, data),
+  create: (
+    productId: string,
+    data: Omit<
+      ApiProductPromotion,
+      "id" | "product_id" | "created_at" | "updated_at"
+    >,
+  ) => post<ApiProductPromotion>(`/products/${productId}/promotions`, data),
 
-  update: (productId: string, promotionId: string, data: Partial<Omit<ApiProductPromotion, "id" | "product_id" | "created_at" | "updated_at">>) =>
-    put<ApiProductPromotion>(`/products/${productId}/promotions/${promotionId}`, data),
+  update: (
+    productId: string,
+    promotionId: string,
+    data: Partial<
+      Omit<
+        ApiProductPromotion,
+        "id" | "product_id" | "created_at" | "updated_at"
+      >
+    >,
+  ) =>
+    put<ApiProductPromotion>(
+      `/products/${productId}/promotions/${promotionId}`,
+      data,
+    ),
 
   remove: (productId: string, promotionId: string) =>
     del<void>(`/products/${productId}/promotions/${promotionId}`),
 
-  quote: (productId: string, params?: { size_id?: string | null; crust_id?: string | null; border_id?: string | null; drink_variant_id?: string | null; channel?: "delivery" | "dine_in"; flavor_count?: number; flavor_ids?: string[] }) => {
+  quote: (
+    productId: string,
+    params?: {
+      size_id?: string | null;
+      crust_id?: string | null;
+      border_id?: string | null;
+      drink_variant_id?: string | null;
+      channel?: "delivery" | "dine_in";
+      flavor_count?: number;
+      flavor_ids?: string[];
+    },
+  ) => {
     const search = new URLSearchParams();
     if (params?.size_id) search.set("size_id", params.size_id);
     if (params?.crust_id) search.set("crust_id", params.crust_id);
     if (params?.border_id) search.set("border_id", params.border_id);
-    if (params?.drink_variant_id) search.set("drink_variant_id", params.drink_variant_id);
+    if (params?.drink_variant_id)
+      search.set("drink_variant_id", params.drink_variant_id);
     if (params?.channel) search.set("channel", params.channel);
-    if (params?.flavor_count) search.set("flavor_count", String(params.flavor_count));
+    if (params?.flavor_count)
+      search.set("flavor_count", String(params.flavor_count));
     params?.flavor_ids?.forEach((id) => search.append("flavor_ids", id));
     const suffix = search.toString() ? `?${search.toString()}` : "";
     return get<ApiProductPriceQuote>(`/products/${productId}/price${suffix}`);
@@ -6541,25 +7736,36 @@ export const productPromotionsApi = {
 export const promotionLandingsApi = {
   list: () => get<ApiPromotionLandingPage[]>("/promotion-landings"),
 
-  get: (id: string) => get<ApiPromotionLandingPage>(`/promotion-landings/${id}`),
+  get: (id: string) =>
+    get<ApiPromotionLandingPage>(`/promotion-landings/${id}`),
 
   getByProductPromotion: (productId: string, promotionId: string) =>
-    get<ApiPromotionLandingPage | null>(`/promotion-landings/by-product/${productId}/promotion/${promotionId}`),
+    get<ApiPromotionLandingPage | null>(
+      `/promotion-landings/by-product/${productId}/promotion/${promotionId}`,
+    ),
 
   getByProduct: (productId: string) =>
-    get<ApiPromotionLandingPage | null>(`/promotion-landings/by-product/${productId}`),
+    get<ApiPromotionLandingPage | null>(
+      `/promotion-landings/by-product/${productId}`,
+    ),
 
   getBySlug: (slug: string) =>
     get<ApiPromotionLandingPage>(`/promotion-landings/slug/${slug}`),
 
   decision: (productId: string) =>
-    get<ApiPromotionLandingDecision>(`/promotion-landings/decision/${productId}`),
+    get<ApiPromotionLandingDecision>(
+      `/promotion-landings/decision/${productId}`,
+    ),
 
   create: (data: ApiPromotionLandingPayload) =>
     post<ApiPromotionLandingPage>("/promotion-landings", data),
 
-  update: (id: string, data: Partial<Omit<ApiPromotionLandingPayload, "product_id" | "promotion_id">>) =>
-    put<ApiPromotionLandingPage>(`/promotion-landings/${id}`, data),
+  update: (
+    id: string,
+    data: Partial<
+      Omit<ApiPromotionLandingPayload, "product_id" | "promotion_id">
+    >,
+  ) => put<ApiPromotionLandingPage>(`/promotion-landings/${id}`, data),
 
   publish: (id: string) =>
     post<ApiPromotionLandingPage>(`/promotion-landings/${id}/publish`, {}),
@@ -6570,13 +7776,27 @@ export const promotionLandingsApi = {
 
 export const drinkVariantApi = {
   list: (productId: string, activeOnly = true) =>
-    get<ApiProductDrinkVariant[]>(`/products/${productId}/drink-variants${activeOnly ? "" : "?active_only=false"}`),
+    get<ApiProductDrinkVariant[]>(
+      `/products/${productId}/drink-variants${activeOnly ? "" : "?active_only=false"}`,
+    ),
 
-  create: (productId: string, data: Omit<ApiProductDrinkVariant, "id" | "product_id" | "created_at">) =>
+  create: (
+    productId: string,
+    data: Omit<ApiProductDrinkVariant, "id" | "product_id" | "created_at">,
+  ) =>
     post<ApiProductDrinkVariant>(`/products/${productId}/drink-variants`, data),
 
-  update: (productId: string, variantId: string, data: Partial<Omit<ApiProductDrinkVariant, "id" | "product_id" | "created_at">>) =>
-    put<ApiProductDrinkVariant>(`/products/${productId}/drink-variants/${variantId}`, data),
+  update: (
+    productId: string,
+    variantId: string,
+    data: Partial<
+      Omit<ApiProductDrinkVariant, "id" | "product_id" | "created_at">
+    >,
+  ) =>
+    put<ApiProductDrinkVariant>(
+      `/products/${productId}/drink-variants/${variantId}`,
+      data,
+    ),
 
   remove: (productId: string, variantId: string) =>
     del<void>(`/products/${productId}/drink-variants/${variantId}`),
@@ -6602,7 +7822,8 @@ export const promotionsApi = {
   list: (activeOnly = false) =>
     get<ApiPromotion[]>(`/promotions${activeOnly ? "?active_only=true" : ""}`),
 
-  create: (data: Omit<ApiPromotion, "id">) => post<ApiPromotion>("/promotions", data),
+  create: (data: Omit<ApiPromotion, "id">) =>
+    post<ApiPromotion>("/promotions", data),
 
   update: (id: string, data: Partial<Omit<ApiPromotion, "id">>) =>
     put<ApiPromotion>(`/promotions/${id}`, data),
@@ -6634,7 +7855,17 @@ export interface ApiOrderWhatsappNotificationConfig {
 }
 
 export const ordersApi = {
-  quoteCheckout: (data: CheckoutIn) => request<{ total: number; subtotal: number; items: Array<{ unit_price: number; total_price: number }> }>("POST", "/orders/quote", data, data.customer_id ? customerAccessHeaders(data.customer_id) : undefined),
+  quoteCheckout: (data: CheckoutIn) =>
+    request<{
+      total: number;
+      subtotal: number;
+      items: Array<{ unit_price: number; total_price: number }>;
+    }>(
+      "POST",
+      "/orders/quote",
+      data,
+      data.customer_id ? customerAccessHeaders(data.customer_id) : undefined,
+    ),
   checkout: async (data: CheckoutIn) => {
     const order = await request<ApiOrder>(
       "POST",
@@ -6646,7 +7877,14 @@ export const ordersApi = {
     return order;
   },
 
-  list: (params?: { status?: OrderStatus; customer_id?: string; date_from?: string; date_to?: string; sales_channel?: string; limit?: number }) => {
+  list: (params?: {
+    status?: OrderStatus;
+    customer_id?: string;
+    date_from?: string;
+    date_to?: string;
+    sales_channel?: string;
+    limit?: number;
+  }) => {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.customer_id) qs.set("customer_id", params.customer_id);
@@ -6659,11 +7897,22 @@ export const ordersApi = {
       "GET",
       `/orders${q ? `?${q}` : ""}`,
       undefined,
-      params?.customer_id ? customerAccessHeaders(params.customer_id) : undefined,
+      params?.customer_id
+        ? customerAccessHeaders(params.customer_id)
+        : undefined,
     );
   },
 
-  history: (params?: { status?: OrderStatus; order_origin?: string; search?: string; date_from?: string; date_to?: string; include_archived?: boolean; offset?: number; limit?: number }) => {
+  history: (params?: {
+    status?: OrderStatus;
+    order_origin?: string;
+    search?: string;
+    date_from?: string;
+    date_to?: string;
+    include_archived?: boolean;
+    offset?: number;
+    limit?: number;
+  }) => {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.order_origin) qs.set("order_origin", params.order_origin);
@@ -6677,21 +7926,40 @@ export const ordersApi = {
   },
 
   get: (id: string) =>
-    request<ApiOrder>("GET", `/orders/${id}`, undefined, orderAccessHeaders(id)),
+    request<ApiOrder>(
+      "GET",
+      `/orders/${id}`,
+      undefined,
+      orderAccessHeaders(id),
+    ),
 
-  amend: (id: string, body: {
-    expected_revision: number;
-    expected_total?: number;
-    reason: string;
-    items: CheckoutItemIn[];
-    delivery?: { name: string; phone: string; street: string; city: string; complement?: string | null; is_pickup?: boolean };
-    payment_method?: string | null;
-    delivery_payment_method?: "cash" | "card" | string | null;
-    cash_needs_change?: boolean | null;
-    cash_change_for?: number | null;
-  }, idempotencyKey: string) =>
+  amend: (
+    id: string,
+    body: {
+      expected_revision: number;
+      expected_total?: number;
+      reason: string;
+      items: CheckoutItemIn[];
+      delivery?: {
+        name: string;
+        phone: string;
+        street: string;
+        city: string;
+        complement?: string | null;
+        is_pickup?: boolean;
+      };
+      payment_method?: string | null;
+      delivery_payment_method?: "cash" | "card" | string | null;
+      cash_needs_change?: boolean | null;
+      cash_change_for?: number | null;
+    },
+    idempotencyKey: string,
+  ) =>
     request<{ id: string; order_id: string; revision: number; state: string }>(
-      "POST", `/orders/${encodeURIComponent(id)}/amendments`, body, { "Idempotency-Key": idempotencyKey },
+      "POST",
+      `/orders/${encodeURIComponent(id)}/amendments`,
+      body,
+      { "Idempotency-Key": idempotencyKey },
     ),
 
   amendmentHistory: (id: string) =>
@@ -6699,7 +7967,12 @@ export const ordersApi = {
       `/orders/${encodeURIComponent(id)}/amendments`,
     ),
 
-  settleAmendment: (orderId: string, amendmentId: string, body: { reason?: string | null }, idempotencyKey: string) =>
+  settleAmendment: (
+    orderId: string,
+    amendmentId: string,
+    body: { reason?: string | null },
+    idempotencyKey: string,
+  ) =>
     request<ApiPaymentSettlement>(
       "POST",
       `/orders/${encodeURIComponent(orderId)}/amendments/${encodeURIComponent(amendmentId)}/settlement`,
@@ -6708,10 +7981,20 @@ export const ordersApi = {
     ),
 
   getDeliveryLocation: (id: string) =>
-    request<ApiCustomerDeliveryLocation>("GET", `/delivery/order/${encodeURIComponent(id)}/location`, undefined, orderAccessHeaders(id)),
+    request<ApiCustomerDeliveryLocation>(
+      "GET",
+      `/delivery/order/${encodeURIComponent(id)}/location`,
+      undefined,
+      orderAccessHeaders(id),
+    ),
 
   paymentStatus: (id: string) =>
-    request<ApiPaymentStatus>("GET", `/orders/${id}/payment-status`, undefined, orderAccessHeaders(id)),
+    request<ApiPaymentStatus>(
+      "GET",
+      `/orders/${id}/payment-status`,
+      undefined,
+      orderAccessHeaders(id),
+    ),
 
   updateStatus: (id: string, status: OrderStatus) =>
     put<ApiOrder>(`/orders/${id}/status`, { status }),
@@ -6727,16 +8010,29 @@ export const ordersApi = {
   },
 
   customerCancel: (id: string) =>
-    request<ApiOrder>("POST", `/orders/${id}/customer-cancel`, {}, orderAccessHeaders(id)),
+    request<ApiOrder>(
+      "POST",
+      `/orders/${id}/customer-cancel`,
+      {},
+      orderAccessHeaders(id),
+    ),
 
   autoCancelExpired: (hours = 2) =>
-    post<{ cancelled_count: number; cancelled_ids: string[] }>(`/orders/auto-cancel-expired?hours=${hours}`, {}),
+    post<{ cancelled_count: number; cancelled_ids: string[] }>(
+      `/orders/auto-cancel-expired?hours=${hours}`,
+      {},
+    ),
 
   getWhatsappNotifications: () =>
-    get<ApiOrderWhatsappNotificationConfig>("/orders/new-order-whatsapp-notifications"),
+    get<ApiOrderWhatsappNotificationConfig>(
+      "/orders/new-order-whatsapp-notifications",
+    ),
 
   updateWhatsappNotifications: (body: ApiOrderWhatsappNotificationSettings) =>
-    put<ApiOrderWhatsappNotificationConfig>("/orders/new-order-whatsapp-notifications", body),
+    put<ApiOrderWhatsappNotificationConfig>(
+      "/orders/new-order-whatsapp-notifications",
+      body,
+    ),
 };
 
 export interface ProductionEffect {
@@ -6754,69 +8050,211 @@ export interface ProductionEffect {
 }
 
 export const productionEffectsApi = {
-  bonify: (body: { order_id: string; reason: string; beneficiary: string }, idempotencyKey: string) =>
-    request<ProductionEffect>("POST", "/production-effects/bonification", body, { "Idempotency-Key": idempotencyKey }),
-  loss: (body: { attempt_id: string; expected_version: number; reason: string }, idempotencyKey: string) =>
-    request<ProductionEffect>("POST", "/production-effects/loss", body, { "Idempotency-Key": idempotencyKey }),
-  reproduction: (body: { loss_id: string; reason: string }, idempotencyKey: string) =>
-    request<ProductionEffect>("POST", "/production-effects/reproduction", body, { "Idempotency-Key": idempotencyKey }),
+  bonify: (
+    body: { order_id: string; reason: string; beneficiary: string },
+    idempotencyKey: string,
+  ) =>
+    request<ProductionEffect>(
+      "POST",
+      "/production-effects/bonification",
+      body,
+      { "Idempotency-Key": idempotencyKey },
+    ),
+  loss: (
+    body: { attempt_id: string; expected_version: number; reason: string },
+    idempotencyKey: string,
+  ) =>
+    request<ProductionEffect>("POST", "/production-effects/loss", body, {
+      "Idempotency-Key": idempotencyKey,
+    }),
+  reproduction: (
+    body: { loss_id: string; reason: string },
+    idempotencyKey: string,
+  ) =>
+    request<ProductionEffect>(
+      "POST",
+      "/production-effects/reproduction",
+      body,
+      { "Idempotency-Key": idempotencyKey },
+    ),
 };
 
 export const reviewsApi = {
   listProduct: (productId: string, limit = 20) =>
-    get<{ product_id: string; average_rating: number | null; count: number; reviews: ApiCustomerReview[] }>(`/reviews/products/${encodeURIComponent(productId)}?limit=${limit}`),
-  listPublic: (productId?: string) => get<ApiCustomerReview[]>(`/reviews/public${productId ? `?product_id=${encodeURIComponent(productId)}` : ""}`),
+    get<{
+      product_id: string;
+      average_rating: number | null;
+      count: number;
+      reviews: ApiCustomerReview[];
+    }>(`/reviews/products/${encodeURIComponent(productId)}?limit=${limit}`),
+  listPublic: (productId?: string) =>
+    get<ApiCustomerReview[]>(
+      `/reviews/public${productId ? `?product_id=${encodeURIComponent(productId)}` : ""}`,
+    ),
   submitOrder: (orderId: string, rating: number, comment?: string) =>
-    request<ApiCustomerReview>("POST", `/reviews/orders/${encodeURIComponent(orderId)}`, { order_id: orderId, review_type: "order", rating, comment: comment || null }, orderAccessHeaders(orderId)),
-  submitItem: (orderId: string, orderItemId: string, productId: string, rating: number, comment?: string) =>
-    request<ApiCustomerReview>("POST", `/reviews/order-items/${encodeURIComponent(orderItemId)}`, { order_id: orderId, order_item_id: orderItemId, product_id: productId, review_type: "item", rating, comment: comment || null }, orderAccessHeaders(orderId)),
-  submitDelivery: (orderId: string, deliveryId: string, rating: number, comment?: string) =>
-    request<ApiCustomerReview>("POST", `/reviews/deliveries/${encodeURIComponent(deliveryId)}`, { order_id: orderId, delivery_id: deliveryId, review_type: "delivery", rating, comment: comment || null }, orderAccessHeaders(orderId)),
-  adminList: (params?: { review_type?: CustomerReviewType; status?: CustomerReviewStatus }) => {
+    request<ApiCustomerReview>(
+      "POST",
+      `/reviews/orders/${encodeURIComponent(orderId)}`,
+      {
+        order_id: orderId,
+        review_type: "order",
+        rating,
+        comment: comment || null,
+      },
+      orderAccessHeaders(orderId),
+    ),
+  submitItem: (
+    orderId: string,
+    orderItemId: string,
+    productId: string,
+    rating: number,
+    comment?: string,
+  ) =>
+    request<ApiCustomerReview>(
+      "POST",
+      `/reviews/order-items/${encodeURIComponent(orderItemId)}`,
+      {
+        order_id: orderId,
+        order_item_id: orderItemId,
+        product_id: productId,
+        review_type: "item",
+        rating,
+        comment: comment || null,
+      },
+      orderAccessHeaders(orderId),
+    ),
+  submitDelivery: (
+    orderId: string,
+    deliveryId: string,
+    rating: number,
+    comment?: string,
+  ) =>
+    request<ApiCustomerReview>(
+      "POST",
+      `/reviews/deliveries/${encodeURIComponent(deliveryId)}`,
+      {
+        order_id: orderId,
+        delivery_id: deliveryId,
+        review_type: "delivery",
+        rating,
+        comment: comment || null,
+      },
+      orderAccessHeaders(orderId),
+    ),
+  adminList: (params?: {
+    review_type?: CustomerReviewType;
+    status?: CustomerReviewStatus;
+  }) => {
     const qs = new URLSearchParams();
     if (params?.review_type) qs.set("review_type", params.review_type);
     if (params?.status) qs.set("status", params.status);
-    return get<ApiCustomerReview[]>(`/reviews/admin${qs.toString() ? `?${qs}` : ""}`);
+    return get<ApiCustomerReview[]>(
+      `/reviews/admin${qs.toString() ? `?${qs}` : ""}`,
+    );
   },
-  adminCreate: (body: ApiCustomerReviewAdminCreate) => post<ApiCustomerReview>("/reviews/admin", body),
-  moderate: (reviewId: string, status: CustomerReviewStatus, moderation_note?: string) =>
-    patch<ApiCustomerReview>(`/reviews/admin/${encodeURIComponent(reviewId)}/moderation`, { status, moderation_note: moderation_note || null } satisfies ApiCustomerReviewModeration),
-  submitOrderReview: (orderId: string, rating: number, comment?: string) => reviewsApi.submitOrder(orderId, rating, comment),
-  submitProductReview: (orderId: string, orderItemId: string, productId: string, rating: number, comment?: string) => reviewsApi.submitItem(orderId, orderItemId, productId, rating, comment),
-  submitDeliveryReview: (orderId: string, deliveryId: string, rating: number, comment?: string) => reviewsApi.submitDelivery(orderId, deliveryId, rating, comment),
-  listProductReviews: (productId: string, limit = 20) => reviewsApi.listProduct(productId, limit),
-  listAdmin: (params?: { review_type?: CustomerReviewType; status?: CustomerReviewStatus }) => reviewsApi.adminList(params),
-  createAdminReview: (body: ApiCustomerReviewAdminCreate) => reviewsApi.adminCreate(body),
+  adminCreate: (body: ApiCustomerReviewAdminCreate) =>
+    post<ApiCustomerReview>("/reviews/admin", body),
+  moderate: (
+    reviewId: string,
+    status: CustomerReviewStatus,
+    moderation_note?: string,
+  ) =>
+    patch<ApiCustomerReview>(
+      `/reviews/admin/${encodeURIComponent(reviewId)}/moderation`,
+      {
+        status,
+        moderation_note: moderation_note || null,
+      } satisfies ApiCustomerReviewModeration,
+    ),
+  submitOrderReview: (orderId: string, rating: number, comment?: string) =>
+    reviewsApi.submitOrder(orderId, rating, comment),
+  submitProductReview: (
+    orderId: string,
+    orderItemId: string,
+    productId: string,
+    rating: number,
+    comment?: string,
+  ) => reviewsApi.submitItem(orderId, orderItemId, productId, rating, comment),
+  submitDeliveryReview: (
+    orderId: string,
+    deliveryId: string,
+    rating: number,
+    comment?: string,
+  ) => reviewsApi.submitDelivery(orderId, deliveryId, rating, comment),
+  listProductReviews: (productId: string, limit = 20) =>
+    reviewsApi.listProduct(productId, limit),
+  listAdmin: (params?: {
+    review_type?: CustomerReviewType;
+    status?: CustomerReviewStatus;
+  }) => reviewsApi.adminList(params),
+  createAdminReview: (body: ApiCustomerReviewAdminCreate) =>
+    reviewsApi.adminCreate(body),
 };
 
 export const marketplaceSettlementsApi = {
-  list: (params?: { order_id?: string; provider?: MarketplaceProvider; status?: MarketplaceSettlementStatus }) => {
+  list: (params?: {
+    order_id?: string;
+    provider?: MarketplaceProvider;
+    status?: MarketplaceSettlementStatus;
+  }) => {
     const qs = new URLSearchParams();
     if (params?.order_id) qs.set("order_id", params.order_id);
     if (params?.provider) qs.set("provider", params.provider);
     if (params?.status) qs.set("status", params.status);
     const query = qs.toString();
-    return get<ApiMarketplaceSettlement[]>(`/gestao/marketplace-settlements${query ? `?${query}` : ""}`);
+    return get<ApiMarketplaceSettlement[]>(
+      `/gestao/marketplace-settlements${query ? `?${query}` : ""}`,
+    );
   },
-  create: (orderId: string, body: ApiMarketplaceSettlementInput, idempotencyKey: string) =>
-    request<ApiMarketplaceSettlement>("POST", `/gestao/marketplace-settlements/orders/${encodeURIComponent(orderId)}`, body, { "Idempotency-Key": idempotencyKey }),
+  create: (
+    orderId: string,
+    body: ApiMarketplaceSettlementInput,
+    idempotencyKey: string,
+  ) =>
+    request<ApiMarketplaceSettlement>(
+      "POST",
+      `/gestao/marketplace-settlements/orders/${encodeURIComponent(orderId)}`,
+      body,
+      { "Idempotency-Key": idempotencyKey },
+    ),
 };
 
 export const manualOrdersApi = {
-  quote: (body: ManualOrderIn) => request<ManualOrderQuote>("POST", "/admin/orders/manual/quote", body),
-  create: (body: ManualOrderIn, key: string) => request<ApiOrder>("POST", "/admin/orders/manual", body, { "Idempotency-Key": key }),
+  quote: (body: ManualOrderIn) =>
+    request<ManualOrderQuote>("POST", "/admin/orders/manual/quote", body),
+  create: (body: ManualOrderIn, key: string) =>
+    request<ApiOrder>("POST", "/admin/orders/manual", body, {
+      "Idempotency-Key": key,
+    }),
 };
 
 export const partnerIdentificationApi = {
   get: () => get<PartnerIdentificationResponse>("/partner-identification"),
-  update: (partners: PartnerIdentification[]) => put<PartnerIdentificationResponse>("/partner-identification", { partners }),
+  update: (partners: PartnerIdentification[]) =>
+    put<PartnerIdentificationResponse>("/partner-identification", { partners }),
 };
 
 // ─── Payments ─────────────────────────────────────────────────────────────────
 
-export type ApiRestaurantTableStatus = "available" | "occupied" | "reserved" | "cleaning" | "inactive";
-export type ApiReservationStatus = "pending" | "confirmed" | "seated" | "cancelled" | "no_show" | "completed";
-export type ApiTableSessionStatus = "open" | "pending_payment" | "paid" | "closed" | "cancelled";
+export type ApiRestaurantTableStatus =
+  | "available"
+  | "occupied"
+  | "reserved"
+  | "cleaning"
+  | "inactive";
+export type ApiReservationStatus =
+  | "pending"
+  | "confirmed"
+  | "seated"
+  | "cancelled"
+  | "no_show"
+  | "completed";
+export type ApiTableSessionStatus =
+  | "open"
+  | "pending_payment"
+  | "paid"
+  | "closed"
+  | "cancelled";
 
 export interface ApiRestaurantTable {
   id: string;
@@ -6875,7 +8313,12 @@ export interface ApiTableSessionItem {
   selected_border_name?: string | null;
   selected_drink_variant_name?: string | null;
   flavor_division?: number;
-  flavors?: Array<{ product_id: string; name: string; price: number; icon: string }>;
+  flavors?: Array<{
+    product_id: string;
+    name: string;
+    price: number;
+    icon: string;
+  }>;
   id: string;
   table_session_id: string;
   product_id: string;
@@ -6946,26 +8389,39 @@ export interface ApiSalaoPageSettings {
   updated_at?: string | null;
 }
 
-export type ApiSalaoPageSettingsUpdate = Partial<Omit<ApiSalaoPageSettings, "id" | "created_at" | "updated_at">>;
+export type ApiSalaoPageSettingsUpdate = Partial<
+  Omit<ApiSalaoPageSettings, "id" | "created_at" | "updated_at">
+>;
 
 export const salaoApi = {
   tables: {
     list: (params?: { include_inactive?: boolean }) =>
-      get<ApiRestaurantTable[]>(`/salao/tables${params?.include_inactive ? "?include_inactive=true" : ""}`),
-    create: (data: Omit<ApiRestaurantTable, "id" | "created_at" | "updated_at">) =>
-      post<ApiRestaurantTable>("/salao/tables", data),
-    update: (id: string, data: Partial<Omit<ApiRestaurantTable, "id" | "created_at" | "updated_at">>) =>
-      patch<ApiRestaurantTable>(`/salao/tables/${id}`, data),
+      get<ApiRestaurantTable[]>(
+        `/salao/tables${params?.include_inactive ? "?include_inactive=true" : ""}`,
+      ),
+    create: (
+      data: Omit<ApiRestaurantTable, "id" | "created_at" | "updated_at">,
+    ) => post<ApiRestaurantTable>("/salao/tables", data),
+    update: (
+      id: string,
+      data: Partial<
+        Omit<ApiRestaurantTable, "id" | "created_at" | "updated_at">
+      >,
+    ) => patch<ApiRestaurantTable>(`/salao/tables/${id}`, data),
     updateStatus: (id: string, status: ApiRestaurantTableStatus) =>
       patch<ApiRestaurantTable>(`/salao/tables/${id}/status`, { status }),
   },
   reservations: {
     list: (params?: { status?: ApiReservationStatus }) =>
-      get<ApiReservation[]>(`/salao/reservations${params?.status ? `?status=${params.status}` : ""}`),
+      get<ApiReservation[]>(
+        `/salao/reservations${params?.status ? `?status=${params.status}` : ""}`,
+      ),
     create: (data: Omit<ApiReservation, "id" | "created_at" | "updated_at">) =>
       post<ApiReservation>("/salao/reservations", data),
-    update: (id: string, data: Partial<Omit<ApiReservation, "id" | "created_at" | "updated_at">>) =>
-      patch<ApiReservation>(`/salao/reservations/${id}`, data),
+    update: (
+      id: string,
+      data: Partial<Omit<ApiReservation, "id" | "created_at" | "updated_at">>,
+    ) => patch<ApiReservation>(`/salao/reservations/${id}`, data),
     updateStatus: (id: string, status: ApiReservationStatus) =>
       patch<ApiReservation>(`/salao/reservations/${id}/status`, { status }),
     publicCreate: (data: {
@@ -6979,31 +8435,98 @@ export const salaoApi = {
     }) => post<ApiReservation>("/salao/reservations/public", data),
   },
   sessions: {
-    serveOrder: (id: string) => post<{ order_id: string }>(`/salao/table-sessions/${id}/serve`, {}),
+    serveOrder: (id: string) =>
+      post<{ order_id: string }>(`/salao/table-sessions/${id}/serve`, {}),
     list: (params?: { status?: ApiTableSessionStatus }) =>
-      get<ApiTableSession[]>(`/salao/table-sessions${params?.status ? `?status=${params.status}` : ""}`),
-    open: (data: Omit<ApiTableSession, "id" | "opened_at" | "closed_at" | "created_at" | "updated_at">) =>
-      post<ApiTableSession>("/salao/table-sessions", data),
-    update: (id: string, data: Partial<Omit<ApiTableSession, "id" | "opened_at" | "closed_at" | "created_at" | "updated_at">>) =>
-      patch<ApiTableSession>(`/salao/table-sessions/${id}`, data),
-    close: (id: string, data: { subtotal?: number; service_fee?: number; discount?: number; total?: number; status?: "paid" | "closed"; notes?: string | null }) =>
-      post<ApiTableSession>(`/salao/table-sessions/${id}/close`, data),
-    addItem: (id: string, data: { product_id: string; quantity: number; unit_price?: number | null; notes?: string | null; selected_size_id?: string | null; selected_crust_type_id?: string | null; selected_border_id?: string | null; selected_drink_variant_id?: string | null; flavor_division?: number; flavors?: Array<{ product_id: string; name?: string; price?: number; icon?: string }> }) =>
-      post<ApiTableSession>(`/salao/table-sessions/${id}/items`, data),
-    updateItem: (id: string, itemId: string, data: { quantity?: number; unit_price?: number | null; notes?: string | null }) =>
-      patch<ApiTableSession>(`/salao/table-sessions/${id}/items/${itemId}`, data),
+      get<ApiTableSession[]>(
+        `/salao/table-sessions${params?.status ? `?status=${params.status}` : ""}`,
+      ),
+    open: (
+      data: Omit<
+        ApiTableSession,
+        "id" | "opened_at" | "closed_at" | "created_at" | "updated_at"
+      >,
+    ) => post<ApiTableSession>("/salao/table-sessions", data),
+    update: (
+      id: string,
+      data: Partial<
+        Omit<
+          ApiTableSession,
+          "id" | "opened_at" | "closed_at" | "created_at" | "updated_at"
+        >
+      >,
+    ) => patch<ApiTableSession>(`/salao/table-sessions/${id}`, data),
+    close: (
+      id: string,
+      data: {
+        subtotal?: number;
+        service_fee?: number;
+        discount?: number;
+        total?: number;
+        status?: "paid" | "closed";
+        notes?: string | null;
+      },
+    ) => post<ApiTableSession>(`/salao/table-sessions/${id}/close`, data),
+    addItem: (
+      id: string,
+      data: {
+        product_id: string;
+        quantity: number;
+        unit_price?: number | null;
+        notes?: string | null;
+        selected_size_id?: string | null;
+        selected_crust_type_id?: string | null;
+        selected_border_id?: string | null;
+        selected_drink_variant_id?: string | null;
+        flavor_division?: number;
+        flavors?: Array<{
+          product_id: string;
+          name?: string;
+          price?: number;
+          icon?: string;
+        }>;
+      },
+    ) => post<ApiTableSession>(`/salao/table-sessions/${id}/items`, data),
+    updateItem: (
+      id: string,
+      itemId: string,
+      data: {
+        quantity?: number;
+        unit_price?: number | null;
+        notes?: string | null;
+      },
+    ) =>
+      patch<ApiTableSession>(
+        `/salao/table-sessions/${id}/items/${itemId}`,
+        data,
+      ),
     deleteItem: (id: string, itemId: string) =>
       del<ApiTableSession>(`/salao/table-sessions/${id}/items/${itemId}`),
-    createOrder: (id: string, data: { payment_method?: "cash" | "debit_card" | "credit_card" | "pix" } = {}) =>
-      post<{ order_id: string }>(`/salao/table-sessions/${id}/order`, { payment_method: data.payment_method ?? "cash" }),
-    confirmPayment: (id: string, data: { payment_method?: "cash" | "debit_card" | "credit_card" | "pix" } = {}) =>
-      post<{ order_id: string }>(`/salao/table-sessions/${id}/payment`, { payment_method: data.payment_method ?? "cash" }),
+    createOrder: (
+      id: string,
+      data: {
+        payment_method?: "cash" | "debit_card" | "credit_card" | "pix";
+      } = {},
+    ) =>
+      post<{ order_id: string }>(`/salao/table-sessions/${id}/order`, {
+        payment_method: data.payment_method ?? "cash",
+      }),
+    confirmPayment: (
+      id: string,
+      data: {
+        payment_method?: "cash" | "debit_card" | "credit_card" | "pix";
+      } = {},
+    ) =>
+      post<{ order_id: string }>(`/salao/table-sessions/${id}/payment`, {
+        payment_method: data.payment_method ?? "cash",
+      }),
   },
 };
 
 export const salaoPageApi = {
   get: () => get<ApiSalaoPageSettings>("/salao/page"),
-  update: (data: ApiSalaoPageSettingsUpdate) => put<ApiSalaoPageSettings>("/salao/page", data),
+  update: (data: ApiSalaoPageSettingsUpdate) =>
+    put<ApiSalaoPageSettings>("/salao/page", data),
 };
 
 export const storeOperationApi = {
@@ -7013,108 +8536,404 @@ export const storeOperationApi = {
     put<StoreOperationSettings>("/store-operation/settings", data),
   updateWeeklySchedules: (data: StoreWeeklySchedule[]) =>
     put<StoreWeeklySchedule[]>("/store-operation/weekly-schedules", data),
-  createException: (data: Omit<StoreOperationException, "id" | "tenant_id" | "created_at" | "updated_at">) =>
-    post<StoreOperationException>("/store-operation/exceptions", data),
-  updateException: (id: string, data: Omit<StoreOperationException, "id" | "tenant_id" | "created_at" | "updated_at">) =>
-    put<StoreOperationException>(`/store-operation/exceptions/${id}`, data),
-  removeException: (id: string) => del<void>(`/store-operation/exceptions/${id}`),
-  logs: (limit = 100) => get<StoreOperationLog[]>(`/store-operation/logs?limit=${limit}`),
+  createException: (
+    data: Omit<
+      StoreOperationException,
+      "id" | "tenant_id" | "created_at" | "updated_at"
+    >,
+  ) => post<StoreOperationException>("/store-operation/exceptions", data),
+  updateException: (
+    id: string,
+    data: Omit<
+      StoreOperationException,
+      "id" | "tenant_id" | "created_at" | "updated_at"
+    >,
+  ) => put<StoreOperationException>(`/store-operation/exceptions/${id}`, data),
+  removeException: (id: string) =>
+    del<void>(`/store-operation/exceptions/${id}`),
+  logs: (limit = 100) =>
+    get<StoreOperationLog[]>(`/store-operation/logs?limit=${limit}`),
 };
 
 export const gestaoApi = {
   settings: () => get<GestaoSettingsResponse>("/gestao/settings"),
-  updateSettings: (moduleKey: GestaoModuleKey, data: GestaoModuleSettingsUpdate) =>
-    put<GestaoModuleSettings>(`/gestao/settings/${moduleKey}`, data),
+  updateSettings: (
+    moduleKey: GestaoModuleKey,
+    data: GestaoModuleSettingsUpdate,
+  ) => put<GestaoModuleSettings>(`/gestao/settings/${moduleKey}`, data),
 };
 
 export const inventoryApi = {
   overview: () => get<InventoryOverview>("/gestao/inventory/overview"),
-  planningNeeds: () => get<PurchasePlanning>("/gestao/purchases/requisitions/planning/needs"),
-  listQuotations: (status?: string) => get<PurchaseQuotation[]>(`/gestao/purchases/quotations${status ? `?status=${encodeURIComponent(status)}` : ""}`),
-  listPurchaseReceipts: () => get<PurchaseReceipt[]>("/gestao/purchases/receipts"),
-  purchaseDashboard: (dateFrom?: string, dateTo?: string) => get<PurchaseDashboard>(`/gestao/purchases/dashboard${dateFrom && dateTo ? `?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}` : ""}`),
-  getPurchaseReceipt: (id: string) => get<PurchaseReceipt>(`/gestao/purchases/receipts/${encodeURIComponent(id)}`),
-  createPurchaseReceipt: (data: { purchase_id: string; document_id?: string | null; notes?: string | null; items: Array<{ purchase_item_id: string; item_id: string; location_id: string; quantity_received: number; quantity_rejected?: number; unit_cost?: number; lot_code?: string | null; manufactured_on?: string | null; expires_on?: string | null; temperature_c?: number | null; quality_status?: "accepted" | "quarantine" | "rejected"; inspection_notes?: string | null }> }, key: string) =>
-    request<PurchaseReceipt>("POST", "/gestao/purchases/receipts", data, { "Idempotency-Key": key }),
+  planningNeeds: () =>
+    get<PurchasePlanning>("/gestao/purchases/requisitions/planning/needs"),
+  listQuotations: (status?: string) =>
+    get<PurchaseQuotation[]>(
+      `/gestao/purchases/quotations${status ? `?status=${encodeURIComponent(status)}` : ""}`,
+    ),
+  listPurchaseReceipts: () =>
+    get<PurchaseReceipt[]>("/gestao/purchases/receipts"),
+  purchaseDashboard: (dateFrom?: string, dateTo?: string) =>
+    get<PurchaseDashboard>(
+      `/gestao/purchases/dashboard${dateFrom && dateTo ? `?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}` : ""}`,
+    ),
+  getPurchaseReceipt: (id: string) =>
+    get<PurchaseReceipt>(
+      `/gestao/purchases/receipts/${encodeURIComponent(id)}`,
+    ),
+  createPurchaseReceipt: (
+    data: {
+      purchase_id: string;
+      document_id?: string | null;
+      notes?: string | null;
+      items: Array<{
+        purchase_item_id: string;
+        item_id: string;
+        location_id: string;
+        quantity_received: number;
+        quantity_rejected?: number;
+        unit_cost?: number;
+        lot_code?: string | null;
+        manufactured_on?: string | null;
+        expires_on?: string | null;
+        temperature_c?: number | null;
+        quality_status?: "accepted" | "quarantine" | "rejected";
+        inspection_notes?: string | null;
+      }>;
+    },
+    key: string,
+  ) =>
+    request<PurchaseReceipt>("POST", "/gestao/purchases/receipts", data, {
+      "Idempotency-Key": key,
+    }),
   submitPurchaseReceipt: (id: string, expectedVersion: number, key: string) =>
-    request<PurchaseReceipt>("POST", `/gestao/purchases/receipts/${encodeURIComponent(id)}/submit`, { expected_version: expectedVersion }, { "Idempotency-Key": key }),
+    request<PurchaseReceipt>(
+      "POST",
+      `/gestao/purchases/receipts/${encodeURIComponent(id)}/submit`,
+      { expected_version: expectedVersion },
+      { "Idempotency-Key": key },
+    ),
   postPurchaseReceipt: (id: string, expectedVersion: number, key: string) =>
-    request<PurchaseReceipt>("POST", `/gestao/purchases/receipts/${encodeURIComponent(id)}/post`, { expected_version: expectedVersion }, { "Idempotency-Key": key }),
-  createUnit: (data: Omit<InventoryUnit, "id" | "tenant_id" | "created_at" | "updated_at">) =>
-    post<InventoryUnit>("/gestao/inventory/units", data),
-  updateUnit: (id: string, data: Omit<InventoryUnit, "id" | "tenant_id" | "created_at" | "updated_at">) =>
-    put<InventoryUnit>(`/gestao/inventory/units/${id}`, data),
+    request<PurchaseReceipt>(
+      "POST",
+      `/gestao/purchases/receipts/${encodeURIComponent(id)}/post`,
+      { expected_version: expectedVersion },
+      { "Idempotency-Key": key },
+    ),
+  createUnit: (
+    data: Omit<InventoryUnit, "id" | "tenant_id" | "created_at" | "updated_at">,
+  ) => post<InventoryUnit>("/gestao/inventory/units", data),
+  updateUnit: (
+    id: string,
+    data: Omit<InventoryUnit, "id" | "tenant_id" | "created_at" | "updated_at">,
+  ) => put<InventoryUnit>(`/gestao/inventory/units/${id}`, data),
   removeUnit: (id: string) => del<void>(`/gestao/inventory/units/${id}`),
-  createCategory: (data: Omit<InventoryCategory, "id" | "tenant_id" | "created_at" | "updated_at">) =>
-    post<InventoryCategory>("/gestao/inventory/categories", data),
-  updateCategory: (id: string, data: Omit<InventoryCategory, "id" | "tenant_id" | "created_at" | "updated_at">) =>
-    put<InventoryCategory>(`/gestao/inventory/categories/${id}`, data),
-  removeCategory: (id: string) => del<void>(`/gestao/inventory/categories/${id}`),
-  createLocation: (data: Omit<InventoryLocation, "id" | "tenant_id" | "created_at" | "updated_at">) =>
-    post<InventoryLocation>("/gestao/inventory/locations", data),
-  updateLocation: (id: string, data: Omit<InventoryLocation, "id" | "tenant_id" | "created_at" | "updated_at">) =>
-    put<InventoryLocation>(`/gestao/inventory/locations/${id}`, data),
-  removeLocation: (id: string) => del<void>(`/gestao/inventory/locations/${id}`),
-  createSupplier: (data: Omit<InventorySupplier, "id" | "tenant_id" | "created_at" | "updated_at">) =>
-    post<InventorySupplier>("/gestao/inventory/suppliers", data),
-  updateSupplier: (id: string, data: Omit<InventorySupplier, "id" | "tenant_id" | "created_at" | "updated_at">) =>
-    put<InventorySupplier>(`/gestao/inventory/suppliers/${id}`, data),
-  removeSupplier: (id: string) => del<void>(`/gestao/inventory/suppliers/${id}`),
-  createItem: (data: Omit<InventoryItem, "id" | "tenant_id" | "category_name" | "unit_name" | "unit_symbol" | "default_location_name" | "created_at" | "updated_at">) =>
-    post<InventoryItem>("/gestao/inventory/items", data),
-  updateItem: (id: string, data: Omit<InventoryItem, "id" | "tenant_id" | "category_name" | "unit_name" | "unit_symbol" | "default_location_name" | "created_at" | "updated_at">) =>
-    put<InventoryItem>(`/gestao/inventory/items/${id}`, data),
+  createCategory: (
+    data: Omit<
+      InventoryCategory,
+      "id" | "tenant_id" | "created_at" | "updated_at"
+    >,
+  ) => post<InventoryCategory>("/gestao/inventory/categories", data),
+  updateCategory: (
+    id: string,
+    data: Omit<
+      InventoryCategory,
+      "id" | "tenant_id" | "created_at" | "updated_at"
+    >,
+  ) => put<InventoryCategory>(`/gestao/inventory/categories/${id}`, data),
+  removeCategory: (id: string) =>
+    del<void>(`/gestao/inventory/categories/${id}`),
+  createLocation: (
+    data: Omit<
+      InventoryLocation,
+      "id" | "tenant_id" | "created_at" | "updated_at"
+    >,
+  ) => post<InventoryLocation>("/gestao/inventory/locations", data),
+  updateLocation: (
+    id: string,
+    data: Omit<
+      InventoryLocation,
+      "id" | "tenant_id" | "created_at" | "updated_at"
+    >,
+  ) => put<InventoryLocation>(`/gestao/inventory/locations/${id}`, data),
+  removeLocation: (id: string) =>
+    del<void>(`/gestao/inventory/locations/${id}`),
+  createSupplier: (
+    data: Omit<
+      InventorySupplier,
+      "id" | "tenant_id" | "created_at" | "updated_at"
+    >,
+  ) => post<InventorySupplier>("/gestao/inventory/suppliers", data),
+  updateSupplier: (
+    id: string,
+    data: Omit<
+      InventorySupplier,
+      "id" | "tenant_id" | "created_at" | "updated_at"
+    >,
+  ) => put<InventorySupplier>(`/gestao/inventory/suppliers/${id}`, data),
+  removeSupplier: (id: string) =>
+    del<void>(`/gestao/inventory/suppliers/${id}`),
+  createItem: (
+    data: Omit<
+      InventoryItem,
+      | "id"
+      | "tenant_id"
+      | "category_name"
+      | "unit_name"
+      | "unit_symbol"
+      | "default_location_name"
+      | "created_at"
+      | "updated_at"
+    >,
+  ) => post<InventoryItem>("/gestao/inventory/items", data),
+  updateItem: (
+    id: string,
+    data: Omit<
+      InventoryItem,
+      | "id"
+      | "tenant_id"
+      | "category_name"
+      | "unit_name"
+      | "unit_symbol"
+      | "default_location_name"
+      | "created_at"
+      | "updated_at"
+    >,
+  ) => put<InventoryItem>(`/gestao/inventory/items/${id}`, data),
   removeItem: (id: string) => del<void>(`/gestao/inventory/items/${id}`),
   adjustmentBuckets: (itemId: string) =>
-    get<InventoryAdjustmentBucket[]>(`/gestao/inventory/items/${encodeURIComponent(itemId)}/adjustment-buckets`),
-  createAdjustment: (itemId: string, body: InventoryAdjustmentInput, key: string) =>
-    request<Record<string, unknown>>("POST", `/gestao/inventory/items/${encodeURIComponent(itemId)}/adjustments`, body, { "Idempotency-Key": key }),
-  createPurchase: (data: Omit<InventoryPurchase, "id" | "tenant_id" | "supplier_name" | "total_amount" | "created_at" | "updated_at">) =>
-    post<InventoryPurchase>("/gestao/inventory/purchases", data),
-  createPurchaseFromQuotation: (quotationId: string, supplierId: string, notes: string | null, key: string) =>
-    request<InventoryPurchase>("POST", `/gestao/inventory/purchases/from-quotation?quotation_id=${encodeURIComponent(quotationId)}&supplier_id=${encodeURIComponent(supplierId)}${notes ? `&notes=${encodeURIComponent(notes)}` : ""}`, undefined, { "Idempotency-Key": key }),
+    get<InventoryAdjustmentBucket[]>(
+      `/gestao/inventory/items/${encodeURIComponent(itemId)}/adjustment-buckets`,
+    ),
+  createAdjustment: (
+    itemId: string,
+    body: InventoryAdjustmentInput,
+    key: string,
+  ) =>
+    request<Record<string, unknown>>(
+      "POST",
+      `/gestao/inventory/items/${encodeURIComponent(itemId)}/adjustments`,
+      body,
+      { "Idempotency-Key": key },
+    ),
+  createPurchase: (
+    data: Omit<
+      InventoryPurchase,
+      | "id"
+      | "tenant_id"
+      | "supplier_name"
+      | "total_amount"
+      | "created_at"
+      | "updated_at"
+    >,
+  ) => post<InventoryPurchase>("/gestao/inventory/purchases", data),
+  createPurchaseFromQuotation: (
+    quotationId: string,
+    supplierId: string,
+    notes: string | null,
+    key: string,
+  ) =>
+    request<InventoryPurchase>(
+      "POST",
+      `/gestao/inventory/purchases/from-quotation?quotation_id=${encodeURIComponent(quotationId)}&supplier_id=${encodeURIComponent(supplierId)}${notes ? `&notes=${encodeURIComponent(notes)}` : ""}`,
+      undefined,
+      { "Idempotency-Key": key },
+    ),
   submitPurchaseOrder: (id: string, expectedVersion: number, key: string) =>
-    request<InventoryPurchase>("POST", `/gestao/inventory/purchases/${encodeURIComponent(id)}/submit?expected_version=${expectedVersion}`, undefined, { "Idempotency-Key": key }),
-  approvePurchaseOrder: (id: string, expectedVersion: number, key: string, reason?: string | null) =>
-    request<InventoryPurchase>("POST", `/gestao/inventory/purchases/${encodeURIComponent(id)}/approve?expected_version=${expectedVersion}${reason ? `&reason=${encodeURIComponent(reason)}` : ""}`, undefined, { "Idempotency-Key": key }),
+    request<InventoryPurchase>(
+      "POST",
+      `/gestao/inventory/purchases/${encodeURIComponent(id)}/submit?expected_version=${expectedVersion}`,
+      undefined,
+      { "Idempotency-Key": key },
+    ),
+  approvePurchaseOrder: (
+    id: string,
+    expectedVersion: number,
+    key: string,
+    reason?: string | null,
+  ) =>
+    request<InventoryPurchase>(
+      "POST",
+      `/gestao/inventory/purchases/${encodeURIComponent(id)}/approve?expected_version=${expectedVersion}${reason ? `&reason=${encodeURIComponent(reason)}` : ""}`,
+      undefined,
+      { "Idempotency-Key": key },
+    ),
   createReplenishmentRequest: (itemIds?: string[]) =>
-    post<InventoryPurchase>("/gestao/inventory/purchase-requests/replenishment", itemIds?.length ? { item_ids: itemIds } : {}),
-  updatePurchase: (id: string, data: Omit<InventoryPurchase, "id" | "tenant_id" | "supplier_name" | "total_amount" | "created_at" | "updated_at">) =>
-    put<InventoryPurchase>(`/gestao/inventory/purchases/${id}`, data),
-  removePurchase: (id: string) => del<void>(`/gestao/inventory/purchases/${id}`),
-  createManualEntry: (data: Omit<InventoryManualEntry, "id" | "tenant_id" | "item_name" | "location_name" | "created_at">) =>
-    post<InventoryManualEntry>("/gestao/inventory/manual-entries", data),
-  removeManualEntry: (id: string) => del<void>(`/gestao/inventory/manual-entries/${id}`),
+    post<InventoryPurchase>(
+      "/gestao/inventory/purchase-requests/replenishment",
+      itemIds?.length ? { item_ids: itemIds } : {},
+    ),
+  updatePurchase: (
+    id: string,
+    data: Omit<
+      InventoryPurchase,
+      | "id"
+      | "tenant_id"
+      | "supplier_name"
+      | "total_amount"
+      | "created_at"
+      | "updated_at"
+    >,
+  ) => put<InventoryPurchase>(`/gestao/inventory/purchases/${id}`, data),
+  removePurchase: (id: string) =>
+    del<void>(`/gestao/inventory/purchases/${id}`),
+  createManualEntry: (
+    data: Omit<
+      InventoryManualEntry,
+      "id" | "tenant_id" | "item_name" | "location_name" | "created_at"
+    >,
+  ) => post<InventoryManualEntry>("/gestao/inventory/manual-entries", data),
+  removeManualEntry: (id: string) =>
+    del<void>(`/gestao/inventory/manual-entries/${id}`),
   movements: () => get<InventoryStockMovement[]>("/gestao/inventory/movements"),
   balances: () => get<InventoryStockBalance[]>("/gestao/inventory/balances"),
   listProductRecipes: (productId: string) =>
-    get<InventoryRecipeVersion[]>(`/gestao/inventory/products/${productId}/recipes`),
-  createProductRecipe: (productId: string, data: Omit<InventoryRecipeVersion, "id" | "tenant_id" | "product_id" | "product_name" | "product_size_label" | "product_crust_type_name" | "product_drink_variant_name" | "version_number" | "created_at" | "updated_at">) =>
-    post<InventoryRecipeVersion>(`/gestao/inventory/products/${productId}/recipes`, data),
-  updateProductRecipe: (productId: string, recipeId: string, data: Omit<InventoryRecipeVersion, "id" | "tenant_id" | "product_id" | "product_name" | "product_size_label" | "product_crust_type_name" | "product_drink_variant_name" | "version_number" | "created_at" | "updated_at">) =>
-    put<InventoryRecipeVersion>(`/gestao/inventory/products/${productId}/recipes/${recipeId}`, data),
+    get<InventoryRecipeVersion[]>(
+      `/gestao/inventory/products/${productId}/recipes`,
+    ),
+  createProductRecipe: (
+    productId: string,
+    data: Omit<
+      InventoryRecipeVersion,
+      | "id"
+      | "tenant_id"
+      | "product_id"
+      | "product_name"
+      | "product_size_label"
+      | "product_crust_type_name"
+      | "product_drink_variant_name"
+      | "version_number"
+      | "created_at"
+      | "updated_at"
+    >,
+  ) =>
+    post<InventoryRecipeVersion>(
+      `/gestao/inventory/products/${productId}/recipes`,
+      data,
+    ),
+  updateProductRecipe: (
+    productId: string,
+    recipeId: string,
+    data: Omit<
+      InventoryRecipeVersion,
+      | "id"
+      | "tenant_id"
+      | "product_id"
+      | "product_name"
+      | "product_size_label"
+      | "product_crust_type_name"
+      | "product_drink_variant_name"
+      | "version_number"
+      | "created_at"
+      | "updated_at"
+    >,
+  ) =>
+    put<InventoryRecipeVersion>(
+      `/gestao/inventory/products/${productId}/recipes/${recipeId}`,
+      data,
+    ),
   removeProductRecipe: (productId: string, recipeId: string) =>
     del<void>(`/gestao/inventory/products/${productId}/recipes/${recipeId}`),
   portionConfigs: async (active?: boolean) => {
-    const rows = await get<InventoryPortionConfig[]>(`/gestao/inventory/v1/portion-configs${active === undefined ? "" : `?active=${active}`}`);
-    return rows.map((row) => ({ ...row, portion_weight: Number(row.portion_weight), min_stock: Number(row.min_stock), target_stock: Number(row.target_stock) }));
+    const rows = await get<InventoryPortionConfig[]>(
+      `/gestao/inventory/v1/portion-configs${active === undefined ? "" : `?active=${active}`}`,
+    );
+    return rows.map((row) => ({
+      ...row,
+      portion_weight: Number(row.portion_weight),
+      min_stock: Number(row.min_stock),
+      target_stock: Number(row.target_stock),
+    }));
   },
-  portionBalances: () => get<InventoryPortionBalance[]>("/gestao/inventory/v1/portion-configs/balances"),
-  portionReplenishmentAlerts: () => get<InventoryPortionReplenishment[]>("/gestao/inventory/v1/portion-configs/replenishment-alerts"),
-  requestPortionPreparation: (id: string, body: { target_quantity: string; scheduled_for?: string | null; notes?: string | null; expected_version?: number }, key: string) =>
-    request<Record<string, unknown>>("POST", `/gestao/inventory/v1/portion-configs/${encodeURIComponent(id)}/preparation-orders`, body, { "Idempotency-Key": key }),
-  createPortionConfig: (data: Omit<InventoryPortionConfig, "id" | "tenant_id" | "source_item_name" | "output_item_id" | "output_item_name" | "output_item_sku" | "unit_symbol" | "version" | "created_at" | "updated_at">, key: string) =>
-    request<InventoryPortionConfig>("POST", "/gestao/inventory/v1/portion-configs", data, { "Idempotency-Key": key }),
-  updatePortionConfig: (id: string, data: Omit<InventoryPortionConfig, "id" | "tenant_id" | "source_item_name" | "output_item_id" | "output_item_name" | "output_item_sku" | "unit_symbol" | "version" | "created_at" | "updated_at">, key: string) =>
-    request<InventoryPortionConfig>("PUT", `/gestao/inventory/v1/portion-configs/${encodeURIComponent(id)}`, data, { "Idempotency-Key": key }),
+  portionBalances: () =>
+    get<InventoryPortionBalance[]>(
+      "/gestao/inventory/v1/portion-configs/balances",
+    ),
+  portionReplenishmentAlerts: () =>
+    get<InventoryPortionReplenishment[]>(
+      "/gestao/inventory/v1/portion-configs/replenishment-alerts",
+    ),
+  requestPortionPreparation: (
+    id: string,
+    body: {
+      target_quantity: string;
+      scheduled_for?: string | null;
+      notes?: string | null;
+      expected_version?: number;
+    },
+    key: string,
+  ) =>
+    request<Record<string, unknown>>(
+      "POST",
+      `/gestao/inventory/v1/portion-configs/${encodeURIComponent(id)}/preparation-orders`,
+      body,
+      { "Idempotency-Key": key },
+    ),
+  createPortionConfig: (
+    data: Omit<
+      InventoryPortionConfig,
+      | "id"
+      | "tenant_id"
+      | "source_item_name"
+      | "output_item_id"
+      | "output_item_name"
+      | "output_item_sku"
+      | "unit_symbol"
+      | "version"
+      | "created_at"
+      | "updated_at"
+    >,
+    key: string,
+  ) =>
+    request<InventoryPortionConfig>(
+      "POST",
+      "/gestao/inventory/v1/portion-configs",
+      data,
+      { "Idempotency-Key": key },
+    ),
+  updatePortionConfig: (
+    id: string,
+    data: Omit<
+      InventoryPortionConfig,
+      | "id"
+      | "tenant_id"
+      | "source_item_name"
+      | "output_item_id"
+      | "output_item_name"
+      | "output_item_sku"
+      | "unit_symbol"
+      | "version"
+      | "created_at"
+      | "updated_at"
+    >,
+    key: string,
+  ) =>
+    request<InventoryPortionConfig>(
+      "PUT",
+      `/gestao/inventory/v1/portion-configs/${encodeURIComponent(id)}`,
+      data,
+      { "Idempotency-Key": key },
+    ),
   deactivatePortionConfig: (id: string, key: string) =>
-    request<InventoryPortionConfig>("DELETE", `/gestao/inventory/v1/portion-configs/${encodeURIComponent(id)}`, undefined, { "Idempotency-Key": key }),
+    request<InventoryPortionConfig>(
+      "DELETE",
+      `/gestao/inventory/v1/portion-configs/${encodeURIComponent(id)}`,
+      undefined,
+      { "Idempotency-Key": key },
+    ),
 };
 
 export const inventoryReceiptApi = {
   list: () => get<InventoryReceiptDocument[]>("/gestao/inventory/v1/documents"),
-  get: (id: string) => get<InventoryReceiptDocument>(`/gestao/inventory/v1/documents/${encodeURIComponent(id)}`),
-  uploadXml: (file: File, purchaseId?: string | null, idempotencyKey?: string) => {
+  get: (id: string) =>
+    get<InventoryReceiptDocument>(
+      `/gestao/inventory/v1/documents/${encodeURIComponent(id)}`,
+    ),
+  uploadXml: (
+    file: File,
+    purchaseId?: string | null,
+    idempotencyKey?: string,
+  ) => {
     const form = new FormData();
     form.append("file", file, file.name);
     if (purchaseId) form.append("purchase_id", purchaseId);
@@ -7125,7 +8944,11 @@ export const inventoryReceiptApi = {
     );
   },
   update: (id: string, data: InventoryReceiptDocumentUpdate) =>
-    request<InventoryReceiptDocument>("PATCH", `/gestao/inventory/v1/documents/${encodeURIComponent(id)}`, data),
+    request<InventoryReceiptDocument>(
+      "PATCH",
+      `/gestao/inventory/v1/documents/${encodeURIComponent(id)}`,
+      data,
+    ),
   approve: (id: string, expectedVersion: number, idempotencyKey: string) =>
     request<InventoryReceiptDocument>(
       "POST",
@@ -7133,7 +8956,11 @@ export const inventoryReceiptApi = {
       { expected_version: expectedVersion },
       { "Idempotency-Key": idempotencyKey },
     ),
-  reconcilePayables: (id: string, data: InventoryPayablesReconcileInput, idempotencyKey: string) =>
+  reconcilePayables: (
+    id: string,
+    data: InventoryPayablesReconcileInput,
+    idempotencyKey: string,
+  ) =>
     request<InventoryPayablesReconcileResult>(
       "POST",
       `/gestao/inventory/v1/documents/${encodeURIComponent(id)}/payables/reconcile`,
@@ -7147,7 +8974,12 @@ export const cmvApi = {
 };
 
 export type DeliveryAppOrigin = "partner_99" | "ifood" | "keeta";
-export type AppFinanceRuleType = "commission" | "fee" | "freight" | "store_discount" | "deduction";
+export type AppFinanceRuleType =
+  | "commission"
+  | "fee"
+  | "freight"
+  | "store_discount"
+  | "deduction";
 export type AppFinanceCalculationType = "percentage" | "fixed";
 
 export interface ApiAppFinanceRule {
@@ -7174,41 +9006,121 @@ export const DELIVERY_APPS_FINANCE_PATH = "/painel/operacoes/apps-finance";
 
 export const appFinanceApi = {
   list: () => get<ApiAppFinanceConfig[]>("/operations/apps-finance"),
-  create: (data: AppFinanceConfigInput) => post<ApiAppFinanceConfig>("/operations/apps-finance", data),
-  update: (id: string, data: AppFinanceConfigInput) => put<ApiAppFinanceConfig>(`/operations/apps-finance/${encodeURIComponent(id)}`, data),
-  remove: (id: string) => del<ApiAppFinanceConfig>(`/operations/apps-finance/${encodeURIComponent(id)}`),
-  addRule: (configId: string, data: AppFinanceRuleInput) => post<ApiAppFinanceRule>(`/operations/apps-finance/${encodeURIComponent(configId)}/rules`, data),
-  removeRule: (ruleId: string) => del<ApiAppFinanceRule>(`/operations/apps-finance/rules/${encodeURIComponent(ruleId)}`),
+  create: (data: AppFinanceConfigInput) =>
+    post<ApiAppFinanceConfig>("/operations/apps-finance", data),
+  update: (id: string, data: AppFinanceConfigInput) =>
+    put<ApiAppFinanceConfig>(
+      `/operations/apps-finance/${encodeURIComponent(id)}`,
+      data,
+    ),
+  remove: (id: string) =>
+    del<ApiAppFinanceConfig>(
+      `/operations/apps-finance/${encodeURIComponent(id)}`,
+    ),
+  addRule: (configId: string, data: AppFinanceRuleInput) =>
+    post<ApiAppFinanceRule>(
+      `/operations/apps-finance/${encodeURIComponent(configId)}/rules`,
+      data,
+    ),
+  removeRule: (ruleId: string) =>
+    del<ApiAppFinanceRule>(
+      `/operations/apps-finance/rules/${encodeURIComponent(ruleId)}`,
+    ),
 };
 
 export const financeApi = {
   overview: () => get<FinanceOverview>("/gestao/finance/overview"),
-  paymentOverview: () => get<FinancePaymentOverview>("/gestao/finance/payments/overview"),
-  paymentReconciliation: (limit = 500) => get<FinancePaymentReconciliation>(`/gestao/finance/payments/reconciliation?limit=${limit}`),
-  listPaymentReconciliationSettlements: (limit = 500, paymentId?: string) => get<FinancePaymentReconciliationSettlements>(`/gestao/finance/payments/reconciliation/settlements?limit=${limit}${paymentId ? `&payment_id=${encodeURIComponent(paymentId)}` : ""}`),
-  createPaymentReconciliationSettlement: (data: FinancePaymentReconciliationSettlementInput, idempotencyKey: string) =>
-    request<FinancePaymentReconciliationSettlement>("POST", "/gestao/finance/payments/reconciliation/settlements", data, { "Idempotency-Key": idempotencyKey }),
-  listObligations: () => get<FinanceObligation[]>("/gestao/finance/obligations"),
-  createObligationFromFiscalDocument: (documentId: string, data: FinanceObligationFromFiscalInput, idempotencyKey: string) =>
-    request<FinanceObligation>("POST", `/gestao/finance/fiscal-documents/${encodeURIComponent(documentId)}/obligation`, data, { "Idempotency-Key": idempotencyKey }),
+  paymentOverview: () =>
+    get<FinancePaymentOverview>("/gestao/finance/payments/overview"),
+  paymentReconciliation: (limit = 500) =>
+    get<FinancePaymentReconciliation>(
+      `/gestao/finance/payments/reconciliation?limit=${limit}`,
+    ),
+  listPaymentReconciliationSettlements: (limit = 500, paymentId?: string) =>
+    get<FinancePaymentReconciliationSettlements>(
+      `/gestao/finance/payments/reconciliation/settlements?limit=${limit}${paymentId ? `&payment_id=${encodeURIComponent(paymentId)}` : ""}`,
+    ),
+  createPaymentReconciliationSettlement: (
+    data: FinancePaymentReconciliationSettlementInput,
+    idempotencyKey: string,
+  ) =>
+    request<FinancePaymentReconciliationSettlement>(
+      "POST",
+      "/gestao/finance/payments/reconciliation/settlements",
+      data,
+      { "Idempotency-Key": idempotencyKey },
+    ),
+  listObligations: () =>
+    get<FinanceObligation[]>("/gestao/finance/obligations"),
+  createObligationFromFiscalDocument: (
+    documentId: string,
+    data: FinanceObligationFromFiscalInput,
+    idempotencyKey: string,
+  ) =>
+    request<FinanceObligation>(
+      "POST",
+      `/gestao/finance/fiscal-documents/${encodeURIComponent(documentId)}/obligation`,
+      data,
+      { "Idempotency-Key": idempotencyKey },
+    ),
   listContracts: () => get<FinanceContract[]>("/gestao/finance/contracts"),
-  createContract: (data: FinanceContractInput) => post<FinanceContract>("/gestao/finance/contracts", data),
-  updateContract: (id: string, data: FinanceContractInput) => put<FinanceContract>(`/gestao/finance/contracts/${encodeURIComponent(id)}`, data),
-  removeContract: (id: string) => del<void>(`/gestao/finance/contracts/${encodeURIComponent(id)}`),
-  generateContractPayables: (id: string) => post<{ contract_id: string; created: number; already_synced: number; total: number; transaction_ids: string[] }>(`/gestao/finance/contracts/${encodeURIComponent(id)}/payables`, {}),
-  backfillSales: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/sales/backfill?limit=${limit}`, {}),
-  backfillPaymentReversals: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/payments/backfill-reversals?limit=${limit}`, {}),
-  backfillPurchasePayables: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/purchases/backfill-payables?limit=${limit}`, {}),
-  backfillDeliveryExpenses: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/delivery/backfill-expenses?limit=${limit}`, {}),
-  backfillCmvSnapshots: (limit = 5000) => post<FinanceBackfillResult>(`/gestao/finance/cmv/backfill-snapshots?limit=${limit}`, {}),
-  deliveryOverview: () => get<FinanceDeliveryOverview>("/gestao/finance/delivery/overview"),
-  deliveryEarnings: (params?: { date_from?: string; date_to?: string; status?: string }) => {
+  createContract: (data: FinanceContractInput) =>
+    post<FinanceContract>("/gestao/finance/contracts", data),
+  updateContract: (id: string, data: FinanceContractInput) =>
+    put<FinanceContract>(
+      `/gestao/finance/contracts/${encodeURIComponent(id)}`,
+      data,
+    ),
+  removeContract: (id: string) =>
+    del<void>(`/gestao/finance/contracts/${encodeURIComponent(id)}`),
+  generateContractPayables: (id: string) =>
+    post<{
+      contract_id: string;
+      created: number;
+      already_synced: number;
+      total: number;
+      transaction_ids: string[];
+    }>(`/gestao/finance/contracts/${encodeURIComponent(id)}/payables`, {}),
+  backfillSales: (limit = 5000) =>
+    post<FinanceBackfillResult>(
+      `/gestao/finance/sales/backfill?limit=${limit}`,
+      {},
+    ),
+  backfillPaymentReversals: (limit = 5000) =>
+    post<FinanceBackfillResult>(
+      `/gestao/finance/payments/backfill-reversals?limit=${limit}`,
+      {},
+    ),
+  backfillPurchasePayables: (limit = 5000) =>
+    post<FinanceBackfillResult>(
+      `/gestao/finance/purchases/backfill-payables?limit=${limit}`,
+      {},
+    ),
+  backfillDeliveryExpenses: (limit = 5000) =>
+    post<FinanceBackfillResult>(
+      `/gestao/finance/delivery/backfill-expenses?limit=${limit}`,
+      {},
+    ),
+  backfillCmvSnapshots: (limit = 5000) =>
+    post<FinanceBackfillResult>(
+      `/gestao/finance/cmv/backfill-snapshots?limit=${limit}`,
+      {},
+    ),
+  deliveryOverview: () =>
+    get<FinanceDeliveryOverview>("/gestao/finance/delivery/overview"),
+  deliveryEarnings: (params?: {
+    date_from?: string;
+    date_to?: string;
+    status?: string;
+  }) => {
     const query = new URLSearchParams();
     if (params?.date_from) query.set("date_from", params.date_from);
     if (params?.date_to) query.set("date_to", params.date_to);
     if (params?.status) query.set("status", params.status);
     const suffix = query.toString() ? `?${query.toString()}` : "";
-    return get<FinanceDeliveryEarning[]>(`/gestao/finance/delivery/earnings${suffix}`);
+    return get<FinanceDeliveryEarning[]>(
+      `/gestao/finance/delivery/earnings${suffix}`,
+    );
   },
   cashFlow: (params?: { date_from?: string; date_to?: string }) => {
     const query = new URLSearchParams();
@@ -7217,7 +9129,8 @@ export const financeApi = {
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return get<FinanceCashFlow>(`/gestao/finance/cash-flow${suffix}`);
   },
-  forecast: (months = 6) => get<FinanceForecast>(`/gestao/finance/forecast?months=${months}`),
+  forecast: (months = 6) =>
+    get<FinanceForecast>(`/gestao/finance/forecast?months=${months}`),
   bi: (params?: { date_from?: string; date_to?: string }) => {
     const query = new URLSearchParams();
     if (params?.date_from) query.set("date_from", params.date_from);
@@ -7226,53 +9139,132 @@ export const financeApi = {
     return get<FinanceBi>(`/gestao/finance/bi${suffix}`);
   },
   listBudgets: () => get<FinanceBudget[]>("/gestao/finance/budgets"),
-  createBudget: (data: FinanceBudgetInput) => post<FinanceBudget>("/gestao/finance/budgets", data),
-  activateBudget: (id: string) => post<FinanceBudget>(`/gestao/finance/budgets/${encodeURIComponent(id)}/activate`, {}),
-  closeBudget: (id: string) => post<FinanceBudget>(`/gestao/finance/budgets/${encodeURIComponent(id)}/close`, {}),
-  listBankStatements: () => get<FinanceBankStatement[]>("/gestao/finance/bank-statements"),
-  listBankStatementLines: (id: string) => get<FinanceBankStatementLine[]>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/lines`),
-  listBankReconciliation: (id: string) => get<FinanceBankReconciliationLine[]>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/reconciliation`),
-  closeBankStatement: (id: string) => post<FinanceBankStatement>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/close`, {}),
-  reopenBankStatement: (id: string) => post<FinanceBankStatement>(`/gestao/finance/bank-statements/${encodeURIComponent(id)}/reopen`, {}),
-  matchBankStatementLine: (lineId: string, transactionId: string) => post<FinanceBankStatementLine>(`/gestao/finance/bank-statement-lines/${encodeURIComponent(lineId)}/match`, { transaction_id: transactionId }),
-  unmatchBankStatementLine: (lineId: string, reason: string) => post<FinanceBankStatementLine>(`/gestao/finance/bank-statement-lines/${encodeURIComponent(lineId)}/unmatch`, { reason }),
-  ignoreBankStatementLine: (lineId: string, reason: string) => post<FinanceBankStatementLine>(`/gestao/finance/bank-statement-lines/${encodeURIComponent(lineId)}/ignore`, { reason }),
-  importBankStatement: (data: FinanceBankStatementImportInput) => post<FinanceBankStatement>("/gestao/finance/bank-statements/import", data),
-  createAccount: (data: FinanceAccountInput) => post<FinanceAccount>("/gestao/finance/accounts", data),
-  updateAccount: (id: string, data: FinanceAccountInput) => put<FinanceAccount>(`/gestao/finance/accounts/${id}`, data),
+  createBudget: (data: FinanceBudgetInput) =>
+    post<FinanceBudget>("/gestao/finance/budgets", data),
+  activateBudget: (id: string) =>
+    post<FinanceBudget>(
+      `/gestao/finance/budgets/${encodeURIComponent(id)}/activate`,
+      {},
+    ),
+  closeBudget: (id: string) =>
+    post<FinanceBudget>(
+      `/gestao/finance/budgets/${encodeURIComponent(id)}/close`,
+      {},
+    ),
+  listBankStatements: () =>
+    get<FinanceBankStatement[]>("/gestao/finance/bank-statements"),
+  listBankStatementLines: (id: string) =>
+    get<FinanceBankStatementLine[]>(
+      `/gestao/finance/bank-statements/${encodeURIComponent(id)}/lines`,
+    ),
+  listBankReconciliation: (id: string) =>
+    get<FinanceBankReconciliationLine[]>(
+      `/gestao/finance/bank-statements/${encodeURIComponent(id)}/reconciliation`,
+    ),
+  closeBankStatement: (id: string) =>
+    post<FinanceBankStatement>(
+      `/gestao/finance/bank-statements/${encodeURIComponent(id)}/close`,
+      {},
+    ),
+  reopenBankStatement: (id: string) =>
+    post<FinanceBankStatement>(
+      `/gestao/finance/bank-statements/${encodeURIComponent(id)}/reopen`,
+      {},
+    ),
+  matchBankStatementLine: (lineId: string, transactionId: string) =>
+    post<FinanceBankStatementLine>(
+      `/gestao/finance/bank-statement-lines/${encodeURIComponent(lineId)}/match`,
+      { transaction_id: transactionId },
+    ),
+  unmatchBankStatementLine: (lineId: string, reason: string) =>
+    post<FinanceBankStatementLine>(
+      `/gestao/finance/bank-statement-lines/${encodeURIComponent(lineId)}/unmatch`,
+      { reason },
+    ),
+  ignoreBankStatementLine: (lineId: string, reason: string) =>
+    post<FinanceBankStatementLine>(
+      `/gestao/finance/bank-statement-lines/${encodeURIComponent(lineId)}/ignore`,
+      { reason },
+    ),
+  importBankStatement: (data: FinanceBankStatementImportInput) =>
+    post<FinanceBankStatement>("/gestao/finance/bank-statements/import", data),
+  createAccount: (data: FinanceAccountInput) =>
+    post<FinanceAccount>("/gestao/finance/accounts", data),
+  updateAccount: (id: string, data: FinanceAccountInput) =>
+    put<FinanceAccount>(`/gestao/finance/accounts/${id}`, data),
   removeAccount: (id: string) => del<void>(`/gestao/finance/accounts/${id}`),
-  createCategory: (data: FinanceCategoryInput) => post<FinanceCategory>("/gestao/finance/categories", data),
-  updateCategory: (id: string, data: FinanceCategoryInput) => put<FinanceCategory>(`/gestao/finance/categories/${id}`, data),
+  createCategory: (data: FinanceCategoryInput) =>
+    post<FinanceCategory>("/gestao/finance/categories", data),
+  updateCategory: (id: string, data: FinanceCategoryInput) =>
+    put<FinanceCategory>(`/gestao/finance/categories/${id}`, data),
   removeCategory: (id: string) => del<void>(`/gestao/finance/categories/${id}`),
-  createCounterparty: (data: FinanceCounterpartyInput) => post<FinanceCounterparty>("/gestao/finance/counterparties", data),
-  updateCounterparty: (id: string, data: FinanceCounterpartyInput) => put<FinanceCounterparty>(`/gestao/finance/counterparties/${id}`, data),
-  removeCounterparty: (id: string) => del<void>(`/gestao/finance/counterparties/${id}`),
-  createTransaction: (data: FinanceTransactionInput) => post<FinanceTransaction>("/gestao/finance/transactions", data),
-  updateTransaction: (id: string, data: FinanceTransactionInput) => put<FinanceTransaction>(`/gestao/finance/transactions/${id}`, data),
-  settleTransaction: (id: string, data: FinanceSettlementInput) => post<FinanceTransaction>(`/gestao/finance/transactions/${id}/settle`, data),
-  removeTransaction: (id: string) => del<void>(`/gestao/finance/transactions/${id}`),
+  createCounterparty: (data: FinanceCounterpartyInput) =>
+    post<FinanceCounterparty>("/gestao/finance/counterparties", data),
+  updateCounterparty: (id: string, data: FinanceCounterpartyInput) =>
+    put<FinanceCounterparty>(`/gestao/finance/counterparties/${id}`, data),
+  removeCounterparty: (id: string) =>
+    del<void>(`/gestao/finance/counterparties/${id}`),
+  createTransaction: (data: FinanceTransactionInput) =>
+    post<FinanceTransaction>("/gestao/finance/transactions", data),
+  updateTransaction: (id: string, data: FinanceTransactionInput) =>
+    put<FinanceTransaction>(`/gestao/finance/transactions/${id}`, data),
+  settleTransaction: (id: string, data: FinanceSettlementInput) =>
+    post<FinanceTransaction>(`/gestao/finance/transactions/${id}/settle`, data),
+  removeTransaction: (id: string) =>
+    del<void>(`/gestao/finance/transactions/${id}`),
 };
 
 export const fiscalApi = {
   overview: () => get<FiscalOverview>("/gestao/fiscal/overview"),
-  updateCompany: (data: FiscalCompanyInput) => put<FiscalCompany>("/gestao/fiscal/company", data),
-  updateCertificate: (data: FiscalCertificateInput) => put<FiscalCertificate>("/gestao/fiscal/certificate", data),
-  createSeries: (data: FiscalSeriesInput) => post<FiscalSeries>("/gestao/fiscal/series", data),
-  updateSeries: (id: string, data: FiscalSeriesInput) => put<FiscalSeries>(`/gestao/fiscal/series/${id}`, data),
+  updateCompany: (data: FiscalCompanyInput) =>
+    put<FiscalCompany>("/gestao/fiscal/company", data),
+  updateCertificate: (data: FiscalCertificateInput) =>
+    put<FiscalCertificate>("/gestao/fiscal/certificate", data),
+  createSeries: (data: FiscalSeriesInput) =>
+    post<FiscalSeries>("/gestao/fiscal/series", data),
+  updateSeries: (id: string, data: FiscalSeriesInput) =>
+    put<FiscalSeries>(`/gestao/fiscal/series/${id}`, data),
   updateProductProfile: (productId: string, data: FiscalProductProfileInput) =>
-    put<FiscalProductProfile>(`/gestao/fiscal/products/${productId}/tax-profile`, data),
-  createDocumentFromOrder: (orderId: string, data: { document_model: FiscalDocumentModel; environment: FiscalEnvironment; series_id?: string | null }) =>
-    post<FiscalDocument>(`/gestao/fiscal/documents/from-order/${orderId}`, data),
-  signDocument: (id: string) => post<FiscalDocument>(`/gestao/fiscal/documents/${id}/sign`, {}),
-  transmitDocument: (id: string) => post<FiscalDocument>(`/gestao/fiscal/documents/${id}/transmit`, {}),
-  consultDocument: (id: string) => post<FiscalDocument>(`/gestao/fiscal/documents/${id}/consult`, {}),
-  cancelDocument: (id: string, reason: string) => post<FiscalDocument>(`/gestao/fiscal/documents/${id}/cancel`, { reason }),
-  invalidateNumber: (seriesId: string, data: { number: number; reason: string }) =>
-    post<FiscalDocument>(`/gestao/fiscal/series/${seriesId}/invalidate-number`, data),
+    put<FiscalProductProfile>(
+      `/gestao/fiscal/products/${productId}/tax-profile`,
+      data,
+    ),
+  createDocumentFromOrder: (
+    orderId: string,
+    data: {
+      document_model: FiscalDocumentModel;
+      environment: FiscalEnvironment;
+      series_id?: string | null;
+    },
+  ) =>
+    post<FiscalDocument>(
+      `/gestao/fiscal/documents/from-order/${orderId}`,
+      data,
+    ),
+  signDocument: (id: string) =>
+    post<FiscalDocument>(`/gestao/fiscal/documents/${id}/sign`, {}),
+  transmitDocument: (id: string) =>
+    post<FiscalDocument>(`/gestao/fiscal/documents/${id}/transmit`, {}),
+  consultDocument: (id: string) =>
+    post<FiscalDocument>(`/gestao/fiscal/documents/${id}/consult`, {}),
+  cancelDocument: (id: string, reason: string) =>
+    post<FiscalDocument>(`/gestao/fiscal/documents/${id}/cancel`, { reason }),
+  invalidateNumber: (
+    seriesId: string,
+    data: { number: number; reason: string },
+  ) =>
+    post<FiscalDocument>(
+      `/gestao/fiscal/series/${seriesId}/invalidate-number`,
+      data,
+    ),
 };
 
 export const paymentsApi = {
-  create: (order_id: string, amount: number, payment_method: ApiPayment["method"]) =>
+  create: (
+    order_id: string,
+    amount: number,
+    payment_method: ApiPayment["method"],
+  ) =>
     request<ApiPayment>(
       "POST",
       "/payments/create",
@@ -7286,17 +9278,20 @@ export const paymentsApi = {
       "/payments/create",
       (() => {
         const identification = document
-          ? { type: document.replace(/\D/g, "").length > 11 ? "CNPJ" : "CPF", number: document.replace(/\D/g, "") }
+          ? {
+              type: document.replace(/\D/g, "").length > 11 ? "CNPJ" : "CPF",
+              number: document.replace(/\D/g, ""),
+            }
           : undefined;
         return {
-        order_id,
-        amount,
-        payment_method: "pix",
-        ...(identification ? { payer: { identification } } : {}),
-        formData: {
-          payment_method_id: "pix",
+          order_id,
+          amount,
+          payment_method: "pix",
           ...(identification ? { payer: { identification } } : {}),
-        },
+          formData: {
+            payment_method_id: "pix",
+            ...(identification ? { payer: { identification } } : {}),
+          },
         };
       })(),
       paymentMutationHeaders(order_id, "create-pix"),
@@ -7310,7 +9305,10 @@ export const paymentsApi = {
       paymentMutationHeaders(order_id, "create-brick"),
     ),
 
-  createAsaasCreditCard: (order_id: string, data: Omit<ApiAsaasCreditCardPaymentInput, "order_id">) =>
+  createAsaasCreditCard: (
+    order_id: string,
+    data: Omit<ApiAsaasCreditCardPaymentInput, "order_id">,
+  ) =>
     request<ApiPayment>(
       "POST",
       "/payments/asaas/credit-card",
@@ -7319,7 +9317,8 @@ export const paymentsApi = {
     ),
 
   tokenizePagarmeCard: async (publicKey: string, card: ApiPagarmeCardInput) => {
-    if (!publicKey.trim()) throw new Error("Chave publica Pagar.me nao configurada.");
+    if (!publicKey.trim())
+      throw new Error("Chave publica Pagar.me nao configurada.");
     const response = await externalFetch(
       `https://api.pagar.me/core/v5/tokens?appId=${encodeURIComponent(publicKey.trim())}`,
       {
@@ -7331,21 +9330,33 @@ export const paymentsApi = {
     if (!response.ok) {
       let message = "Nao foi possivel validar o cartao no Pagar.me.";
       try {
-        const data = await response.json() as { message?: string; error?: { message?: string }; errors?: Array<{ message?: string }> };
-        message = data.error?.message || data.message || data.errors?.[0]?.message || message;
+        const data = (await response.json()) as {
+          message?: string;
+          error?: { message?: string };
+          errors?: Array<{ message?: string }>;
+        };
+        message =
+          data.error?.message ||
+          data.message ||
+          data.errors?.[0]?.message ||
+          message;
       } catch {
         // A resposta do provedor pode nao ser JSON em indisponibilidades de borda.
       }
       throw new ApiRequestError(message, response.status);
     }
-    const token = await response.json() as ApiPagarmeCardToken;
+    const token = (await response.json()) as ApiPagarmeCardToken;
     if (!token?.id || !token.id.startsWith("token_")) {
       throw new Error("Token de cartao invalido retornado pelo Pagar.me.");
     }
     return token;
   },
 
-  createPagarmeCreditCard: (order_id: string, token: string, installments = 1) =>
+  createPagarmeCreditCard: (
+    order_id: string,
+    token: string,
+    installments = 1,
+  ) =>
     request<ApiPayment>(
       "POST",
       "/payments/create",
@@ -7369,7 +9380,12 @@ export const paymentsApi = {
     ),
 
   getByOrder: (order_id: string) =>
-    request<ApiPayment>("GET", `/payments/${order_id}`, undefined, orderAccessHeaders(order_id)),
+    request<ApiPayment>(
+      "GET",
+      `/payments/${order_id}`,
+      undefined,
+      orderAccessHeaders(order_id),
+    ),
 
   publicKey: () => get<{ public_key: string }>("/payments/public-key"),
 
@@ -7385,8 +9401,10 @@ export const paymentsApi = {
       orderAccessHeaders(order_id),
     ),
 
-  approve: (order_id: string) => post<ApiPayment>(`/payments/approve/${order_id}`, {}),
-  reconcile: (order_id: string) => post<ApiPayment>(`/payments/reconcile/${order_id}`, {}),
+  approve: (order_id: string) =>
+    post<ApiPayment>(`/payments/approve/${order_id}`, {}),
+  reconcile: (order_id: string) =>
+    post<ApiPayment>(`/payments/reconcile/${order_id}`, {}),
   cancelRemote: (order_id: string, data: ApiPaymentOperationInput = {}) =>
     post<ApiPayment>(`/payments/cancel/${order_id}`, data),
   refund: (order_id: string, data: ApiPaymentOperationInput = {}) =>
@@ -7418,7 +9436,13 @@ export const couponsApi = {
 
   remove: (id: string) => del<void>(`/coupons/${id}`),
 
-  apply: (code: string, order_subtotal: number, customer_id?: string, phone?: string, delivery_fee = 0) =>
+  apply: (
+    code: string,
+    order_subtotal: number,
+    customer_id?: string,
+    phone?: string,
+    delivery_fee = 0,
+  ) =>
     request<ApiCouponApply>(
       "POST",
       "/coupons/apply",
@@ -7435,8 +9459,9 @@ export const couponsApi = {
 
 export const loyaltyApi = {
   settings: () => get<ApiLoyaltySettings>("/loyalty/settings"),
-  updateSettings: (data: Pick<ApiLoyaltySettings, "enabled" | "points_per_real">) =>
-    put<ApiLoyaltySettings>("/loyalty/settings", data),
+  updateSettings: (
+    data: Pick<ApiLoyaltySettings, "enabled" | "points_per_real">,
+  ) => put<ApiLoyaltySettings>("/loyalty/settings", data),
 
   levels: () => get<ApiLoyaltyLevel[]>("/loyalty/levels"),
   createLevel: (data: Omit<ApiLoyaltyLevel, "id">) =>
@@ -7456,11 +9481,15 @@ export const loyaltyApi = {
   deleteRule: (id: string) => del<void>(`/loyalty/rules/${id}`),
 
   benefits: (levelId?: string) =>
-    get<ApiLoyaltyBenefit[]>(`/loyalty/benefits${levelId ? `?level_id=${levelId}` : ""}`),
+    get<ApiLoyaltyBenefit[]>(
+      `/loyalty/benefits${levelId ? `?level_id=${levelId}` : ""}`,
+    ),
   createBenefit: (data: Omit<ApiLoyaltyBenefit, "id" | "created_at">) =>
     post<ApiLoyaltyBenefit>("/loyalty/benefits", data),
-  updateBenefit: (id: string, data: Omit<ApiLoyaltyBenefit, "id" | "created_at">) =>
-    put<ApiLoyaltyBenefit>(`/loyalty/benefits/${id}`, data),
+  updateBenefit: (
+    id: string,
+    data: Omit<ApiLoyaltyBenefit, "id" | "created_at">,
+  ) => put<ApiLoyaltyBenefit>(`/loyalty/benefits/${id}`, data),
   deleteBenefit: (id: string) => del<void>(`/loyalty/benefits/${id}`),
   redeemBenefit: (customer_id: string, benefit_id: string, order_id?: string) =>
     request<{ message: string }>(
@@ -7488,9 +9517,19 @@ export const loyaltyApi = {
 
   // Admin
   adminCustomers: (level_id?: string) =>
-    get<ApiCustomerLoyalty[]>(`/loyalty/admin/customers${level_id ? `?level_id=${level_id}` : ""}`),
-  adminAdjustPoints: (customer_id: string, points: number, description: string) =>
-    post<{ total_points: number }>("/loyalty/admin/points", { customer_id, points, description }),
+    get<ApiCustomerLoyalty[]>(
+      `/loyalty/admin/customers${level_id ? `?level_id=${level_id}` : ""}`,
+    ),
+  adminAdjustPoints: (
+    customer_id: string,
+    points: number,
+    description: string,
+  ) =>
+    post<{ total_points: number }>("/loyalty/admin/points", {
+      customer_id,
+      points,
+      description,
+    }),
   adminCloseCycle: (customer_id: string) =>
     post<{ message: string }>("/loyalty/admin/close-cycle", { customer_id }),
   adminCycles: (customer_id: string) =>
@@ -7527,7 +9566,14 @@ export const shippingApi = {
     distance_km?: number | null,
   ) =>
     post<ApiShipping>("/shipping/calculate", {
-      city, order_subtotal, neighborhood, zip_code, is_pickup, is_scheduled, street, distance_km,
+      city,
+      order_subtotal,
+      neighborhood,
+      zip_code,
+      is_pickup,
+      is_scheduled,
+      street,
+      distance_km,
     }),
 };
 
@@ -7751,7 +9797,12 @@ export interface ApiCustomerCommercialMemory {
   tenant_id: string;
   customer_id: string;
   memory_key: string;
-  memory_type: "preference" | "avoidance" | "purchase_pattern" | "service_note" | string;
+  memory_type:
+    | "preference"
+    | "avoidance"
+    | "purchase_pattern"
+    | "service_note"
+    | string;
   value: string;
   source: string;
   confidence: "low" | "medium" | "high" | string;
@@ -7996,23 +10047,34 @@ export interface ApiMarketingSendResult {
 }
 
 export const whatsappMarketingApi = {
-  listContactLists: () => get<ApiMarketingContactList[]>("/whatsapp/contact-lists"),
-  createContactList: (data: { name: string; contacts: Array<{ name: string; phone: string }> }) =>
-    post<ApiMarketingContactList>("/whatsapp/contact-lists", data),
+  listContactLists: () =>
+    get<ApiMarketingContactList[]>("/whatsapp/contact-lists"),
+  createContactList: (data: {
+    name: string;
+    contacts: Array<{ name: string; phone: string }>;
+  }) => post<ApiMarketingContactList>("/whatsapp/contact-lists", data),
   deleteContactList: (id: string) => del<void>(`/whatsapp/contact-lists/${id}`),
-  send: (data: Record<string, unknown>) => post<ApiMarketingSendResult>("/whatsapp/send", data),
+  send: (data: Record<string, unknown>) =>
+    post<ApiMarketingSendResult>("/whatsapp/send", data),
 };
 
 export const emailMarketingApi = {
-  listContactLists: () => get<ApiMarketingContactList[]>("/email/contact-lists"),
-  createContactList: (data: { name: string; contacts: Array<{ name: string; email: string }> }) =>
-    post<ApiMarketingContactList>("/email/contact-lists", data),
+  listContactLists: () =>
+    get<ApiMarketingContactList[]>("/email/contact-lists"),
+  createContactList: (data: {
+    name: string;
+    contacts: Array<{ name: string; email: string }>;
+  }) => post<ApiMarketingContactList>("/email/contact-lists", data),
   deleteContactList: (id: string) => del<void>(`/email/contact-lists/${id}`),
-  send: (data: Record<string, unknown>) => post<ApiMarketingSendResult>("/email/send", data),
+  send: (data: Record<string, unknown>) =>
+    post<ApiMarketingSendResult>("/email/send", data),
 };
 
 export const marketingAutomationsApi = {
-  catalog: () => get<ApiAutomationCatalog | ApiAutomationCatalogDefinition[]>("/automations/catalog"),
+  catalog: () =>
+    get<ApiAutomationCatalog | ApiAutomationCatalogDefinition[]>(
+      "/automations/catalog",
+    ),
   validate: (definition: ApiAutomationDefinitionPayload) =>
     post<ApiAutomationValidationResult>("/automations/validate", definition),
   simulate: (data: {
@@ -8028,10 +10090,13 @@ export const marketingAutomationsApi = {
   update: (id: string, data: ApiMarketingAutomationPayload) =>
     patch<Partial<ApiMarketingAutomation>>(`/automations/${id}`, data),
   remove: (id: string) => del<void>(`/automations/${id}`),
-  toggle: (id: string) => post<{ id: string; active: boolean }>(`/automations/${id}/toggle`, {}),
-  run: (id: string) => post<ApiAutomationRunResult>(`/automations/${id}/run`, {}),
+  toggle: (id: string) =>
+    post<{ id: string; active: boolean }>(`/automations/${id}/toggle`, {}),
+  run: (id: string) =>
+    post<ApiAutomationRunResult>(`/automations/${id}/run`, {}),
   logs: () => get<ApiAutomationLog[]>("/automations/logs"),
-  automationLogs: (id: string) => get<ApiAutomationLog[]>(`/automations/${id}/logs`),
+  automationLogs: (id: string) =>
+    get<ApiAutomationLog[]>(`/automations/${id}/logs`),
   events: () => get<ApiAutomationEvent[]>("/automations/events"),
   templates: () => get<ApiAutomationTemplate[]>("/automations/templates"),
   createTemplate: (data: ApiAutomationTemplatePayload) =>
@@ -8040,9 +10105,15 @@ export const marketingAutomationsApi = {
     patch<Partial<ApiAutomationTemplate>>(`/automations/templates/${id}`, data),
   removeTemplate: (id: string) => del<void>(`/automations/templates/${id}`),
   enqueueDue: (limit = 50) =>
-    post<ApiAutomationQueueEnqueueResult>(`/automations/queue/enqueue-due?limit=${limit}`, {}),
+    post<ApiAutomationQueueEnqueueResult>(
+      `/automations/queue/enqueue-due?limit=${limit}`,
+      {},
+    ),
   processQueue: (limit = 100) =>
-    post<ApiAutomationQueueProcessResult>(`/automations/queue/process?limit=${limit}`, {}),
+    post<ApiAutomationQueueProcessResult>(
+      `/automations/queue/process?limit=${limit}`,
+      {},
+    ),
   runDue: (automationLimit = 50, executionLimit = 100) =>
     post<ApiAutomationQueueWorkerResult>(
       `/automations/queue/run-due?automation_limit=${automationLimit}&execution_limit=${executionLimit}`,
@@ -8054,11 +10125,45 @@ export const marketingAutomationsApi = {
 
 export const customersApi = {
   list: () => get<ApiCustomer[]>("/customers"),
-  createAdmin: (data: { name: string; phone?: string; email?: string; address?: { label?: string; street: string; number?: string; complement?: string; neighborhood?: string; city: string; state?: string; zip_code?: string; is_default?: boolean } }) =>
-    post<ApiCustomer>("/admin/customers", data),
-  updateAdmin: (id: string, data: { name?: string; phone?: string; email?: string; address?: { label?: string; street: string; number?: string; complement?: string; neighborhood?: string; city: string; state?: string; zip_code?: string; is_default?: boolean } }) =>
-    put<ApiCustomer>(`/admin/customers/${id}`, data),
-  importTemplate: () => get<{ filename: string; content: string }>("/admin/customers/import-template"),
+  createAdmin: (data: {
+    name: string;
+    phone?: string;
+    email?: string;
+    address?: {
+      label?: string;
+      street: string;
+      number?: string;
+      complement?: string;
+      neighborhood?: string;
+      city: string;
+      state?: string;
+      zip_code?: string;
+      is_default?: boolean;
+    };
+  }) => post<ApiCustomer>("/admin/customers", data),
+  updateAdmin: (
+    id: string,
+    data: {
+      name?: string;
+      phone?: string;
+      email?: string;
+      address?: {
+        label?: string;
+        street: string;
+        number?: string;
+        complement?: string;
+        neighborhood?: string;
+        city: string;
+        state?: string;
+        zip_code?: string;
+        is_default?: boolean;
+      };
+    },
+  ) => put<ApiCustomer>(`/admin/customers/${id}`, data),
+  importTemplate: () =>
+    get<{ filename: string; content: string }>(
+      "/admin/customers/import-template",
+    ),
   importFile: (file: File, commit = false) => {
     const form = new FormData();
     form.append("file", file);
@@ -8077,39 +10182,113 @@ export const customersApi = {
     get<ApiCustomerIdentity | null>(
       `/customers/identity/by-phone?phone=${encodeURIComponent(phone)}&channel=${encodeURIComponent(channel)}`,
     ),
-  createWhatsAppLead: (data: { phone: string; name?: string; source?: string }) =>
-    post<ApiCustomerIdentity>("/customers/identity/whatsapp-lead", data),
+  createWhatsAppLead: (data: {
+    phone: string;
+    name?: string;
+    source?: string;
+  }) => post<ApiCustomerIdentity>("/customers/identity/whatsapp-lead", data),
   update: (id: string, data: { name?: string; phone?: string }) =>
-    request<ApiCustomer>("PUT", `/customers/${id}`, data, customerAccessHeaders(id)),
+    request<ApiCustomer>(
+      "PUT",
+      `/customers/${id}`,
+      data,
+      customerAccessHeaders(id),
+    ),
   addAddress: (
     id: string,
-    data: { label?: string; street: string; number?: string; complement?: string; neighborhood?: string; city: string; state?: string; zip_code?: string; is_default?: boolean }
-  ) => request<ApiAddress>("POST", `/customers/${id}/addresses`, data, customerAccessHeaders(id)),
+    data: {
+      label?: string;
+      street: string;
+      number?: string;
+      complement?: string;
+      neighborhood?: string;
+      city: string;
+      state?: string;
+      zip_code?: string;
+      is_default?: boolean;
+    },
+  ) =>
+    request<ApiAddress>(
+      "POST",
+      `/customers/${id}/addresses`,
+      data,
+      customerAccessHeaders(id),
+    ),
   deleteAddress: (customerId: string, addressId: string) =>
-    request<void>("DELETE", `/customers/${customerId}/addresses/${addressId}`, undefined, customerAccessHeaders(customerId)),
+    request<void>(
+      "DELETE",
+      `/customers/${customerId}/addresses/${addressId}`,
+      undefined,
+      customerAccessHeaders(customerId),
+    ),
   listAddresses: (id: string) =>
-    request<ApiAddress[]>("GET", `/customers/${id}/addresses`, undefined, customerAccessHeaders(id)),
+    request<ApiAddress[]>(
+      "GET",
+      `/customers/${id}/addresses`,
+      undefined,
+      customerAccessHeaders(id),
+    ),
   getOrders: (id: string) =>
-    request<ApiCustomerOrder[]>("GET", `/customers/${id}/orders`, undefined, customerAccessHeaders(id)),
+    request<ApiCustomerOrder[]>(
+      "GET",
+      `/customers/${id}/orders`,
+      undefined,
+      customerAccessHeaders(id),
+    ),
   getEvents: (id: string, event_type?: string) =>
-    get<ApiCustomerEvent[]>(`/customers/${id}/events${event_type ? `?event_type=${event_type}` : ""}`),
-  getSummary: (id: string) => get<ApiCustomerSummary>(`/customers/${id}/summary`),
+    get<ApiCustomerEvent[]>(
+      `/customers/${id}/events${event_type ? `?event_type=${event_type}` : ""}`,
+    ),
+  getSummary: (id: string) =>
+    get<ApiCustomerSummary>(`/customers/${id}/summary`),
   getContactRisk: (id: string, channel = "whatsapp") =>
-    get<ApiCustomerContactRisk>(`/customers/${id}/contact-risk?channel=${encodeURIComponent(channel)}`),
+    get<ApiCustomerContactRisk>(
+      `/customers/${id}/contact-risk?channel=${encodeURIComponent(channel)}`,
+    ),
   getContactRiskEvents: (id: string, channel = "whatsapp") =>
-    get<ApiCustomerContactRiskEvent[]>(`/customers/${id}/contact-risk/events?channel=${encodeURIComponent(channel)}`),
-  overrideContactRisk: (id: string, data: ApiCustomerContactRiskOverridePayload, channel = "whatsapp") =>
-    post<ApiCustomerContactRisk>(`/customers/${id}/contact-risk/override?channel=${encodeURIComponent(channel)}`, data),
+    get<ApiCustomerContactRiskEvent[]>(
+      `/customers/${id}/contact-risk/events?channel=${encodeURIComponent(channel)}`,
+    ),
+  overrideContactRisk: (
+    id: string,
+    data: ApiCustomerContactRiskOverridePayload,
+    channel = "whatsapp",
+  ) =>
+    post<ApiCustomerContactRisk>(
+      `/customers/${id}/contact-risk/override?channel=${encodeURIComponent(channel)}`,
+      data,
+    ),
   analyzeProfile: (id: string) =>
-    post<{ profile: ApiCustomerAIProfile; suggestions: ApiCustomerAISuggestion[] }>(`/customers/${id}/analyze`, {}),
-  getAIProfile: (id: string) => get<ApiCustomerAIProfile | null>(`/customers/${id}/profile`),
-  listCommercialMemory: (id: string) => get<ApiCustomerCommercialMemory[]>(`/crm/customers/${id}/commercial-memory`),
-  saveCommercialMemory: (id: string, data: Pick<ApiCustomerCommercialMemory, "memory_key" | "memory_type" | "value" | "source" | "confidence"> & { active?: boolean }) =>
-    post<ApiCustomerCommercialMemory>(`/crm/customers/${id}/commercial-memory`, data),
+    post<{
+      profile: ApiCustomerAIProfile;
+      suggestions: ApiCustomerAISuggestion[];
+    }>(`/customers/${id}/analyze`, {}),
+  getAIProfile: (id: string) =>
+    get<ApiCustomerAIProfile | null>(`/customers/${id}/profile`),
+  listCommercialMemory: (id: string) =>
+    get<ApiCustomerCommercialMemory[]>(
+      `/crm/customers/${id}/commercial-memory`,
+    ),
+  saveCommercialMemory: (
+    id: string,
+    data: Pick<
+      ApiCustomerCommercialMemory,
+      "memory_key" | "memory_type" | "value" | "source" | "confidence"
+    > & { active?: boolean },
+  ) =>
+    post<ApiCustomerCommercialMemory>(
+      `/crm/customers/${id}/commercial-memory`,
+      data,
+    ),
   deactivateCommercialMemory: (customerId: string, memoryId: string) =>
-    request<void>("DELETE", `/crm/customers/${customerId}/commercial-memory/${memoryId}`),
+    request<void>(
+      "DELETE",
+      `/crm/customers/${customerId}/commercial-memory/${memoryId}`,
+    ),
   getAISuggestions: (id: string, status = "pending") =>
-    get<ApiCustomerAISuggestion[]>(`/customers/${id}/suggestions?status=${encodeURIComponent(status)}`),
+    get<ApiCustomerAISuggestion[]>(
+      `/customers/${id}/suggestions?status=${encodeURIComponent(status)}`,
+    ),
   acceptSuggestion: (suggestionId: string) =>
     post<ApiCustomerAISuggestion>(`/suggestions/${suggestionId}/accept`, {}),
   rejectSuggestion: (suggestionId: string) =>
@@ -8424,12 +10603,18 @@ export interface ApiGestorAutomationProcess {
 export const gestorApi = {
   dashboard: () => get<ApiGestorDashboard>("/gestor/dashboard"),
   getAISettings: () => get<ApiGestorAISettings>("/gestor/ai/settings"),
-  updateAISettings: (data: Partial<Omit<ApiGestorAISettings, "id" | "tenant_id" | "updated_at">>) =>
-    put<ApiGestorAISettings>("/gestor/ai/settings", data),
+  updateAISettings: (
+    data: Partial<Omit<ApiGestorAISettings, "id" | "tenant_id" | "updated_at">>,
+  ) => put<ApiGestorAISettings>("/gestor/ai/settings", data),
   getAIStatus: () => get<ApiGestorAIProviderStatus>("/gestor/ai/status"),
-  getAIModels: (provider: "openai" | "claude") => get<ApiAIModels>(`/gestor/ai/models?provider=${provider}`),
-  getChannel: () => get<ApiGestorWhatsAppChannel | null>("/gestor/whatsapp/channel"),
-  listGatewayInstances: () => get<ApiGestorWhatsAppGatewayInstance[]>("/gestor/whatsapp/gateway-instances"),
+  getAIModels: (provider: "openai" | "claude") =>
+    get<ApiAIModels>(`/gestor/ai/models?provider=${provider}`),
+  getChannel: () =>
+    get<ApiGestorWhatsAppChannel | null>("/gestor/whatsapp/channel"),
+  listGatewayInstances: () =>
+    get<ApiGestorWhatsAppGatewayInstance[]>(
+      "/gestor/whatsapp/gateway-instances",
+    ),
   updateChannel: (data: {
     enabled?: boolean;
     phone_number_id?: string;
@@ -8443,20 +10628,53 @@ export const gestorApi = {
   }) => put<ApiGestorWhatsAppChannel>("/gestor/whatsapp/channel", data),
   listTools: () => get<ApiGestorTool[]>("/gestor/tools"),
   listContacts: () => get<ApiGestorContact[]>("/gestor/contacts"),
-  createContact: (data: { admin_user_id: string; phone: string; display_name: string; role: string; active?: boolean; requires_reauth?: boolean }) =>
-    post<ApiGestorContact>("/gestor/contacts", data),
-  updateContact: (id: string, data: Partial<Pick<ApiGestorContact, "phone_normalized" | "display_name" | "role" | "active" | "requires_reauth">> & { phone?: string }) =>
+  createContact: (data: {
+    admin_user_id: string;
+    phone: string;
+    display_name: string;
+    role: string;
+    active?: boolean;
+    requires_reauth?: boolean;
+  }) => post<ApiGestorContact>("/gestor/contacts", data),
+  updateContact: (
+    id: string,
+    data: Partial<
+      Pick<
+        ApiGestorContact,
+        | "phone_normalized"
+        | "display_name"
+        | "role"
+        | "active"
+        | "requires_reauth"
+      >
+    > & { phone?: string },
+  ) =>
     patch<ApiGestorContact>(`/gestor/contacts/${encodeURIComponent(id)}`, data),
-  listOperations: (limit = 100) => get<ApiGestorOperation[]>(`/gestor/operations?limit=${limit}`),
+  listOperations: (limit = 100) =>
+    get<ApiGestorOperation[]>(`/gestor/operations?limit=${limit}`),
   listOutbox: (params?: { status?: string; limit?: number }) => {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.limit) qs.set("limit", String(params.limit));
-    return get<ApiGestorOutbox[]>(`/gestor/whatsapp/outbox${qs.toString() ? `?${qs}` : ""}`);
+    return get<ApiGestorOutbox[]>(
+      `/gestor/whatsapp/outbox${qs.toString() ? `?${qs}` : ""}`,
+    );
   },
-  processOutbox: (limit = 20) => post<{ processed: number; sent: number; failed: number; deferred: number; dead: number }>(`/gestor/whatsapp/outbox/process?limit=${limit}`, {}),
-  retryOutbox: (id: string) => post<{ outbox: ApiGestorOutbox }>(`/gestor/whatsapp/outbox/${encodeURIComponent(id)}/retry`, {}),
-  listAutomations: (limit = 100) => get<ApiGestorAutomation[]>(`/gestor/automations?limit=${limit}`),
+  processOutbox: (limit = 20) =>
+    post<{
+      processed: number;
+      sent: number;
+      failed: number;
+      deferred: number;
+      dead: number;
+    }>(`/gestor/whatsapp/outbox/process?limit=${limit}`, {}),
+  retryOutbox: (id: string) =>
+    post<{ outbox: ApiGestorOutbox }>(
+      `/gestor/whatsapp/outbox/${encodeURIComponent(id)}/retry`,
+      {},
+    ),
+  listAutomations: (limit = 100) =>
+    get<ApiGestorAutomation[]>(`/gestor/automations?limit=${limit}`),
   createAutomation: (data: {
     name: string;
     description?: string;
@@ -8474,9 +10692,18 @@ export const gestorApi = {
     service_weekdays?: number[];
     opt_out_required?: boolean;
   }) => post<ApiGestorAutomation>("/gestor/automations", data),
-  updateAutomation: (id: string, data: Partial<ApiGestorAutomation>) => patch<ApiGestorAutomation>(`/gestor/automations/${encodeURIComponent(id)}`, data),
-  deleteAutomation: (id: string) => del<ApiGestorAutomation>(`/gestor/automations/${encodeURIComponent(id)}`),
-  processAutomationEvents: (limit = 25) => post<ApiGestorAutomationProcess>(`/gestor/automations/events/process?limit=${limit}`, {}),
+  updateAutomation: (id: string, data: Partial<ApiGestorAutomation>) =>
+    patch<ApiGestorAutomation>(
+      `/gestor/automations/${encodeURIComponent(id)}`,
+      data,
+    ),
+  deleteAutomation: (id: string) =>
+    del<ApiGestorAutomation>(`/gestor/automations/${encodeURIComponent(id)}`),
+  processAutomationEvents: (limit = 25) =>
+    post<ApiGestorAutomationProcess>(
+      `/gestor/automations/events/process?limit=${limit}`,
+      {},
+    ),
 };
 
 export const centralAIApi = {
@@ -8484,20 +10711,44 @@ export const centralAIApi = {
   update: (data: { provider: "openai" | "claude"; api_key: string }) =>
     put<ApiCentralAICredential>("/ai/credentials/central", data),
   listModels: (provider?: "openai" | "claude") =>
-    get<{ provider: "openai" | "claude"; models: Array<{ id: string; name: string; provider: "openai" | "claude"; owned_by?: string | null; created_at?: string | null }>; credential_source: "central" }>(
+    get<{
+      provider: "openai" | "claude";
+      models: Array<{
+        id: string;
+        name: string;
+        provider: "openai" | "claude";
+        owned_by?: string | null;
+        created_at?: string | null;
+      }>;
+      credential_source: "central";
+    }>(
       `/ai/credentials/central/models${provider ? `?provider=${encodeURIComponent(provider)}` : ""}`,
     ),
 };
 
 export const whatsappGatewayApi = {
   overview: () => get<ApiWhatsAppGatewayOverview>("/whatsapp-gateway/overview"),
-  providerStatus: () => get<ApiWhatsAppGatewayProviderStatus>("/whatsapp-gateway/provider/status"),
-  updateStatus: () => get<ApiWhatsAppGatewayUpdateStatus>("/whatsapp-gateway/updates/status"),
-  checkUpdate: () => post<ApiWhatsAppGatewayUpdateStatus>("/whatsapp-gateway/updates/check", {}),
-  confirmUpdate: (data: { check_id: string; target_version: string; confirm: boolean }) =>
-    post<ApiWhatsAppGatewayUpdateConfirm>("/whatsapp-gateway/updates/confirm", data),
-  schedulerSettings: () => get<ApiWhatsAppGatewaySchedulerSettings>("/whatsapp-gateway/scheduler/settings"),
-  listInstances: () => get<ApiWhatsAppGatewayInstance[]>("/whatsapp-gateway/instances"),
+  providerStatus: () =>
+    get<ApiWhatsAppGatewayProviderStatus>("/whatsapp-gateway/provider/status"),
+  updateStatus: () =>
+    get<ApiWhatsAppGatewayUpdateStatus>("/whatsapp-gateway/updates/status"),
+  checkUpdate: () =>
+    post<ApiWhatsAppGatewayUpdateStatus>("/whatsapp-gateway/updates/check", {}),
+  confirmUpdate: (data: {
+    check_id: string;
+    target_version: string;
+    confirm: boolean;
+  }) =>
+    post<ApiWhatsAppGatewayUpdateConfirm>(
+      "/whatsapp-gateway/updates/confirm",
+      data,
+    ),
+  schedulerSettings: () =>
+    get<ApiWhatsAppGatewaySchedulerSettings>(
+      "/whatsapp-gateway/scheduler/settings",
+    ),
+  listInstances: () =>
+    get<ApiWhatsAppGatewayInstance[]>("/whatsapp-gateway/instances"),
   createInstance: (data: {
     name: string;
     phone_number?: string | null;
@@ -8506,51 +10757,111 @@ export const whatsappGatewayApi = {
     company_id?: string;
     metadata?: Record<string, unknown>;
   }) => post<ApiWhatsAppGatewayInstance>("/whatsapp-gateway/instances", data),
-  getInstance: (id: string) => get<ApiWhatsAppGatewayInstance>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}`),
+  getInstance: (id: string) =>
+    get<ApiWhatsAppGatewayInstance>(
+      `/whatsapp-gateway/instances/${encodeURIComponent(id)}`,
+    ),
   connectInstance: (id: string) =>
-    post<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/connect`, {}),
+    post<ApiWhatsAppGatewayRuntimeCommand>(
+      `/whatsapp-gateway/instances/${encodeURIComponent(id)}/connect`,
+      {},
+    ),
   getQrCode: (id: string) =>
-    get<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/qrcode`),
+    get<ApiWhatsAppGatewayRuntimeCommand>(
+      `/whatsapp-gateway/instances/${encodeURIComponent(id)}/qrcode`,
+    ),
   getPairingCode: (id: string, data: { phone_number: string }) =>
-    post<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/pairing-code`, data),
+    post<ApiWhatsAppGatewayRuntimeCommand>(
+      `/whatsapp-gateway/instances/${encodeURIComponent(id)}/pairing-code`,
+      data,
+    ),
   getInstanceStatus: (id: string) =>
-    get<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/status`),
+    get<ApiWhatsAppGatewayRuntimeCommand>(
+      `/whatsapp-gateway/instances/${encodeURIComponent(id)}/status`,
+    ),
   disconnectInstance: (id: string) =>
-    post<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/disconnect`, {}),
+    post<ApiWhatsAppGatewayRuntimeCommand>(
+      `/whatsapp-gateway/instances/${encodeURIComponent(id)}/disconnect`,
+      {},
+    ),
   deleteInstance: (id: string) =>
-    del<ApiWhatsAppGatewayDeleteResponse>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}`),
+    del<ApiWhatsAppGatewayDeleteResponse>(
+      `/whatsapp-gateway/instances/${encodeURIComponent(id)}`,
+    ),
   restartInstance: (id: string) =>
-    post<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/restart`, {}),
+    post<ApiWhatsAppGatewayRuntimeCommand>(
+      `/whatsapp-gateway/instances/${encodeURIComponent(id)}/restart`,
+      {},
+    ),
   listLogs: (params?: { instance_id?: string; limit?: number }) => {
     const qs = new URLSearchParams();
     if (params?.instance_id) qs.set("instance_id", params.instance_id);
     if (params?.limit) qs.set("limit", String(params.limit));
-    return get<ApiWhatsAppGatewayLog[]>(`/whatsapp-gateway/logs${qs.toString() ? `?${qs}` : ""}`);
+    return get<ApiWhatsAppGatewayLog[]>(
+      `/whatsapp-gateway/logs${qs.toString() ? `?${qs}` : ""}`,
+    );
   },
 };
 
 export const agenteWhatsAppApi = {
-  dashboard: () => get<ApiAgenteWhatsAppDashboard>("/agente-whatsapp/dashboard"),
-  operationalMetrics: () => get<ApiAgenteWhatsAppOperationalMetrics>("/agente-whatsapp/operational-metrics"),
-  audioMetrics: (days = 7) => get<ApiAgenteWhatsAppAudioMetrics>(`/agente-whatsapp/audio/metrics?days=${days}`),
-  audioProductionReadiness: () => get<ApiAgenteWhatsAppProductionReadiness>("/agente-whatsapp/audio/production-readiness"),
-  cleanupAudioRetention: (params: { dry_run?: boolean; limit?: number } = {}) => {
+  dashboard: () =>
+    get<ApiAgenteWhatsAppDashboard>("/agente-whatsapp/dashboard"),
+  operationalMetrics: () =>
+    get<ApiAgenteWhatsAppOperationalMetrics>(
+      "/agente-whatsapp/operational-metrics",
+    ),
+  audioMetrics: (days = 7) =>
+    get<ApiAgenteWhatsAppAudioMetrics>(
+      `/agente-whatsapp/audio/metrics?days=${days}`,
+    ),
+  audioProductionReadiness: () =>
+    get<ApiAgenteWhatsAppProductionReadiness>(
+      "/agente-whatsapp/audio/production-readiness",
+    ),
+  cleanupAudioRetention: (
+    params: { dry_run?: boolean; limit?: number } = {},
+  ) => {
     const qs = new URLSearchParams();
     if (params.dry_run !== undefined) qs.set("dry_run", String(params.dry_run));
     if (params.limit !== undefined) qs.set("limit", String(params.limit));
-    return post<ApiAgenteWhatsAppAudioRetentionCleanup>(`/agente-whatsapp/audio/retention/cleanup${qs.toString() ? `?${qs}` : ""}`, {});
+    return post<ApiAgenteWhatsAppAudioRetentionCleanup>(
+      `/agente-whatsapp/audio/retention/cleanup${qs.toString() ? `?${qs}` : ""}`,
+      {},
+    );
   },
-  observability: () => get<ApiAgenteWhatsAppObservability>("/agente-whatsapp/observability"),
-  listAutomationTemplates: () => get<ApiAgenteWhatsAppAutomationTemplate[]>("/agente-whatsapp/automations/templates"),
-  runAutomation: (data: { key: string; limit?: number; dry_run?: boolean; message_template?: string | null }) =>
-    post<ApiAgenteWhatsAppAutomationRun>("/agente-whatsapp/automations/run", data),
+  observability: () =>
+    get<ApiAgenteWhatsAppObservability>("/agente-whatsapp/observability"),
+  listAutomationTemplates: () =>
+    get<ApiAgenteWhatsAppAutomationTemplate[]>(
+      "/agente-whatsapp/automations/templates",
+    ),
+  runAutomation: (data: {
+    key: string;
+    limit?: number;
+    dry_run?: boolean;
+    message_template?: string | null;
+  }) =>
+    post<ApiAgenteWhatsAppAutomationRun>(
+      "/agente-whatsapp/automations/run",
+      data,
+    ),
   runDueAutomations: (limitPerAutomation = 30) =>
-    post<{ success: boolean; message: string; data: { processed: number; queued: number; enqueued: number } }>(
+    post<{
+      success: boolean;
+      message: string;
+      data: { processed: number; queued: number; enqueued: number };
+    }>(
       `/agente-whatsapp/automations/run-due?limit_per_automation=${limitPerAutomation}`,
       {},
     ),
-  listCampaignTemplates: () => get<ApiAgenteWhatsAppCampaignTemplate[]>("/agente-whatsapp/campaigns/templates"),
-  listCampaigns: (limit = 50) => get<ApiAgenteWhatsAppCampaign[]>(`/agente-whatsapp/campaigns?limit=${limit}`),
+  listCampaignTemplates: () =>
+    get<ApiAgenteWhatsAppCampaignTemplate[]>(
+      "/agente-whatsapp/campaigns/templates",
+    ),
+  listCampaigns: (limit = 50) =>
+    get<ApiAgenteWhatsAppCampaign[]>(
+      `/agente-whatsapp/campaigns?limit=${limit}`,
+    ),
   createCampaign: (data: {
     name: string;
     message_template: string;
@@ -8560,18 +10871,25 @@ export const agenteWhatsAppApi = {
     scheduled_at?: string | null;
   }) => post<ApiAgenteWhatsAppCampaign>("/agente-whatsapp/campaigns", data),
   dispatchCampaign: (id: string, force = false) =>
-    post<ApiAgenteWhatsAppCampaignDispatch>(`/agente-whatsapp/campaigns/${encodeURIComponent(id)}/dispatch?force=${force}`, {}),
-  processScheduledCampaigns: (limit = 10) =>
-    post<{ success: boolean; message: string; data: { processed: number; queued: number; enqueued: number } }>(
-      `/agente-whatsapp/campaigns/process-scheduled?limit=${limit}`,
+    post<ApiAgenteWhatsAppCampaignDispatch>(
+      `/agente-whatsapp/campaigns/${encodeURIComponent(id)}/dispatch?force=${force}`,
       {},
     ),
-  listStoryTemplates: () => get<ApiAgenteWhatsAppStoryTemplate[]>("/agente-whatsapp/stories/templates"),
+  processScheduledCampaigns: (limit = 10) =>
+    post<{
+      success: boolean;
+      message: string;
+      data: { processed: number; queued: number; enqueued: number };
+    }>(`/agente-whatsapp/campaigns/process-scheduled?limit=${limit}`, {}),
+  listStoryTemplates: () =>
+    get<ApiAgenteWhatsAppStoryTemplate[]>("/agente-whatsapp/stories/templates"),
   listStories: (params?: { status?: string; limit?: number }) => {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.limit) qs.set("limit", String(params.limit));
-    return get<ApiAgenteWhatsAppStory[]>(`/agente-whatsapp/stories${qs.toString() ? `?${qs}` : ""}`);
+    return get<ApiAgenteWhatsAppStory[]>(
+      `/agente-whatsapp/stories${qs.toString() ? `?${qs}` : ""}`,
+    );
   },
   createStory: (data: {
     title: string;
@@ -8584,14 +10902,21 @@ export const agenteWhatsAppApi = {
     scheduled_at?: string | null;
   }) => post<ApiAgenteWhatsAppStory>("/agente-whatsapp/stories", data),
   updateStory: (id: string, data: Partial<ApiAgenteWhatsAppStory>) =>
-    patch<ApiAgenteWhatsAppStory>(`/agente-whatsapp/stories/${encodeURIComponent(id)}`, data),
+    patch<ApiAgenteWhatsAppStory>(
+      `/agente-whatsapp/stories/${encodeURIComponent(id)}`,
+      data,
+    ),
   publishStory: (id: string, force = false) =>
-    post<ApiAgenteWhatsAppStoryPublish>(`/agente-whatsapp/stories/${encodeURIComponent(id)}/publish?force=${force}`, {}),
-  processScheduledStories: (limit = 10) =>
-    post<{ success: boolean; message: string; data: { processed: number; published: number } }>(
-      `/agente-whatsapp/stories/process-scheduled?limit=${limit}`,
+    post<ApiAgenteWhatsAppStoryPublish>(
+      `/agente-whatsapp/stories/${encodeURIComponent(id)}/publish?force=${force}`,
       {},
     ),
+  processScheduledStories: (limit = 10) =>
+    post<{
+      success: boolean;
+      message: string;
+      data: { processed: number; published: number };
+    }>(`/agente-whatsapp/stories/process-scheduled?limit=${limit}`, {}),
   listTools: () => get<ApiAgenteWhatsAppTool[]>("/agente-whatsapp/tools"),
   executeTool: (data: {
     tool_name: string;
@@ -8599,36 +10924,78 @@ export const agenteWhatsAppApi = {
     session_id?: string | null;
     customer_id?: string | null;
   }) => post<ApiAgenteWhatsAppToolCall>("/agente-whatsapp/tools/execute", data),
-  getAISettings: () => get<ApiAgenteWhatsAppAISettings>("/agente-whatsapp/ai/settings"),
+  getAISettings: () =>
+    get<ApiAgenteWhatsAppAISettings>("/agente-whatsapp/ai/settings"),
   updateAISettings: (data: Partial<ApiAgenteWhatsAppAISettings>) =>
     put<ApiAgenteWhatsAppAISettings>("/agente-whatsapp/ai/settings", data),
-  aiProviderStatus: () => get<ApiAgenteWhatsAppAIProviderStatus>("/agente-whatsapp/ai/settings/status"),
-  aiModels: (provider: "openai" | "claude") => get<ApiAIModels>(`/agente-whatsapp/ai/settings/models?provider=${provider}`),
-  updateAIKeys: (data: { openai_api_key?: string; anthropic_api_key?: string }) =>
-    put<ApiAgenteWhatsAppAIProviderStatus>("/agente-whatsapp/ai/settings/keys", data),
+  aiProviderStatus: () =>
+    get<ApiAgenteWhatsAppAIProviderStatus>(
+      "/agente-whatsapp/ai/settings/status",
+    ),
+  aiModels: (provider: "openai" | "claude") =>
+    get<ApiAIModels>(
+      `/agente-whatsapp/ai/settings/models?provider=${provider}`,
+    ),
+  updateAIKeys: (data: {
+    openai_api_key?: string;
+    anthropic_api_key?: string;
+  }) =>
+    put<ApiAgenteWhatsAppAIProviderStatus>(
+      "/agente-whatsapp/ai/settings/keys",
+      data,
+    ),
   testAISettings: (message?: string) =>
-    post<ApiAgenteWhatsAppAITest>("/agente-whatsapp/ai/settings/test", { message }),
-  getAudioSettings: () => get<ApiAgenteWhatsAppAudioSettings>("/agente-whatsapp/audio/settings"),
+    post<ApiAgenteWhatsAppAITest>("/agente-whatsapp/ai/settings/test", {
+      message,
+    }),
+  getAudioSettings: () =>
+    get<ApiAgenteWhatsAppAudioSettings>("/agente-whatsapp/audio/settings"),
   updateAudioSettings: (data: Partial<ApiAgenteWhatsAppAudioSettings>) =>
-    put<ApiAgenteWhatsAppAudioSettings>("/agente-whatsapp/audio/settings", data),
-  getAudioRolloutSettings: () => get<ApiAgenteWhatsAppRolloutSettings>("/agente-whatsapp/audio/rollout"),
-  updateAudioRolloutSettings: (data: Partial<ApiAgenteWhatsAppRolloutSettings>) =>
-    put<ApiAgenteWhatsAppRolloutSettings>("/agente-whatsapp/audio/rollout", data),
-  aiRespond: (sessionId: string, data: {
-    message: string;
-    auto_queue?: boolean;
-    record_inbound?: boolean;
-    source_message_id?: string | null;
-  }) => post<ApiAgenteWhatsAppAIRespond>(`/agente-whatsapp/sessions/${sessionId}/ai/respond`, data),
+    put<ApiAgenteWhatsAppAudioSettings>(
+      "/agente-whatsapp/audio/settings",
+      data,
+    ),
+  getAudioRolloutSettings: () =>
+    get<ApiAgenteWhatsAppRolloutSettings>("/agente-whatsapp/audio/rollout"),
+  updateAudioRolloutSettings: (
+    data: Partial<ApiAgenteWhatsAppRolloutSettings>,
+  ) =>
+    put<ApiAgenteWhatsAppRolloutSettings>(
+      "/agente-whatsapp/audio/rollout",
+      data,
+    ),
+  aiRespond: (
+    sessionId: string,
+    data: {
+      message: string;
+      auto_queue?: boolean;
+      record_inbound?: boolean;
+      source_message_id?: string | null;
+    },
+  ) =>
+    post<ApiAgenteWhatsAppAIRespond>(
+      `/agente-whatsapp/sessions/${sessionId}/ai/respond`,
+      data,
+    ),
   aiGuardrails: (sessionId: string) =>
-    get<ApiAgenteWhatsAppAIGuardrails>(`/agente-whatsapp/sessions/${sessionId}/ai/guardrails`),
+    get<ApiAgenteWhatsAppAIGuardrails>(
+      `/agente-whatsapp/sessions/${sessionId}/ai/guardrails`,
+    ),
   getCampaignContext: (sessionId: string) =>
-    get<ApiAgenteWhatsAppCampaignContext>(`/agente-whatsapp/sessions/${sessionId}/campaign-context`),
+    get<ApiAgenteWhatsAppCampaignContext>(
+      `/agente-whatsapp/sessions/${sessionId}/campaign-context`,
+    ),
   resolveMessageCampaignContext: (messageId: string) =>
-    post<ApiAgenteWhatsAppCampaignContext>(`/agente-whatsapp/messages/${encodeURIComponent(messageId)}/resolve-campaign-context`, {}),
-  outboxSummary: () => get<ApiAgenteWhatsAppOutboxSummary>("/agente-whatsapp/outbox/summary"),
-  outboxMetrics: () => get<ApiAgenteWhatsAppOutboxMetrics>("/agente-whatsapp/outbox/metrics"),
-  outboxAlerts: () => get<ApiAgenteWhatsAppOutboxAlerts>("/agente-whatsapp/outbox/alerts"),
+    post<ApiAgenteWhatsAppCampaignContext>(
+      `/agente-whatsapp/messages/${encodeURIComponent(messageId)}/resolve-campaign-context`,
+      {},
+    ),
+  outboxSummary: () =>
+    get<ApiAgenteWhatsAppOutboxSummary>("/agente-whatsapp/outbox/summary"),
+  outboxMetrics: () =>
+    get<ApiAgenteWhatsAppOutboxMetrics>("/agente-whatsapp/outbox/metrics"),
+  outboxAlerts: () =>
+    get<ApiAgenteWhatsAppOutboxAlerts>("/agente-whatsapp/outbox/alerts"),
   listInternalAlerts: (params?: { status?: string; limit?: number }) => {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
@@ -8638,50 +11005,103 @@ export const agenteWhatsAppApi = {
     );
   },
   acknowledgeInternalAlert: (id: string) =>
-    post<ApiAgenteWhatsAppInternalAlert>(`/agente-whatsapp/outbox/internal-alerts/${encodeURIComponent(id)}/ack`, {}),
-  getChannelSettings: () => get<ApiAgenteWhatsAppChannelSettings>("/agente-whatsapp/channel/settings"),
-  updateChannelSettings: (data: { active_provider?: "official" | "baileys"; whatsapp_gateway_instance_id?: string | null }) =>
-    put<ApiAgenteWhatsAppChannelSettings>("/agente-whatsapp/channel/settings", data),
-  listOutboxProviders: () => get<ApiAgenteWhatsAppProviderState[]>("/agente-whatsapp/outbox/providers"),
-  pauseOutboxProvider: (provider: string, data: { reason?: string; minutes?: number }) =>
-    post<ApiAgenteWhatsAppProviderState>(`/agente-whatsapp/outbox/providers/${encodeURIComponent(provider)}/pause`, data),
+    post<ApiAgenteWhatsAppInternalAlert>(
+      `/agente-whatsapp/outbox/internal-alerts/${encodeURIComponent(id)}/ack`,
+      {},
+    ),
+  getChannelSettings: () =>
+    get<ApiAgenteWhatsAppChannelSettings>("/agente-whatsapp/channel/settings"),
+  updateChannelSettings: (data: {
+    active_provider?: "official" | "baileys";
+    whatsapp_gateway_instance_id?: string | null;
+  }) =>
+    put<ApiAgenteWhatsAppChannelSettings>(
+      "/agente-whatsapp/channel/settings",
+      data,
+    ),
+  listOutboxProviders: () =>
+    get<ApiAgenteWhatsAppProviderState[]>("/agente-whatsapp/outbox/providers"),
+  pauseOutboxProvider: (
+    provider: string,
+    data: { reason?: string; minutes?: number },
+  ) =>
+    post<ApiAgenteWhatsAppProviderState>(
+      `/agente-whatsapp/outbox/providers/${encodeURIComponent(provider)}/pause`,
+      data,
+    ),
   resumeOutboxProvider: (provider: string) =>
-    post<ApiAgenteWhatsAppProviderState>(`/agente-whatsapp/outbox/providers/${encodeURIComponent(provider)}/resume`, {}),
+    post<ApiAgenteWhatsAppProviderState>(
+      `/agente-whatsapp/outbox/providers/${encodeURIComponent(provider)}/resume`,
+      {},
+    ),
   listOutbox: (params?: { status?: string; limit?: number }) => {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.limit) qs.set("limit", String(params.limit));
-    return get<ApiAgenteWhatsAppOutbox[]>(`/agente-whatsapp/outbox${qs.toString() ? `?${qs}` : ""}`);
+    return get<ApiAgenteWhatsAppOutbox[]>(
+      `/agente-whatsapp/outbox${qs.toString() ? `?${qs}` : ""}`,
+    );
   },
   enqueueOutbox: (limit = 100) =>
-    post<{ enqueued: number; skipped: number }>(`/agente-whatsapp/outbox/enqueue?limit=${limit}`, {}),
+    post<{ enqueued: number; skipped: number }>(
+      `/agente-whatsapp/outbox/enqueue?limit=${limit}`,
+      {},
+    ),
   processOutbox: (limit = 20) =>
-    post<ApiAgenteWhatsAppOutboxProcess>("/agente-whatsapp/outbox/process", { limit }),
-  processingSummary: () => get<ApiAgenteWhatsAppProcessingSummary>("/agente-whatsapp/processing/summary"),
+    post<ApiAgenteWhatsAppOutboxProcess>("/agente-whatsapp/outbox/process", {
+      limit,
+    }),
+  processingSummary: () =>
+    get<ApiAgenteWhatsAppProcessingSummary>(
+      "/agente-whatsapp/processing/summary",
+    ),
   listProcessingJobs: (params?: { status?: string; limit?: number }) => {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.limit) qs.set("limit", String(params.limit));
-    return get<ApiAgenteWhatsAppProcessingJob[]>(`/agente-whatsapp/processing/jobs${qs.toString() ? `?${qs}` : ""}`);
+    return get<ApiAgenteWhatsAppProcessingJob[]>(
+      `/agente-whatsapp/processing/jobs${qs.toString() ? `?${qs}` : ""}`,
+    );
   },
   enqueueProcessingJobs: (limit = 100) =>
-    post<ApiAgenteWhatsAppProcessingEnqueue>(`/agente-whatsapp/processing/enqueue?limit=${limit}`, {}),
+    post<ApiAgenteWhatsAppProcessingEnqueue>(
+      `/agente-whatsapp/processing/enqueue?limit=${limit}`,
+      {},
+    ),
   processAudioTranscriptions: (limit = 10) =>
-    post<ApiAgenteWhatsAppAudioProcess>(`/agente-whatsapp/processing/audio-transcriptions/process?limit=${limit}`, {}),
+    post<ApiAgenteWhatsAppAudioProcess>(
+      `/agente-whatsapp/processing/audio-transcriptions/process?limit=${limit}`,
+      {},
+    ),
   processAgentResponses: (limit = 10) =>
-    post<ApiAgenteWhatsAppAgentResponseProcess>(`/agente-whatsapp/processing/agent-responses/process?limit=${limit}`, {}),
+    post<ApiAgenteWhatsAppAgentResponseProcess>(
+      `/agente-whatsapp/processing/agent-responses/process?limit=${limit}`,
+      {},
+    ),
   processTTSGenerations: (limit = 10) =>
-    post<ApiAgenteWhatsAppTTSProcess>(`/agente-whatsapp/processing/tts-generations/process?limit=${limit}`, {}),
+    post<ApiAgenteWhatsAppTTSProcess>(
+      `/agente-whatsapp/processing/tts-generations/process?limit=${limit}`,
+      {},
+    ),
   retryMessageTTS: (messageId: string) =>
-    post<ApiAgenteWhatsAppTTSState>(`/agente-whatsapp/messages/${encodeURIComponent(messageId)}/retry-tts`, {}),
+    post<ApiAgenteWhatsAppTTSState>(
+      `/agente-whatsapp/messages/${encodeURIComponent(messageId)}/retry-tts`,
+      {},
+    ),
   retryMessageTranscription: (messageId: string) =>
-    post<ApiAgenteWhatsAppAudioState>(`/agente-whatsapp/messages/${encodeURIComponent(messageId)}/retry-transcription`, {}),
-  retryOutbox: (id: string) => post<ApiAgenteWhatsAppOutbox>(`/agente-whatsapp/outbox/${id}/retry`, {}),
+    post<ApiAgenteWhatsAppAudioState>(
+      `/agente-whatsapp/messages/${encodeURIComponent(messageId)}/retry-transcription`,
+      {},
+    ),
+  retryOutbox: (id: string) =>
+    post<ApiAgenteWhatsAppOutbox>(`/agente-whatsapp/outbox/${id}/retry`, {}),
   listSessions: (params?: { status?: string; limit?: number }) => {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.limit) qs.set("limit", String(params.limit));
-    return get<ApiAgenteWhatsAppSession[]>(`/agente-whatsapp/sessions${qs.toString() ? `?${qs}` : ""}`);
+    return get<ApiAgenteWhatsAppSession[]>(
+      `/agente-whatsapp/sessions${qs.toString() ? `?${qs}` : ""}`,
+    );
   },
   listConversations: (params?: {
     status?: string;
@@ -8694,11 +11114,14 @@ export const agenteWhatsAppApi = {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.search) qs.set("search", params.search);
-    if (params?.assigned_admin_id) qs.set("assigned_admin_id", params.assigned_admin_id);
+    if (params?.assigned_admin_id)
+      qs.set("assigned_admin_id", params.assigned_admin_id);
     if (params?.date_from) qs.set("date_from", params.date_from);
     if (params?.date_to) qs.set("date_to", params.date_to);
     if (params?.limit) qs.set("limit", String(params.limit));
-    return get<ApiAgenteWhatsAppConversation[]>(`/agente-whatsapp/conversations${qs.toString() ? `?${qs}` : ""}`);
+    return get<ApiAgenteWhatsAppConversation[]>(
+      `/agente-whatsapp/conversations${qs.toString() ? `?${qs}` : ""}`,
+    );
   },
   createSession: (data: {
     phone: string;
@@ -8710,61 +11133,111 @@ export const agenteWhatsAppApi = {
     metadata?: Record<string, unknown>;
   }) => post<ApiAgenteWhatsAppSession>("/agente-whatsapp/sessions", data),
   getSession: (sessionId: string) =>
-    get<ApiAgenteWhatsAppSessionDetail>(`/agente-whatsapp/sessions/${sessionId}`),
-  assumeSession: (sessionId: string) => agenteWhatsAppApi.updateSession(sessionId, {
-    status: "human", ai_enabled: false, automation_blocked: true,
-  }),
-  returnSessionToAI: (sessionId: string) => agenteWhatsAppApi.updateSession(sessionId, {
-    status: "open", ai_enabled: true, automation_blocked: false,
-  }),
-  sendHumanMessage: async (sessionId: string, data: {
-    body: string;
-    raw_payload?: Record<string, unknown>;
-  }): Promise<ApiAgenteWhatsAppMessage> => {
+    get<ApiAgenteWhatsAppSessionDetail>(
+      `/agente-whatsapp/sessions/${sessionId}`,
+    ),
+  assumeSession: (sessionId: string) =>
+    agenteWhatsAppApi.updateSession(sessionId, {
+      status: "human",
+      ai_enabled: false,
+      automation_blocked: true,
+    }),
+  returnSessionToAI: (sessionId: string) =>
+    agenteWhatsAppApi.updateSession(sessionId, {
+      status: "open",
+      ai_enabled: true,
+      automation_blocked: false,
+    }),
+  sendHumanMessage: async (
+    sessionId: string,
+    data: {
+      body: string;
+      raw_payload?: Record<string, unknown>;
+    },
+  ): Promise<ApiAgenteWhatsAppMessage> => {
     // Recheck persisted control: another screen may have returned this session to AI.
     const detail = await agenteWhatsAppApi.getSession(sessionId);
     requireWhatsAppHumanAttendance(detail.session);
     return agenteWhatsAppApi.addMessage(sessionId, {
-      ...data, direction: "outbound", sender_type: "human", message_type: "text", provider_status: "queued",
+      ...data,
+      direction: "outbound",
+      sender_type: "human",
+      message_type: "text",
+      provider_status: "queued",
     });
   },
-  updateSession: (sessionId: string, data: Partial<Pick<
-    ApiAgenteWhatsAppSession,
-    "status" | "current_intent" | "assigned_admin_id" | "ai_enabled" | "automation_blocked"
-  >> & { metadata?: Record<string, unknown> }) =>
-    patch<ApiAgenteWhatsAppSession>(`/agente-whatsapp/sessions/${sessionId}`, data),
+  updateSession: (
+    sessionId: string,
+    data: Partial<
+      Pick<
+        ApiAgenteWhatsAppSession,
+        | "status"
+        | "current_intent"
+        | "assigned_admin_id"
+        | "ai_enabled"
+        | "automation_blocked"
+      >
+    > & { metadata?: Record<string, unknown> },
+  ) =>
+    patch<ApiAgenteWhatsAppSession>(
+      `/agente-whatsapp/sessions/${sessionId}`,
+      data,
+    ),
   listMessages: (sessionId: string, limit = 100) =>
-    get<ApiAgenteWhatsAppMessage[]>(`/agente-whatsapp/sessions/${sessionId}/messages?limit=${limit}`),
-  addMessage: (sessionId: string, data: {
-    direction: ApiAgenteWhatsAppMessage["direction"];
-    sender_type: ApiAgenteWhatsAppMessage["sender_type"];
-    message_type?: string;
-    body?: string | null;
-    media_url?: string | null;
-    media_storage_key?: string | null;
-    media_mime_type?: string | null;
-    media_duration_ms?: number | null;
-    media_size_bytes?: number | null;
-    provider_message_id?: string | null;
-    provider?: string | null;
-    quoted_provider_message_id?: string | null;
-    response_to_message_id?: string | null;
-    campaign_id?: string | null;
-    campaign_delivery_id?: string | null;
-    provider_status?: string | null;
-    raw_payload?: Record<string, unknown>;
-  }) => post<ApiAgenteWhatsAppMessage>(`/agente-whatsapp/sessions/${sessionId}/messages`, data),
+    get<ApiAgenteWhatsAppMessage[]>(
+      `/agente-whatsapp/sessions/${sessionId}/messages?limit=${limit}`,
+    ),
+  addMessage: (
+    sessionId: string,
+    data: {
+      direction: ApiAgenteWhatsAppMessage["direction"];
+      sender_type: ApiAgenteWhatsAppMessage["sender_type"];
+      message_type?: string;
+      body?: string | null;
+      media_url?: string | null;
+      media_storage_key?: string | null;
+      media_mime_type?: string | null;
+      media_duration_ms?: number | null;
+      media_size_bytes?: number | null;
+      provider_message_id?: string | null;
+      provider?: string | null;
+      quoted_provider_message_id?: string | null;
+      response_to_message_id?: string | null;
+      campaign_id?: string | null;
+      campaign_delivery_id?: string | null;
+      provider_status?: string | null;
+      raw_payload?: Record<string, unknown>;
+    },
+  ) =>
+    post<ApiAgenteWhatsAppMessage>(
+      `/agente-whatsapp/sessions/${sessionId}/messages`,
+      data,
+    ),
 };
 
 export const crmApi = {
   analyzeAllCustomers: () => post<ApiCRMAnalysisJob>("/crm/analyze-all", {}),
-  getAnalysisStatus: (limit = 100) => get<ApiCRMAnalysisStatus>(`/crm/analysis/status?limit=${limit}`),
+  getAnalysisStatus: (limit = 100) =>
+    get<ApiCRMAnalysisStatus>(`/crm/analysis/status?limit=${limit}`),
   listTags: (status = "active", search?: string) =>
-    get<ApiCustomerTag[]>(`/crm/tags?status=${encodeURIComponent(status)}${search ? `&search=${encodeURIComponent(search)}` : ""}`),
-  createTag: (data: { name: string; description?: string | null; color?: string; source?: string }) =>
-    post<ApiCustomerTag>("/crm/tags", data),
-  updateTag: (id: string, data: { name?: string; description?: string | null; color?: string; status?: string }) =>
-    request<ApiCustomerTag>("PATCH", `/crm/tags/${id}`, data),
+    get<ApiCustomerTag[]>(
+      `/crm/tags?status=${encodeURIComponent(status)}${search ? `&search=${encodeURIComponent(search)}` : ""}`,
+    ),
+  createTag: (data: {
+    name: string;
+    description?: string | null;
+    color?: string;
+    source?: string;
+  }) => post<ApiCustomerTag>("/crm/tags", data),
+  updateTag: (
+    id: string,
+    data: {
+      name?: string;
+      description?: string | null;
+      color?: string;
+      status?: string;
+    },
+  ) => request<ApiCustomerTag>("PATCH", `/crm/tags/${id}`, data),
   inactiveTag: (id: string) => del<void>(`/crm/tags/${id}`),
   listCustomerTags: (customerId: string) =>
     get<ApiCustomerTag[]>(`/crm/customers/${customerId}/tags`),
@@ -8773,11 +11246,24 @@ export const crmApi = {
   removeCustomerTag: (customerId: string, tagId: string) =>
     del<void>(`/crm/customers/${customerId}/tags/${tagId}`),
   listSegments: (status = "active") =>
-    get<ApiCustomerSegment[]>(`/crm/segments?status=${encodeURIComponent(status)}`),
-  createSegment: (data: { name: string; description?: string | null; rules?: ApiCustomerSegmentRule[]; source?: string }) =>
-    post<ApiCustomerSegment>("/crm/segments", data),
-  updateSegment: (id: string, data: { name?: string; description?: string | null; rules?: ApiCustomerSegmentRule[]; status?: string }) =>
-    request<ApiCustomerSegment>("PATCH", `/crm/segments/${id}`, data),
+    get<ApiCustomerSegment[]>(
+      `/crm/segments?status=${encodeURIComponent(status)}`,
+    ),
+  createSegment: (data: {
+    name: string;
+    description?: string | null;
+    rules?: ApiCustomerSegmentRule[];
+    source?: string;
+  }) => post<ApiCustomerSegment>("/crm/segments", data),
+  updateSegment: (
+    id: string,
+    data: {
+      name?: string;
+      description?: string | null;
+      rules?: ApiCustomerSegmentRule[];
+      status?: string;
+    },
+  ) => request<ApiCustomerSegment>("PATCH", `/crm/segments/${id}`, data),
   inactiveSegment: (id: string) => del<void>(`/crm/segments/${id}`),
   previewSegment: (id: string, limit = 50) =>
     post<ApiSegmentPreview>(`/crm/segments/${id}/preview?limit=${limit}`, {}),
@@ -8811,12 +11297,13 @@ export const customerEventsApi = {
     browser?: string | null;
     page_url?: string | null;
     referrer_url?: string | null;
-  }) => request<{ id: string }>(
-    "POST",
-    "/customer-events",
-    data,
-    data.customer_id ? customerAccessHeaders(data.customer_id) : undefined,
-  ),
+  }) =>
+    request<{ id: string }>(
+      "POST",
+      "/customer-events",
+      data,
+      data.customer_id ? customerAccessHeaders(data.customer_id) : undefined,
+    ),
   identify: (session_id: string, customer_id: string) =>
     request<{ updated_events: number }>(
       "POST",
@@ -8830,7 +11317,9 @@ export const customerEventsApi = {
 
 export const campaignsApi = {
   list: (publishedOnly = false) =>
-    get<ApiCampaign[]>(`/campaigns${publishedOnly ? "?published_only=true" : ""}`),
+    get<ApiCampaign[]>(
+      `/campaigns${publishedOnly ? "?published_only=true" : ""}`,
+    ),
 
   getBySlug: (slug: string) => get<ApiCampaign>(`/campaigns/slug/${slug}`),
 
@@ -8847,20 +11336,30 @@ export const campaignsApi = {
   listProducts: (campaignId: string) =>
     get<ApiCampaignProduct[]>(`/campaigns/${campaignId}/products`),
 
-  addProduct: (campaignId: string, data: Omit<ApiCampaignProduct, "id" | "campaign_id" | "created_at">) =>
-    post<ApiCampaignProduct>(`/campaigns/${campaignId}/products`, data),
+  addProduct: (
+    campaignId: string,
+    data: Omit<ApiCampaignProduct, "id" | "campaign_id" | "created_at">,
+  ) => post<ApiCampaignProduct>(`/campaigns/${campaignId}/products`, data),
 
   removeProduct: (cpId: string) => del<void>(`/campaigns/products/${cpId}`),
 
   listKits: (activeOnly = false) =>
-    get<ApiPromotionalKit[]>(`/campaigns/kits/all${activeOnly ? "?active_only=true" : ""}`),
+    get<ApiPromotionalKit[]>(
+      `/campaigns/kits/all${activeOnly ? "?active_only=true" : ""}`,
+    ),
 
-  getKitBySlug: (slug: string) => get<ApiPromotionalKit>(`/campaigns/kits/slug/${encodeURIComponent(slug)}`),
+  getKitBySlug: (slug: string) =>
+    get<ApiPromotionalKit>(`/campaigns/kits/slug/${encodeURIComponent(slug)}`),
 
-  getKitById: (id: string) => get<ApiPromotionalKit>(`/campaigns/kits/id/${encodeURIComponent(id)}`),
+  getKitById: (id: string) =>
+    get<ApiPromotionalKit>(`/campaigns/kits/id/${encodeURIComponent(id)}`),
 
-  createKit: (data: Omit<ApiPromotionalKit, "id" | "created_at" | "updated_at" | "items"> & { items?: ApiKitItem[] }) =>
-    post<ApiPromotionalKit>("/campaigns/kits", data),
+  createKit: (
+    data: Omit<
+      ApiPromotionalKit,
+      "id" | "created_at" | "updated_at" | "items"
+    > & { items?: ApiKitItem[] },
+  ) => post<ApiPromotionalKit>("/campaigns/kits", data),
 
   updateKit: (id: string, data: Partial<ApiPromotionalKit>) =>
     put<ApiPromotionalKit>(`/campaigns/kits/${id}`, data),
@@ -8868,54 +11367,177 @@ export const campaignsApi = {
   removeKit: (id: string) => del<void>(`/campaigns/kits/${id}`),
 
   addKitItem: (kitId: string, product_id: string, quantity: number) =>
-    post<ApiKitItem>(`/campaigns/kits/${kitId}/items`, { product_id, quantity }),
+    post<ApiKitItem>(`/campaigns/kits/${kitId}/items`, {
+      product_id,
+      quantity,
+    }),
 
-  removeKitItem: (itemId: string) => del<void>(`/campaigns/kits/items/${itemId}`),
+  removeKitItem: (itemId: string) =>
+    del<void>(`/campaigns/kits/items/${itemId}`),
 };
 
 export const strategicCampaignsApi = {
   list: () => get<ApiStrategicCampaign[]>("/strategic-campaigns"),
+  listAvailable: (entryChannel: StrategicEntryChannel) =>
+    get<ApiAvailableStrategicCampaign[]>(
+      `/strategic-campaigns/available?entry_channel=${encodeURIComponent(entryChannel)}`,
+    ),
+  listAvailableOffers: (
+    campaignId: string,
+    entryChannel: StrategicEntryChannel,
+  ) =>
+    get<ApiStrategicOffer[]>(
+      `/strategic-campaigns/${encodeURIComponent(campaignId)}/available-offers?entry_channel=${encodeURIComponent(entryChannel)}`,
+    ),
+  getOfferConfiguration: (offerId: string, campaignVersion?: number) => {
+    const query =
+      campaignVersion == null
+        ? ""
+        : `?campaign_version=${encodeURIComponent(String(campaignVersion))}`;
+    return get<ApiStrategicOfferConfiguration>(
+      `/strategic-campaigns/offers/${encodeURIComponent(offerId)}/configuration${query}`,
+    );
+  },
+  publicOfferConfiguration: (offerId: string, campaignVersion?: number) => {
+    const query =
+      campaignVersion == null
+        ? ""
+        : `?campaign_version=${encodeURIComponent(String(campaignVersion))}`;
+    return get<ApiStrategicOfferConfiguration>(
+      `/strategic-campaigns/public/offers/${encodeURIComponent(offerId)}/configuration${query}`,
+    );
+  },
   get: (id: string) => get<ApiStrategicCampaign>(`/strategic-campaigns/${id}`),
-  create: (data: Pick<ApiStrategicCampaign, "name" | "commercial_name" | "slug" | "description" | "starts_at" | "ends_at"> & { commercial_config?: StrategicCommercialConfig; marketing_config?: StrategicMarketingConfig }) =>
-    post<ApiStrategicCampaign>("/strategic-campaigns", data),
-  duplicate: (campaignId: string, data: { name?: string; slug?: string } = {}) =>
-    post<ApiStrategicCampaign>(`/strategic-campaigns/${campaignId}/duplicate`, data),
-  update: (id: string, data: Partial<Pick<ApiStrategicCampaign, "name" | "commercial_name" | "slug" | "description" | "starts_at" | "ends_at" | "status" | "visual_config" | "commercial_config" | "marketing_config">>) =>
-    put<ApiStrategicCampaign>(`/strategic-campaigns/${id}`, data),
-  addOffer: (campaignId: string, data: Omit<StrategicOfferInput, "campaign_id">) =>
+  create: (
+    data: Pick<
+      ApiStrategicCampaign,
+      | "name"
+      | "commercial_name"
+      | "slug"
+      | "description"
+      | "starts_at"
+      | "ends_at"
+    > & {
+      commercial_config?: StrategicCommercialConfig;
+      marketing_config?: StrategicMarketingConfig;
+    },
+  ) => post<ApiStrategicCampaign>("/strategic-campaigns", data),
+  duplicate: (
+    campaignId: string,
+    data: { name?: string; slug?: string } = {},
+  ) =>
+    post<ApiStrategicCampaign>(
+      `/strategic-campaigns/${campaignId}/duplicate`,
+      data,
+    ),
+  update: (
+    id: string,
+    data: Partial<
+      Pick<
+        ApiStrategicCampaign,
+        | "name"
+        | "commercial_name"
+        | "slug"
+        | "description"
+        | "starts_at"
+        | "ends_at"
+        | "status"
+        | "visual_config"
+        | "commercial_config"
+        | "marketing_config"
+      >
+    >,
+  ) => put<ApiStrategicCampaign>(`/strategic-campaigns/${id}`, data),
+  addOffer: (
+    campaignId: string,
+    data: Omit<StrategicOfferInput, "campaign_id">,
+  ) =>
     post<ApiStrategicOffer>(`/strategic-campaigns/${campaignId}/offers`, data),
-  updateOffer: (offerId: string, data: Partial<Omit<StrategicOfferInput, "campaign_id"> & Pick<ApiStrategicOffer, "active">>) =>
-    put<ApiStrategicOffer>(`/strategic-campaigns/offers/${offerId}`, data),
-  duplicateOffer: (offerId: string, data: { code?: string; title?: string } = {}) =>
-    post<ApiStrategicOffer>(`/strategic-campaigns/offers/${offerId}/duplicate`, data),
+  updateOffer: (
+    offerId: string,
+    data: Partial<
+      Omit<StrategicOfferInput, "campaign_id"> &
+        Pick<ApiStrategicOffer, "active">
+    >,
+  ) => put<ApiStrategicOffer>(`/strategic-campaigns/offers/${offerId}`, data),
+  duplicateOffer: (
+    offerId: string,
+    data: { code?: string; title?: string } = {},
+  ) =>
+    post<ApiStrategicOffer>(
+      `/strategic-campaigns/offers/${offerId}/duplicate`,
+      data,
+    ),
   reorderOffers: (campaignId: string, offerIds: string[]) =>
-    put<ApiStrategicOffer[]>(`/strategic-campaigns/${campaignId}/offers/reorder`, { offer_ids: offerIds }),
+    put<ApiStrategicOffer[]>(
+      `/strategic-campaigns/${campaignId}/offers/reorder`,
+      { offer_ids: offerIds },
+    ),
   archiveOffer: (offerId: string) =>
-    post<ApiStrategicOffer>(`/strategic-campaigns/offers/${offerId}/archive`, {}),
+    post<ApiStrategicOffer>(
+      `/strategic-campaigns/offers/${offerId}/archive`,
+      {},
+    ),
   publish: (campaignId: string) =>
-    post<{ id: string; campaign_id: string; version: number; snapshot: Record<string, unknown>; published_at: string }>(`/strategic-campaigns/${campaignId}/publish`, {}),
+    post<{
+      id: string;
+      campaign_id: string;
+      version: number;
+      snapshot: Record<string, unknown>;
+      published_at: string;
+    }>(`/strategic-campaigns/${campaignId}/publish`, {}),
   listCapacitySlots: (campaignId: string) =>
-    get<ApiStrategicCapacitySlot[]>(`/strategic-campaigns/${campaignId}/capacity-slots`),
+    get<ApiStrategicCapacitySlot[]>(
+      `/strategic-campaigns/${campaignId}/capacity-slots`,
+    ),
   createCapacitySlot: (campaignId: string, data: StrategicCapacitySlotCreate) =>
-    post<ApiStrategicCapacitySlot>(`/strategic-campaigns/${campaignId}/capacity-slots`, data),
+    post<ApiStrategicCapacitySlot>(
+      `/strategic-campaigns/${campaignId}/capacity-slots`,
+      data,
+    ),
   updateCapacitySlot: (slotId: string, data: StrategicCapacitySlotUpdate) =>
-    put<ApiStrategicCapacitySlot>(`/strategic-campaigns/capacity-slots/${slotId}`, data),
+    put<ApiStrategicCapacitySlot>(
+      `/strategic-campaigns/capacity-slots/${slotId}`,
+      data,
+    ),
   listReservations: (campaignId: string, status?: StrategicReservationStatus) =>
-    get<ApiStrategicReservation[]>(`/strategic-campaigns/${campaignId}/reservations${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+    get<ApiStrategicReservation[]>(
+      `/strategic-campaigns/${campaignId}/reservations${status ? `?status=${encodeURIComponent(status)}` : ""}`,
+    ),
   createReservation: (campaignId: string, data: StrategicReservationCreate) =>
-    post<ApiStrategicReservation>(`/strategic-campaigns/${campaignId}/reservations`, data),
+    post<ApiStrategicReservation>(
+      `/strategic-campaigns/${campaignId}/reservations`,
+      data,
+    ),
   confirmReservation: (reservationId: string) =>
-    post<ApiStrategicReservation>(`/strategic-campaigns/reservations/${reservationId}/confirm`, {}),
-  releaseReservation: (reservationId: string, data: { reason: string; cancelled?: boolean }) =>
-    post<ApiStrategicReservation>(`/strategic-campaigns/reservations/${reservationId}/release`, { ...data, cancelled: data.cancelled ?? false }),
+    post<ApiStrategicReservation>(
+      `/strategic-campaigns/reservations/${reservationId}/confirm`,
+      {},
+    ),
+  releaseReservation: (
+    reservationId: string,
+    data: { reason: string; cancelled?: boolean },
+  ) =>
+    post<ApiStrategicReservation>(
+      `/strategic-campaigns/reservations/${reservationId}/release`,
+      { ...data, cancelled: data.cancelled ?? false },
+    ),
   expireReservations: (campaignId: string) =>
-    post<StrategicReservationExpirationResult>(`/strategic-campaigns/${campaignId}/reservations/expire`, {}),
-  publicBySlug: (slug: string) => get<ApiStrategicCampaign>(`/strategic-campaigns/public/${encodeURIComponent(slug)}`),
+    post<StrategicReservationExpirationResult>(
+      `/strategic-campaigns/${campaignId}/reservations/expire`,
+      {},
+    ),
+  publicBySlug: (slug: string) =>
+    get<ApiStrategicCampaign>(
+      `/strategic-campaigns/public/${encodeURIComponent(slug)}`,
+    ),
   metrics: (id: string, dateFrom?: string, dateTo?: string) => {
     const qs = new URLSearchParams();
     if (dateFrom) qs.set("date_from", dateFrom);
     if (dateTo) qs.set("date_to", dateTo);
-    return get<StrategicCampaignMetrics>(`/strategic-campaigns/${id}/metrics?${qs.toString()}`);
+    return get<StrategicCampaignMetrics>(
+      `/strategic-campaigns/${id}/metrics?${qs.toString()}`,
+    );
   },
 };
 
@@ -8947,27 +11569,57 @@ export interface CampaignPixelConfig {
 
 export const paidTrafficApi = {
   dashboard: () => get<PaidTrafficDashboard>("/paid-traffic/dashboard"),
-  realtime: (windowMinutes = 15) => get<PaidTrafficRealtime>(`/paid-traffic/realtime?window_minutes=${windowMinutes}`),
+  realtime: (windowMinutes = 15) =>
+    get<PaidTrafficRealtime>(
+      `/paid-traffic/realtime?window_minutes=${windowMinutes}`,
+    ),
   campaigns: () => get<TrafficCampaign[]>("/paid-traffic/campaigns"),
-  createCampaign: (data: Partial<TrafficCampaign>) => post<TrafficCampaign>("/paid-traffic/campaigns", data),
-  updateCampaign: (id: string, data: Partial<TrafficCampaign>) => put<TrafficCampaign>(`/paid-traffic/campaigns/${id}`, data),
+  createCampaign: (data: Partial<TrafficCampaign>) =>
+    post<TrafficCampaign>("/paid-traffic/campaigns", data),
+  updateCampaign: (id: string, data: Partial<TrafficCampaign>) =>
+    put<TrafficCampaign>(`/paid-traffic/campaigns/${id}`, data),
   removeCampaign: (id: string) => del<void>(`/paid-traffic/campaigns/${id}`),
-  links: (campaignId?: string) => get<CampaignLink[]>(`/paid-traffic/links${campaignId ? `?campaign_id=${campaignId}` : ""}`),
-  createLink: (data: Partial<CampaignLink> & { campaign_id: string }) => post<CampaignLink>("/paid-traffic/links", data),
+  links: (campaignId?: string) =>
+    get<CampaignLink[]>(
+      `/paid-traffic/links${campaignId ? `?campaign_id=${campaignId}` : ""}`,
+    ),
+  createLink: (data: Partial<CampaignLink> & { campaign_id: string }) =>
+    post<CampaignLink>("/paid-traffic/links", data),
   integrations: () => get<AdIntegration[]>("/paid-traffic/integrations"),
-  saveIntegration: (data: { platform: string; access_token?: string; refresh_token?: string; account_name?: string }) =>
-    post<AdIntegration>("/paid-traffic/integrations", data),
-  disconnectIntegration: (platform: string) => post<AdIntegration>(`/paid-traffic/integrations/${platform}/disconnect`, {}),
-  syncIntegration: (platform: string) => post<{ status: string; message: string }>(`/paid-traffic/integrations/${platform}/sync`, {}),
+  saveIntegration: (data: {
+    platform: string;
+    access_token?: string;
+    refresh_token?: string;
+    account_name?: string;
+  }) => post<AdIntegration>("/paid-traffic/integrations", data),
+  disconnectIntegration: (platform: string) =>
+    post<AdIntegration>(
+      `/paid-traffic/integrations/${platform}/disconnect`,
+      {},
+    ),
+  syncIntegration: (platform: string) =>
+    post<{ status: string; message: string }>(
+      `/paid-traffic/integrations/${platform}/sync`,
+      {},
+    ),
   settings: () => get<CampaignSettings>("/paid-traffic/settings"),
-  updateSettings: (data: Partial<CampaignSettings>) => put<CampaignSettings>("/paid-traffic/settings", data),
-  creatives: (campaignId: string) => get<CampaignCreative[]>(`/paid-traffic/campaigns/${campaignId}/creatives`),
-  addCreative: (campaignId: string, data: { media_url: string; creative_type: string; name?: string }) =>
-    post<CampaignCreative>(`/paid-traffic/campaigns/${campaignId}/creatives`, data),
+  updateSettings: (data: Partial<CampaignSettings>) =>
+    put<CampaignSettings>("/paid-traffic/settings", data),
+  creatives: (campaignId: string) =>
+    get<CampaignCreative[]>(`/paid-traffic/campaigns/${campaignId}/creatives`),
+  addCreative: (
+    campaignId: string,
+    data: { media_url: string; creative_type: string; name?: string },
+  ) =>
+    post<CampaignCreative>(
+      `/paid-traffic/campaigns/${campaignId}/creatives`,
+      data,
+    ),
   deleteCreative: (campaignId: string, creativeId: string) =>
     del<void>(`/paid-traffic/campaigns/${campaignId}/creatives/${creativeId}`),
   pixels: () => get<AdsPixel[]>("/ads/pixels"),
-  storePixelConfig: () => get<CampaignPixelConfig[]>("/paid-traffic/pixels/store-config"),
+  storePixelConfig: () =>
+    get<CampaignPixelConfig[]>("/paid-traffic/pixels/store-config"),
   createPixel: (data: {
     platform: string;
     pixel_id: string;
@@ -8975,20 +11627,26 @@ export const paidTrafficApi = {
     conversion_access_token?: string;
     base_code?: string;
   }) => post<AdsPixel>("/ads/pixels", data),
-  updatePixel: (id: string, data: {
-    enabled?: boolean;
-    pixel_id?: string;
-    events_tracked?: string;
-    conversion_access_token?: string;
-    base_code?: string;
-  }) =>
-    patch<AdsPixel>(`/ads/pixels/${id}`, data),
+  updatePixel: (
+    id: string,
+    data: {
+      enabled?: boolean;
+      pixel_id?: string;
+      events_tracked?: string;
+      conversion_access_token?: string;
+      base_code?: string;
+    },
+  ) => patch<AdsPixel>(`/ads/pixels/${id}`, data),
   deletePixel: (id: string) => del<void>(`/ads/pixels/${id}`),
-  campaignPixelConfig: (campaignId: string) => get<CampaignPixelConfig | null>(`/paid-traffic/campaigns/${campaignId}/pixel-config`),
+  campaignPixelConfig: (campaignId: string) =>
+    get<CampaignPixelConfig | null>(
+      `/paid-traffic/campaigns/${campaignId}/pixel-config`,
+    ),
 };
 
 export const trackingApi = {
-  event: (data: Record<string, unknown>) => post<{ id: string }>("/tracking/event", data),
+  event: (data: Record<string, unknown>) =>
+    post<{ id: string }>("/tracking/event", data),
 };
 
 export const marketingTrackApi = {
@@ -9012,7 +11670,11 @@ export const marketingTrackApi = {
 };
 
 export const marketingVisitorsApi = {
-  list: (params: MarketingVisitorsPeriod | { period?: MarketingVisitorsPeriod; date?: string } = "today") => {
+  list: (
+    params:
+      | MarketingVisitorsPeriod
+      | { period?: MarketingVisitorsPeriod; date?: string } = "today",
+  ) => {
     const qs = new URLSearchParams();
     if (typeof params === "string") {
       qs.set("period", params);
@@ -9029,7 +11691,8 @@ export const marketingVisitorsApi = {
 export const adminApi = {
   dashboard: () => get<ApiDashboard>("/admin/dashboard"),
 
-  getPaymentGateway: () => get<ApiPaymentGatewayConfig>("/admin/payment-gateway"),
+  getPaymentGateway: () =>
+    get<ApiPaymentGatewayConfig>("/admin/payment-gateway"),
 
   updatePaymentGateway: (data: ApiPaymentGatewayConfigUpdate) =>
     put<ApiPaymentGatewayConfig>("/admin/payment-gateway", data),
@@ -9044,14 +11707,24 @@ export const adminApi = {
       config: ApiPaymentGatewayConfig;
     }>("/admin/payment-gateways"),
 
-  updatePaymentGatewayRouting: (data: Pick<ApiPaymentGatewayConfigUpdate, "pix_provider" | "credit_card_provider">) =>
-    put<ApiPaymentGatewayConfig>("/admin/payment-gateways/routing", data),
+  updatePaymentGatewayRouting: (
+    data: Pick<
+      ApiPaymentGatewayConfigUpdate,
+      "pix_provider" | "credit_card_provider"
+    >,
+  ) => put<ApiPaymentGatewayConfig>("/admin/payment-gateways/routing", data),
 
-  updatePaymentGatewayProvider: (provider: "mercado_pago" | "asaas" | string, data: Record<string, unknown>) =>
+  updatePaymentGatewayProvider: (
+    provider: "mercado_pago" | "asaas" | string,
+    data: Record<string, unknown>,
+  ) =>
     put<ApiPaymentGatewayConfig>(`/admin/payment-gateways/${provider}`, data),
 
   testPaymentGatewayProvider: (provider: "mercado_pago" | "asaas" | string) =>
-    post<{ provider: string; status: string; message: string }>(`/admin/payment-gateways/${provider}/test`, {}),
+    post<{ provider: string; status: string; message: string }>(
+      `/admin/payment-gateways/${provider}/test`,
+      {},
+    ),
 
   paymentGatewaysHealth: () =>
     get<Record<string, unknown>>("/admin/payment-gateways/health"),
@@ -9060,16 +11733,25 @@ export const adminApi = {
 // ─── Upload ───────────────────────────────────────────────────────────────────
 
 export const uploadApi = {
-  uploadAsset: async (file: File, visibility: "public" | "private" = "public"): Promise<{ url: string; asset_id?: string | null }> => {
+  uploadAsset: async (
+    file: File,
+    visibility: "public" | "private" = "public",
+  ): Promise<{ url: string; asset_id?: string | null }> => {
     const form = new FormData();
     form.append("file", file);
     form.append("visibility", visibility);
     const uploadBases = Array.from(
-      new Set([
-        BASE.endsWith("/api") ? BASE : import.meta.env.PROD ? `${BASE}/api` : BASE,
-        BASE,
-        ...API_BASES,
-      ].filter((base) => base || import.meta.env.PROD)),
+      new Set(
+        [
+          BASE.endsWith("/api")
+            ? BASE
+            : import.meta.env.PROD
+              ? `${BASE}/api`
+              : BASE,
+          BASE,
+          ...API_BASES,
+        ].filter((base) => base || import.meta.env.PROD),
+      ),
     );
 
     let res: Response | null = null;
@@ -9102,9 +11784,13 @@ export const uploadApi = {
     }
     const json = await res.json();
     const data = "data" in json ? json.data : json;
-    return { url: data.url as string, asset_id: typeof data.asset_id === "string" ? data.asset_id : null };
+    return {
+      url: data.url as string,
+      asset_id: typeof data.asset_id === "string" ? data.asset_id : null,
+    };
   },
-  upload: async (file: File): Promise<string> => (await uploadApi.uploadAsset(file, "public")).url,
+  upload: async (file: File): Promise<string> =>
+    (await uploadApi.uploadAsset(file, "public")).url,
 };
 
 // ─── Site Config (CMS persistence) ───────────────────────────────────────────
@@ -9116,7 +11802,13 @@ export const siteConfigApi = {
     put("/admin/site-config", content),
 };
 
-export type ApiBIPeriod = "today" | "7d" | "30d" | "90d" | "month" | "previous_month";
+export type ApiBIPeriod =
+  | "today"
+  | "7d"
+  | "30d"
+  | "90d"
+  | "month"
+  | "previous_month";
 
 export interface ApiBIKpi {
   key: string;
@@ -9252,7 +11944,11 @@ export interface ApiBIMobile {
   generatedAt?: string;
 }
 
-function biQuery(params?: { period?: ApiBIPeriod; date_from?: string; date_to?: string }) {
+function biQuery(params?: {
+  period?: ApiBIPeriod;
+  date_from?: string;
+  date_to?: string;
+}) {
   const qs = new URLSearchParams();
   if (params?.period) qs.set("period", params.period);
   if (params?.date_from) qs.set("date_from", params.date_from);
@@ -9273,24 +11969,104 @@ export interface ApiBIMobileFilters {
   grouping?: "day" | "week";
 }
 export interface ApiBIMobileTotals {
-  orders: number; valid_orders: number; pizzas: number; revenue: number;
-  average_ticket: number; cancelled_orders: number; cancelled_value: number;
-  completed_orders: number; active_orders: number; gross_sales: number;
-  app_deductions: number; net_revenue: number;
-  discounts: number; forecast_revenue: number; daily_revenue: number;
-  daily_orders: number; best_day: string | null;
+  orders: number;
+  valid_orders: number;
+  pizzas: number;
+  revenue: number;
+  average_ticket: number;
+  cancelled_orders: number;
+  cancelled_value: number;
+  completed_orders: number;
+  active_orders: number;
+  gross_sales: number;
+  app_deductions: number;
+  net_revenue: number;
+  discounts: number;
+  forecast_revenue: number;
+  daily_revenue: number;
+  daily_orders: number;
+  best_day: string | null;
   status_counts: Record<string, number>;
 }
 export interface ApiBIMobileAnalytics {
-  period: { date_from: string; date_to: string; previous_date_from: string | null; previous_date_to: string | null; partial: boolean; timezone: string; day_basis: string; cutoff?: string; comparison_rule?: string; granularity?: string };
+  period: {
+    date_from: string;
+    date_to: string;
+    previous_date_from: string | null;
+    previous_date_to: string | null;
+    partial: boolean;
+    timezone: string;
+    day_basis: string;
+    cutoff?: string;
+    comparison_rule?: string;
+    granularity?: string;
+  };
   totals: ApiBIMobileTotals;
   previous_totals: ApiBIMobileTotals | null;
   comparison: Record<string, { difference: number; percent: number | null }>;
-  sales: Array<{ label: string; date: string; previous_date?: string; revenue: number; gross_sales?: number; app_deductions?: number; orders: number; pizzas: number; previous_revenue?: number; previous_gross_sales?: number; previous_app_deductions?: number; previous_orders?: number; previous_pizzas?: number; [key: string]: unknown }>;
-  monthly: Array<{ month: string; revenue: number; gross_sales?: number; app_deductions?: number; orders: number; pizzas: number; average_ticket: number; growth_percent: number | null; partial?: boolean }>;
-  attendance: { unique_visitors: number; accesses: number; visitors_online: number; customers_online: number; whatsapp: (Omit<ApiAgenteWhatsAppOperationalMetrics, "chatbots_online" | "human_attendants_online"> & { chatbots_online: number | null; human_attendants_online: number | null }) | null; chatbot: number | null; human_operators: number | null; availability_note: string; total_attendances?: number | null; avg_attendance_seconds?: number | null; ai_status?: string | null; chatbot_conversations?: Record<string, number> };
-  payments: Array<{ method: string; orders: number; revenue: number; gross_sales?: number; app_deductions?: number }>;
-  channels: Array<{ channel: string; orders: number; revenue: number; gross_sales?: number; app_deductions?: number }>;
+  sales: Array<{
+    label: string;
+    date: string;
+    previous_date?: string;
+    revenue: number;
+    gross_sales?: number;
+    app_deductions?: number;
+    orders: number;
+    pizzas: number;
+    previous_revenue?: number;
+    previous_gross_sales?: number;
+    previous_app_deductions?: number;
+    previous_orders?: number;
+    previous_pizzas?: number;
+    [key: string]: unknown;
+  }>;
+  monthly: Array<{
+    month: string;
+    revenue: number;
+    gross_sales?: number;
+    app_deductions?: number;
+    orders: number;
+    pizzas: number;
+    average_ticket: number;
+    growth_percent: number | null;
+    partial?: boolean;
+  }>;
+  attendance: {
+    unique_visitors: number;
+    accesses: number;
+    visitors_online: number;
+    customers_online: number;
+    whatsapp:
+      | (Omit<
+          ApiAgenteWhatsAppOperationalMetrics,
+          "chatbots_online" | "human_attendants_online"
+        > & {
+          chatbots_online: number | null;
+          human_attendants_online: number | null;
+        })
+      | null;
+    chatbot: number | null;
+    human_operators: number | null;
+    availability_note: string;
+    total_attendances?: number | null;
+    avg_attendance_seconds?: number | null;
+    ai_status?: string | null;
+    chatbot_conversations?: Record<string, number>;
+  };
+  payments: Array<{
+    method: string;
+    orders: number;
+    revenue: number;
+    gross_sales?: number;
+    app_deductions?: number;
+  }>;
+  channels: Array<{
+    channel: string;
+    orders: number;
+    revenue: number;
+    gross_sales?: number;
+    app_deductions?: number;
+  }>;
   history: { first_order_at: string | null; status: string };
   generated_at: string;
   definitions: string[];
@@ -9299,11 +12075,16 @@ export interface ApiBIMobileAnalysis {
   summary: string;
   engine: "calculated" | "ai_assisted";
   ai_note?: string;
-  facts: string[]; trends: string[]; attention: string[]; recommendations: string[];
+  facts: string[];
+  trends: string[];
+  attention: string[];
+  recommendations: string[];
   generated_at: string;
 }
 function biMobileQuery(filters: ApiBIMobileFilters) {
-  return new URLSearchParams(Object.entries(filters).map(([key, value]) => [key, String(value)])).toString();
+  return new URLSearchParams(
+    Object.entries(filters).map(([key, value]) => [key, String(value)]),
+  ).toString();
 }
 
 export const biApi = {
@@ -9313,15 +12094,26 @@ export const biApi = {
     if (dateTo) query.set("date_to", dateTo);
     return get<KdsAnalytics>(`/bi/kds-analytics?${query.toString()}`);
   },
-  mobileAnalytics: (filters: ApiBIMobileFilters) => get<ApiBIMobileAnalytics>(`/bi/mobile/analytics?${biMobileQuery(filters)}`),
-  mobileAnalyze: (filters: ApiBIMobileFilters) => post<ApiBIMobileAnalysis>("/bi/mobile/analyze", filters),
-  dashboard: (params?: { period?: ApiBIPeriod; date_from?: string; date_to?: string }) =>
-    get<ApiBIDashboard>(`/bi/dashboard${biQuery(params)}`),
-  mobile: (date: string) => get<ApiBIMobile>(`/bi/mobile?date=${encodeURIComponent(date)}`),
-  runAnalysis: (params?: { period?: ApiBIPeriod; date_from?: string; date_to?: string }) =>
-    post<ApiBIRunAnalysis>(`/bi/run-analysis${biQuery(params)}`, {}),
-  updateInsightStatus: (insightId: string, status: "resolved" | "ignored" | "postponed" | "active") =>
-    patch<ApiBIInsight>(`/bi/insights/${insightId}/status`, { status }),
+  mobileAnalytics: (filters: ApiBIMobileFilters) =>
+    get<ApiBIMobileAnalytics>(`/bi/mobile/analytics?${biMobileQuery(filters)}`),
+  mobileAnalyze: (filters: ApiBIMobileFilters) =>
+    post<ApiBIMobileAnalysis>("/bi/mobile/analyze", filters),
+  dashboard: (params?: {
+    period?: ApiBIPeriod;
+    date_from?: string;
+    date_to?: string;
+  }) => get<ApiBIDashboard>(`/bi/dashboard${biQuery(params)}`),
+  mobile: (date: string) =>
+    get<ApiBIMobile>(`/bi/mobile?date=${encodeURIComponent(date)}`),
+  runAnalysis: (params?: {
+    period?: ApiBIPeriod;
+    date_from?: string;
+    date_to?: string;
+  }) => post<ApiBIRunAnalysis>(`/bi/run-analysis${biQuery(params)}`, {}),
+  updateInsightStatus: (
+    insightId: string,
+    status: "resolved" | "ignored" | "postponed" | "active",
+  ) => patch<ApiBIInsight>(`/bi/insights/${insightId}/status`, { status }),
 };
 
 // ─── Delivery / Logistics ─────────────────────────────────────────────────────
@@ -9445,7 +12237,11 @@ export type ApiMarketingGoalMetricKey =
   | "cpl"
   | "average_ticket";
 
-export type ApiMarketingGoalStatus = "active" | "paused" | "completed" | "cancelled";
+export type ApiMarketingGoalStatus =
+  | "active"
+  | "paused"
+  | "completed"
+  | "cancelled";
 export type ApiMarketingPriority = "low" | "medium" | "high";
 export type ApiMarketingComparisonDirection = "increase" | "decrease";
 export type ApiMarketingTimelineImpact = "low" | "medium" | "high";
@@ -9585,37 +12381,62 @@ function marketingIntelligenceQuery(params?: ApiMarketingIntelligenceParams) {
 
 export const marketingIntelligenceApi = {
   dashboard: (params?: ApiMarketingIntelligenceParams) =>
-    get<ApiMarketingIntelligenceDashboard>(`/marketing-intelligence/dashboard${marketingIntelligenceQuery(params)}`),
+    get<ApiMarketingIntelligenceDashboard>(
+      `/marketing-intelligence/dashboard${marketingIntelligenceQuery(params)}`,
+    ),
   campaigns: (params?: ApiMarketingIntelligenceParams) =>
-    get<ApiMarketingIntelligenceCampaignsResponse>(`/marketing-intelligence/campaigns${marketingIntelligenceQuery(params)}`),
+    get<ApiMarketingIntelligenceCampaignsResponse>(
+      `/marketing-intelligence/campaigns${marketingIntelligenceQuery(params)}`,
+    ),
   channels: (params?: ApiMarketingIntelligenceParams) =>
-    get<ApiMarketingIntelligenceChannelsResponse>(`/marketing-intelligence/channels${marketingIntelligenceQuery(params)}`),
+    get<ApiMarketingIntelligenceChannelsResponse>(
+      `/marketing-intelligence/channels${marketingIntelligenceQuery(params)}`,
+    ),
   funnel: (params?: ApiMarketingIntelligenceParams) =>
-    get<ApiMarketingIntelligenceFunnelResponse>(`/marketing-intelligence/funnel${marketingIntelligenceQuery(params)}`),
+    get<ApiMarketingIntelligenceFunnelResponse>(
+      `/marketing-intelligence/funnel${marketingIntelligenceQuery(params)}`,
+    ),
   products: (params?: ApiMarketingIntelligenceParams) =>
-    get<ApiMarketingIntelligenceProductsResponse>(`/marketing-intelligence/products${marketingIntelligenceQuery(params)}`),
+    get<ApiMarketingIntelligenceProductsResponse>(
+      `/marketing-intelligence/products${marketingIntelligenceQuery(params)}`,
+    ),
   promotions: (params?: ApiMarketingIntelligenceParams) =>
-    get<ApiMarketingIntelligencePromotionsResponse>(`/marketing-intelligence/promotions${marketingIntelligenceQuery(params)}`),
-  planning: (params?: { status?: string; date_from?: string; date_to?: string; limit?: number }) => {
+    get<ApiMarketingIntelligencePromotionsResponse>(
+      `/marketing-intelligence/promotions${marketingIntelligenceQuery(params)}`,
+    ),
+  planning: (params?: {
+    status?: string;
+    date_from?: string;
+    date_to?: string;
+    limit?: number;
+  }) => {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.date_from) qs.set("date_from", params.date_from);
     if (params?.date_to) qs.set("date_to", params.date_to);
     if (params?.limit) qs.set("limit", String(params.limit));
     const query = qs.toString();
-    return get<ApiMarketingPlanningResponse>(`/marketing-intelligence/planning${query ? `?${query}` : ""}`);
+    return get<ApiMarketingPlanningResponse>(
+      `/marketing-intelligence/planning${query ? `?${query}` : ""}`,
+    );
   },
   goals: (params?: { status?: string; limit?: number }) => {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.limit) qs.set("limit", String(params.limit));
     const query = qs.toString();
-    return get<ApiMarketingGoalsResponse>(`/marketing-intelligence/goals${query ? `?${query}` : ""}`);
+    return get<ApiMarketingGoalsResponse>(
+      `/marketing-intelligence/goals${query ? `?${query}` : ""}`,
+    );
   },
-  createGoal: (data: ApiMarketingGoalInput) => post<ApiMarketingGoal>("/marketing-intelligence/goals", data),
-  updateGoal: (id: string, data: Partial<ApiMarketingGoalInput>) => put<ApiMarketingGoal>(`/marketing-intelligence/goals/${id}`, data),
+  createGoal: (data: ApiMarketingGoalInput) =>
+    post<ApiMarketingGoal>("/marketing-intelligence/goals", data),
+  updateGoal: (id: string, data: Partial<ApiMarketingGoalInput>) =>
+    put<ApiMarketingGoal>(`/marketing-intelligence/goals/${id}`, data),
   updateGoalStatus: (id: string, status: ApiMarketingGoalStatus) =>
-    patch<ApiMarketingGoal>(`/marketing-intelligence/goals/${id}/status`, { status }),
+    patch<ApiMarketingGoal>(`/marketing-intelligence/goals/${id}/status`, {
+      status,
+    }),
   deleteGoal: (id: string) => del<void>(`/marketing-intelligence/goals/${id}`),
   timeline: (params?: {
     date_from?: string;
@@ -9635,12 +12456,22 @@ export const marketingIntelligenceApi = {
     if (params?.search) qs.set("search", params.search);
     if (params?.limit) qs.set("limit", String(params.limit));
     const query = qs.toString();
-    return get<ApiMarketingTimelineResponse>(`/marketing-intelligence/timeline${query ? `?${query}` : ""}`);
+    return get<ApiMarketingTimelineResponse>(
+      `/marketing-intelligence/timeline${query ? `?${query}` : ""}`,
+    );
   },
-  createTimelineEvent: (data: ApiMarketingTimelineEventInput) => post<ApiMarketingTimelineEvent>("/marketing-intelligence/timeline", data),
-  updateTimelineEvent: (id: string, data: Partial<ApiMarketingTimelineEventInput>) =>
-    put<ApiMarketingTimelineEvent>(`/marketing-intelligence/timeline/${id}`, data),
-  deleteTimelineEvent: (id: string) => del<void>(`/marketing-intelligence/timeline/${id}`),
+  createTimelineEvent: (data: ApiMarketingTimelineEventInput) =>
+    post<ApiMarketingTimelineEvent>("/marketing-intelligence/timeline", data),
+  updateTimelineEvent: (
+    id: string,
+    data: Partial<ApiMarketingTimelineEventInput>,
+  ) =>
+    put<ApiMarketingTimelineEvent>(
+      `/marketing-intelligence/timeline/${id}`,
+      data,
+    ),
+  deleteTimelineEvent: (id: string) =>
+    del<void>(`/marketing-intelligence/timeline/${id}`),
 };
 
 export interface DeliveryPerson {
@@ -9805,7 +12636,11 @@ function driverAuthHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function driverRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function driverRequest<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: { "Content-Type": "application/json", ...driverAuthHeaders() },
@@ -9813,7 +12648,8 @@ async function driverRequest<T>(method: string, path: string, body?: unknown): P
   });
   const json = await res.json();
   if (!res.ok || json?.success === false) {
-    const message = json?.error?.message || json?.detail || "Erro na operação do entregador.";
+    const message =
+      json?.error?.message || json?.detail || "Erro na operação do entregador.";
     throw new Error(message);
   }
   return ("data" in json ? json.data : json) as T;
@@ -9821,9 +12657,15 @@ async function driverRequest<T>(method: string, path: string, body?: unknown): P
 
 export const deliveryApi = {
   // Admin — delivery persons
-  listPersons: (options: boolean | { availableOnly?: boolean; includeInactive?: boolean } = false) => {
-    const availableOnly = typeof options === "boolean" ? options : !!options.availableOnly;
-    const includeInactive = typeof options === "boolean" ? false : !!options.includeInactive;
+  listPersons: (
+    options:
+      | boolean
+      | { availableOnly?: boolean; includeInactive?: boolean } = false,
+  ) => {
+    const availableOnly =
+      typeof options === "boolean" ? options : !!options.availableOnly;
+    const includeInactive =
+      typeof options === "boolean" ? false : !!options.includeInactive;
     const qs = new URLSearchParams();
     if (availableOnly) qs.set("available_only", "true");
     if (includeInactive) qs.set("include_inactive", "true");
@@ -9838,67 +12680,143 @@ export const deliveryApi = {
     put<DeliveryPerson>(`/delivery/persons/${id}/status`, { status }),
   setPersonAccess: (id: string, active: boolean) =>
     put<DeliveryPerson>(`/delivery/persons/${id}/access`, { active }),
-  deactivatePerson: (id: string) =>
-    del<void>(`/delivery/persons/${id}`),
+  deactivatePerson: (id: string) => del<void>(`/delivery/persons/${id}`),
 
   // Admin — deliveries
-  assign: (order_id: string, delivery_person_id: string, estimated_minutes = 40) =>
-    post<DeliveryRecord>("/delivery/assign", { order_id, delivery_person_id, estimated_minutes }),
-  listActive: () =>
-    get<DeliveryRecord[]>("/delivery/active"),
+  assign: (
+    order_id: string,
+    delivery_person_id: string,
+    estimated_minutes = 40,
+  ) =>
+    post<DeliveryRecord>("/delivery/assign", {
+      order_id,
+      delivery_person_id,
+      estimated_minutes,
+    }),
+  listActive: () => get<DeliveryRecord[]>("/delivery/active"),
   adminComplete: (deliveryId: string, reason: string) =>
-    post<DeliveryRecord>(`/delivery/${encodeURIComponent(deliveryId)}/admin-complete`, { reason }),
-  updateStatus: (deliveryId: string, status: "picked_up" | "on_the_way" | "delivered" | "completed" | "failed" | "cancelled") =>
-    put<DeliveryRecord>(`/delivery/${encodeURIComponent(deliveryId)}/status`, { status }),
+    post<DeliveryRecord>(
+      `/delivery/${encodeURIComponent(deliveryId)}/admin-complete`,
+      { reason },
+    ),
+  updateStatus: (
+    deliveryId: string,
+    status:
+      | "picked_up"
+      | "on_the_way"
+      | "delivered"
+      | "completed"
+      | "failed"
+      | "cancelled",
+  ) =>
+    put<DeliveryRecord>(`/delivery/${encodeURIComponent(deliveryId)}/status`, {
+      status,
+    }),
   resolveProblem: (deliveryId: string, resolution_note: string) =>
-    post<DeliveryRecord>(`/delivery/${deliveryId}/resolve-problem`, { resolution_note }),
+    post<DeliveryRecord>(`/delivery/${deliveryId}/resolve-problem`, {
+      resolution_note,
+    }),
 
   // Admin — settings
-  getSettings: () =>
-    get<LogisticsSettings>("/delivery/settings"),
+  getSettings: () => get<LogisticsSettings>("/delivery/settings"),
   updateSettings: (body: Partial<LogisticsSettings>) =>
     put<LogisticsSettings>("/delivery/settings", body),
 
   // Admin — map overview
-  getOverview: () =>
-    get<LogisticsOverview>("/delivery/overview"),
+  getOverview: () => get<LogisticsOverview>("/delivery/overview"),
 
   // Driver app
   driverLogin: (email: string, password: string) =>
-    driverRequest<{ token: string; person: DeliveryPerson }>("POST", "/delivery/driver/login", { email, password }),
-  driverMe: () =>
-    driverRequest<DeliveryPerson>("GET", "/delivery/driver/me"),
+    driverRequest<{ token: string; person: DeliveryPerson }>(
+      "POST",
+      "/delivery/driver/login",
+      { email, password },
+    ),
+  driverMe: () => driverRequest<DeliveryPerson>("GET", "/delivery/driver/me"),
   driverDeliveries: () =>
     driverRequest<DeliveryRecord[]>("GET", "/delivery/driver/deliveries"),
   driverDashboard: () =>
     driverRequest<DriverDashboard>("GET", "/delivery/driver/dashboard"),
-  driverEarnings: (params?: { status?: string; period_from?: string; period_to?: string }) => {
+  driverEarnings: (params?: {
+    status?: string;
+    period_from?: string;
+    period_to?: string;
+  }) => {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.period_from) qs.set("period_from", params.period_from);
     if (params?.period_to) qs.set("period_to", params.period_to);
     const q = qs.toString();
-    return driverRequest<DeliveryEarning[]>("GET", `/delivery/driver/earnings${q ? `?${q}` : ""}`);
+    return driverRequest<DeliveryEarning[]>(
+      "GET",
+      `/delivery/driver/earnings${q ? `?${q}` : ""}`,
+    );
   },
   driverUpdateLocation: (lat: number, lng: number) =>
-    driverRequest<DeliveryPerson>("PUT", "/delivery/driver/location", { lat, lng }),
+    driverRequest<DeliveryPerson>("PUT", "/delivery/driver/location", {
+      lat,
+      lng,
+    }),
   driverStartDelivery: (deliveryId: string, notes?: string) =>
-    driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/start`, { notes }),
+    driverRequest<DeliveryRecord>(
+      "POST",
+      `/delivery/driver/deliveries/${deliveryId}/start`,
+      { notes },
+    ),
   driverConfirmPayment: (deliveryId: string) =>
-    driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/confirm-payment`, {}),
-  driverCompleteDelivery: (deliveryId: string, notes?: string, payment_received = false) =>
-    driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/complete`, { notes, payment_received }),
-  driverReportProblem: (deliveryId: string, reason: string, description?: string) =>
-    driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/problem`, { reason, description }),
+    driverRequest<DeliveryRecord>(
+      "POST",
+      `/delivery/driver/deliveries/${deliveryId}/confirm-payment`,
+      {},
+    ),
+  driverCompleteDelivery: (
+    deliveryId: string,
+    notes?: string,
+    payment_received = false,
+  ) =>
+    driverRequest<DeliveryRecord>(
+      "POST",
+      `/delivery/driver/deliveries/${deliveryId}/complete`,
+      { notes, payment_received },
+    ),
+  driverReportProblem: (
+    deliveryId: string,
+    reason: string,
+    description?: string,
+  ) =>
+    driverRequest<DeliveryRecord>(
+      "POST",
+      `/delivery/driver/deliveries/${deliveryId}/problem`,
+      { reason, description },
+    ),
   driverScanItem: (deliveryId: string, payload: string) =>
-    driverRequest<{ confirmed: boolean; idempotent: boolean; confirmation_id: string; delivery_id: string; order_item_id: string; label_volume_id: string; confirmed_count?: number; total_count?: number; all_items_confirmed?: boolean }>("POST", `/delivery/driver/deliveries/${encodeURIComponent(deliveryId)}/scan-item`, { payload }),
+    driverRequest<{
+      confirmed: boolean;
+      idempotent: boolean;
+      confirmation_id: string;
+      delivery_id: string;
+      order_item_id: string;
+      label_volume_id: string;
+      confirmed_count?: number;
+      total_count?: number;
+      all_items_confirmed?: boolean;
+    }>(
+      "POST",
+      `/delivery/driver/deliveries/${encodeURIComponent(deliveryId)}/scan-item`,
+      { payload },
+    ),
 
   // Customer — rate a delivery
   rateDelivery: (deliveryId: string, rating: number, comment?: string) =>
     post<DeliveryRecord>(`/delivery/${deliveryId}/rate`, { rating, comment }),
 
   // Admin — Phase 3: earnings
-  listEarnings: (params?: { person_id?: string; status?: string; period_from?: string; period_to?: string }) => {
+  listEarnings: (params?: {
+    person_id?: string;
+    status?: string;
+    period_from?: string;
+    period_to?: string;
+  }) => {
     const qs = new URLSearchParams();
     if (params?.person_id) qs.set("person_id", params.person_id);
     if (params?.status) qs.set("status", params.status);
@@ -9911,7 +12829,11 @@ export const deliveryApi = {
     post<{ paid: number }>("/delivery/earnings/pay", { earning_ids, paid_by }),
 
   // Admin — Phase 3: analytics
-  getAnalytics: (params?: { period_from?: string; period_to?: string; person_id?: string }) => {
+  getAnalytics: (params?: {
+    period_from?: string;
+    period_to?: string;
+    person_id?: string;
+  }) => {
     const qs = new URLSearchParams();
     if (params?.period_from) qs.set("period_from", params.period_from);
     if (params?.period_to) qs.set("period_to", params.period_to);
@@ -9925,35 +12847,49 @@ export const deliveryApi = {
 
   // Admin — Phase 4: auto-assignment
   autoAssign: () =>
-    post<Array<{ order_id: string; delivery_id: string; person_name: string }>>("/delivery/auto-assign", {}),
+    post<Array<{ order_id: string; delivery_id: string; person_name: string }>>(
+      "/delivery/auto-assign",
+      {},
+    ),
 
   // Admin — Phase 4: geocoding proxy (Nominatim, cached in DB)
   geocode: (q: string) =>
     get<{ lat: number | null; lng: number | null; cached: boolean }>(
-      `/delivery/geocode?q=${encodeURIComponent(q)}`
+      `/delivery/geocode?q=${encodeURIComponent(q)}`,
     ),
 };
 
 export const storeNotificationsApi = {
   list: () => get<ApiStoreNotification[]>("/store-notifications"),
-  summary: () => get<ApiStoreNotificationSummary>("/store-notifications/summary"),
+  summary: () =>
+    get<ApiStoreNotificationSummary>("/store-notifications/summary"),
   create: (data: ApiStoreNotificationInput) =>
     post<ApiStoreNotification>("/store-notifications", data),
   importFile: (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    return postForm<ApiStoreNotificationImportResult>("/store-notifications/import", formData);
+    return postForm<ApiStoreNotificationImportResult>(
+      "/store-notifications/import",
+      formData,
+    );
   },
   update: (id: string, data: Partial<ApiStoreNotificationInput>) =>
     put<ApiStoreNotification>(`/store-notifications/${id}`, data),
   duplicate: (id: string) =>
     post<ApiStoreNotification>(`/store-notifications/${id}/duplicate`, {}),
   setStatus: (id: string, status: ApiStoreNotificationStatus) =>
-    patch<ApiStoreNotification>(`/store-notifications/${id}/status`, { status }),
+    patch<ApiStoreNotification>(`/store-notifications/${id}/status`, {
+      status,
+    }),
   remove: (id: string) => del<void>(`/store-notifications/${id}`),
-  settings: () => get<ApiStoreNotificationSettings>("/store-notifications/settings"),
-  updateSettings: (data: Omit<ApiStoreNotificationSettings, "id" | "created_at" | "updated_at">) =>
-    put<ApiStoreNotificationSettings>("/store-notifications/settings", data),
+  settings: () =>
+    get<ApiStoreNotificationSettings>("/store-notifications/settings"),
+  updateSettings: (
+    data: Omit<
+      ApiStoreNotificationSettings,
+      "id" | "created_at" | "updated_at"
+    >,
+  ) => put<ApiStoreNotificationSettings>("/store-notifications/settings", data),
   preview: (data: {
     display_name: string;
     product_name?: string | null;
@@ -9962,24 +12898,51 @@ export const storeNotificationsApi = {
     relative_time?: string;
     purchase_minutes_ago?: number;
   }) => post<{ message: string }>("/store-notifications/preview", data),
-  next: (page: ApiStoreNotificationPage, opts?: { customer_id?: string; anonymous_session_id?: string; seen_ids?: string }) => {
+  next: (
+    page: ApiStoreNotificationPage,
+    opts?: {
+      customer_id?: string;
+      anonymous_session_id?: string;
+      seen_ids?: string;
+    },
+  ) => {
     const qs = new URLSearchParams({ page });
     if (opts?.customer_id) qs.set("customer_id", opts.customer_id);
-    if (opts?.anonymous_session_id) qs.set("anonymous_session_id", opts.anonymous_session_id);
+    if (opts?.anonymous_session_id)
+      qs.set("anonymous_session_id", opts.anonymous_session_id);
     if (opts?.seen_ids) qs.set("seen_ids", opts.seen_ids);
-    return get<ApiStoreNotificationNextEnvelope>(`/store-notifications/next?${qs.toString()}`);
+    return get<ApiStoreNotificationNextEnvelope>(
+      `/store-notifications/next?${qs.toString()}`,
+    );
   },
-  recordImpression: (id: string, data: { page: ApiStoreNotificationPage; customer_id?: string; anonymous_session_id?: string }) =>
+  recordImpression: (
+    id: string,
+    data: {
+      page: ApiStoreNotificationPage;
+      customer_id?: string;
+      anonymous_session_id?: string;
+    },
+  ) =>
     post<{ recorded: boolean }>(`/store-notifications/${id}/impression`, data),
-  listCaptured: () => get<ApiStoreNotificationCaptured[]>("/store-notifications/captured"),
-  discardCaptured: (id: string) => del<void>(`/store-notifications/captured/${id}`),
+  listCaptured: () =>
+    get<ApiStoreNotificationCaptured[]>("/store-notifications/captured"),
+  discardCaptured: (id: string) =>
+    del<void>(`/store-notifications/captured/${id}`),
   activateCaptured: (id: string, data: ApiStoreNotificationInput) =>
-    post<ApiStoreNotification>(`/store-notifications/captured/${id}/activate`, data),
+    post<ApiStoreNotification>(
+      `/store-notifications/captured/${id}/activate`,
+      data,
+    ),
 };
 
 // ─── Upsell ───────────────────────────────────────────────────────────────────
 
-export type UpsellTriggerType = "product_in_cart" | "category" | "subcategory" | "min_value" | "min_quantity";
+export type UpsellTriggerType =
+  | "product_in_cart"
+  | "category"
+  | "subcategory"
+  | "min_value"
+  | "min_quantity";
 export type UpsellEventType = "viewed" | "accepted" | "rejected";
 
 export interface ApiUpsellProductSize {
@@ -10112,43 +13075,76 @@ export interface ApiUpsellMetricsSummary {
 
 export const upsellsApi = {
   // public
-  eligible: (body: ApiUpsellEligibleIn) => post<ApiUpsell[]>("/upsells/eligible", body),
+  eligible: (body: ApiUpsellEligibleIn) =>
+    post<ApiUpsell[]>("/upsells/eligible", body),
   event: (body: ApiUpsellEventIn) => post<void>("/upsells/events", body),
   // admin
   list: () => get<ApiUpsell[]>("/upsells"),
   metrics: () => get<ApiUpsellMetricsSummary>("/upsells/metrics"),
   create: (body: ApiUpsellInput) => post<ApiUpsell>("/upsells", body),
-  update: (id: string, body: ApiUpsellInput) => put<ApiUpsell>(`/upsells/${id}`, body),
+  update: (id: string, body: ApiUpsellInput) =>
+    put<ApiUpsell>(`/upsells/${id}`, body),
   toggle: (id: string) => patch<ApiUpsell>(`/upsells/${id}/toggle`, {}),
   remove: (id: string) => del<void>(`/upsells/${id}`),
   reorder: (ids: string[]) => post<void>("/upsells/reorder", ids),
 };
 
-
 // Inventory foundation uses versioned Decimal-string contracts. Commands never retry automatically.
 export interface FoundationUnit {
-  id: string; name: string; symbol: string; code: string | null;
+  id: string;
+  name: string;
+  symbol: string;
+  code: string | null;
   dimension: "mass" | "volume" | "count" | null;
-  conversion_factor: string | null; has_weight: boolean; active: boolean; version: number;
+  conversion_factor: string | null;
+  has_weight: boolean;
+  active: boolean;
+  version: number;
 }
 export interface FoundationBalance {
-  item_id: string; location_id: string | null; lot_id: string | null;
-  physical: string; usable: string; reserved: string; available: string;
-  legacy_without_lot: boolean; unit_id: string | null; issues?: string[];
+  item_id: string;
+  location_id: string | null;
+  lot_id: string | null;
+  physical: string;
+  usable: string;
+  reserved: string;
+  available: string;
+  legacy_without_lot: boolean;
+  unit_id: string | null;
+  issues?: string[];
 }
 export interface FoundationLot {
-  id: string; item_id: string; location_id: string; lot_code: string;
-  status: "available" | "blocked" | "quarantine" | "consumed" | "discarded"; version: number;
-  received_at: string; expires_on: string | null; effective_expires_at: string | null;
+  id: string;
+  item_id: string;
+  location_id: string;
+  lot_code: string;
+  status: "available" | "blocked" | "quarantine" | "consumed" | "discarded";
+  version: number;
+  received_at: string;
+  expires_on: string | null;
+  effective_expires_at: string | null;
   opened_at?: string | null;
   opening_rule?: string | null;
   container_code?: string | null;
 }
 export interface FoundationReservation {
-  id: string; item_id: string; location_id: string; lot_id: string | null;
-  quantity: string; status: string; version: number; source_id: string;
+  id: string;
+  item_id: string;
+  location_id: string;
+  lot_id: string | null;
+  quantity: string;
+  status: string;
+  version: number;
+  source_id: string;
 }
-export interface FoundationPackaging { id: string; item_id: string; name: string; factor: string | null; variable_weight: boolean; version: number }
+export interface FoundationPackaging {
+  id: string;
+  item_id: string;
+  name: string;
+  factor: string | null;
+  variable_weight: boolean;
+  version: number;
+}
 type FoundationPage<T> = { items: T[]; next_cursor: string | null };
 const FOUNDATION_PATH = "/gestao/inventory/v1";
 async function foundationList<T>(resource: string): Promise<FoundationPage<T>> {
@@ -10156,10 +13152,13 @@ async function foundationList<T>(resource: string): Promise<FoundationPage<T>> {
   const seen = new Set<string>();
   let cursor: string | null = null;
   do {
-    const page: FoundationPage<T> = await get(`${FOUNDATION_PATH}/${resource}${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+    const page: FoundationPage<T> = await get(
+      `${FOUNDATION_PATH}/${resource}${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+    );
     items.push(...page.items);
     cursor = page.next_cursor;
-    if (cursor && seen.has(cursor)) throw new Error("A consulta de estoque nao avancou. Atualize novamente.");
+    if (cursor && seen.has(cursor))
+      throw new Error("A consulta de estoque nao avancou. Atualize novamente.");
     if (cursor) seen.add(cursor);
   } while (cursor);
   return { items, next_cursor: null };
@@ -10167,18 +13166,58 @@ async function foundationList<T>(resource: string): Promise<FoundationPage<T>> {
 
 export const inventoryFoundationApi = {
   units: () => foundationList<FoundationUnit>("units"),
-  balances: () => get<FoundationPage<FoundationBalance>>(`${FOUNDATION_PATH}/balances`),
-  reconciliation: () => get<FoundationPage<FoundationBalance>>(`${FOUNDATION_PATH}/reconciliation`),
+  balances: () =>
+    get<FoundationPage<FoundationBalance>>(`${FOUNDATION_PATH}/balances`),
+  reconciliation: () =>
+    get<FoundationPage<FoundationBalance>>(`${FOUNDATION_PATH}/reconciliation`),
   lots: () => foundationList<FoundationLot>("lots"),
-  openLot: (lotId: string, body: { expected_version: number; opened_at: string; opening_rule: string; container_code?: string | null }, key: string) =>
-    request<FoundationLot>("POST", `${FOUNDATION_PATH}/lots/${encodeURIComponent(lotId)}/open`, body, { "Idempotency-Key": key }),
-  setLotState: (lotId: string, body: { expected_version: number; status: "available" | "blocked" | "quarantine"; reason: string }, key: string) =>
-    request<FoundationLot>("POST", `${FOUNDATION_PATH}/lots/${encodeURIComponent(lotId)}/state`, body, { "Idempotency-Key": key }),
+  openLot: (
+    lotId: string,
+    body: {
+      expected_version: number;
+      opened_at: string;
+      opening_rule: string;
+      container_code?: string | null;
+    },
+    key: string,
+  ) =>
+    request<FoundationLot>(
+      "POST",
+      `${FOUNDATION_PATH}/lots/${encodeURIComponent(lotId)}/open`,
+      body,
+      { "Idempotency-Key": key },
+    ),
+  setLotState: (
+    lotId: string,
+    body: {
+      expected_version: number;
+      status: "available" | "blocked" | "quarantine";
+      reason: string;
+    },
+    key: string,
+  ) =>
+    request<FoundationLot>(
+      "POST",
+      `${FOUNDATION_PATH}/lots/${encodeURIComponent(lotId)}/state`,
+      body,
+      { "Idempotency-Key": key },
+    ),
   reservations: () => foundationList<FoundationReservation>("reservations"),
   packagings: () => foundationList<FoundationPackaging>("packagings"),
-  preview: (body: Record<string, unknown>) => post<{ quantity: string; unit_id: string; rounding: string }>(`${FOUNDATION_PATH}/conversions/preview`, body),
-  command: <T = Record<string, unknown>>(resource: string, body: Record<string, unknown>, key: string, method = "POST") =>
-    request<T>(method, `${FOUNDATION_PATH}/${resource}`, body, { "Idempotency-Key": key }),
+  preview: (body: Record<string, unknown>) =>
+    post<{ quantity: string; unit_id: string; rounding: string }>(
+      `${FOUNDATION_PATH}/conversions/preview`,
+      body,
+    ),
+  command: <T = Record<string, unknown>>(
+    resource: string,
+    body: Record<string, unknown>,
+    key: string,
+    method = "POST",
+  ) =>
+    request<T>(method, `${FOUNDATION_PATH}/${resource}`, body, {
+      "Idempotency-Key": key,
+    }),
 };
 
 // Fase 5: preparo e PCP usam contratos versionados e comandos idempotentes.
@@ -10293,7 +13332,10 @@ export interface PreparationLabelPreview {
   template: KdsLabelTemplate;
 }
 
-export interface PreparationLabelPrintResult { job: KdsLabelPrintJob; preview: PreparationLabelPreview }
+export interface PreparationLabelPrintResult {
+  job: KdsLabelPrintJob;
+  preview: PreparationLabelPreview;
+}
 
 export interface PcpWeeklyPlan {
   id: string;
@@ -10302,15 +13344,26 @@ export interface PcpWeeklyPlan {
   status: string;
   source_window_start: string;
   source_window_end: string;
-  suggestions: Array<{ product_id: string; suggested_quantity: number; source: string; approved: boolean }>;
+  suggestions: Array<{
+    product_id: string;
+    suggested_quantity: number;
+    source: string;
+    approved: boolean;
+  }>;
   approved_by?: string | null;
   approved_at?: string | null;
 }
 
 export const pcpApi = {
-  get: (weekStart: string) => get<PcpWeeklyPlan>(`/pcp/weekly/${encodeURIComponent(weekStart)}`),
-  generate: (body: { week_start: string; source_weeks: number }) => post<PcpWeeklyPlan>("/pcp/weekly/generate", body),
-  approve: (weekStart: string, expectedStatus: string) => post<PcpWeeklyPlan>(`/pcp/weekly/${encodeURIComponent(weekStart)}/approve`, { expected_status: expectedStatus }),
+  get: (weekStart: string) =>
+    get<PcpWeeklyPlan>(`/pcp/weekly/${encodeURIComponent(weekStart)}`),
+  generate: (body: { week_start: string; source_weeks: number }) =>
+    post<PcpWeeklyPlan>("/pcp/weekly/generate", body),
+  approve: (weekStart: string, expectedStatus: string) =>
+    post<PcpWeeklyPlan>(
+      `/pcp/weekly/${encodeURIComponent(weekStart)}/approve`,
+      { expected_status: expectedStatus },
+    ),
 };
 
 export interface ProductionPlanSimulation {
@@ -10319,52 +13372,164 @@ export interface ProductionPlanSimulation {
   horizon_end: string;
   demand_source: string;
   generated_at?: string;
-  requirements: Array<{ inventory_item_id: string; inventory_item_name?: string | null; quantity: string; unit_id: string; available?: string; shortage?: string }>;
-  conflicts: Array<{ code: string; message: string; inventory_item_id?: string | null }>;
+  requirements: Array<{
+    inventory_item_id: string;
+    inventory_item_name?: string | null;
+    quantity: string;
+    unit_id: string;
+    available?: string;
+    shortage?: string;
+  }>;
+  conflicts: Array<{
+    code: string;
+    message: string;
+    inventory_item_id?: string | null;
+  }>;
   proposed_orders: PreparationOrder[];
 }
 
 export const preparationApi = {
-  listRecipes: (active = true) => get<PreparationRecipeDefinition[]>(`/preparation/recipes?active=${active}`),
-  listOrders: async (query = ""): Promise<PreparationOrder[] | { items: PreparationOrder[] }> => {
-    const value = await get<PreparationOrder[] | { items: PreparationOrder[] }>(`/preparation/orders${query ? `?${query.replace(/^\?/, "")}` : ""}`);
+  listRecipes: (active = true) =>
+    get<PreparationRecipeDefinition[]>(`/preparation/recipes?active=${active}`),
+  listOrders: async (
+    query = "",
+  ): Promise<PreparationOrder[] | { items: PreparationOrder[] }> => {
+    const value = await get<PreparationOrder[] | { items: PreparationOrder[] }>(
+      `/preparation/orders${query ? `?${query.replace(/^\?/, "")}` : ""}`,
+    );
     return value;
   },
-  getOrder: (id: string) => get<PreparationOrder>(`/preparation/orders/${encodeURIComponent(id)}`),
-  recipe: (id: string) => get<PreparationRecipe>(`/preparation/orders/${encodeURIComponent(id)}/recipe`),
+  getOrder: (id: string) =>
+    get<PreparationOrder>(`/preparation/orders/${encodeURIComponent(id)}`),
+  recipe: (id: string) =>
+    get<PreparationRecipe>(
+      `/preparation/orders/${encodeURIComponent(id)}/recipe`,
+    ),
   start: (id: string, expectedVersion: number, key: string) =>
-    request<PreparationOrder>("POST", `/preparation/orders/${encodeURIComponent(id)}/start`, { expected_version: expectedVersion }, { "Idempotency-Key": key }),
+    request<PreparationOrder>(
+      "POST",
+      `/preparation/orders/${encodeURIComponent(id)}/start`,
+      { expected_version: expectedVersion },
+      { "Idempotency-Key": key },
+    ),
   report: (id: string, body: PreparationReportInput, key: string) =>
-    request<PreparationOrder>("POST", `/preparation/orders/${encodeURIComponent(id)}/reports`, {
-      ...body,
-      input_allocations: body.input_allocations.map(({ item_id, unit_id, quantity, location_id, lot_id }) => ({ item_id, unit_id, quantity, location_id, lot_id })),
-    }, { "Idempotency-Key": key }),
+    request<PreparationOrder>(
+      "POST",
+      `/preparation/orders/${encodeURIComponent(id)}/reports`,
+      {
+        ...body,
+        input_allocations: body.input_allocations.map(
+          ({ item_id, unit_id, quantity, location_id, lot_id }) => ({
+            item_id,
+            unit_id,
+            quantity,
+            location_id,
+            lot_id,
+          }),
+        ),
+      },
+      { "Idempotency-Key": key },
+    ),
   complete: (id: string, expectedVersion: number, key: string) =>
-    request<PreparationOrder>("POST", `/preparation/orders/${encodeURIComponent(id)}/complete`, { expected_version: expectedVersion }, { "Idempotency-Key": key }),
-  command: (id: string, command: "pause" | "resume" | "block", body: { expected_version: number; reason?: string | null }, key: string) =>
-    request<PreparationOrder>("POST", `/preparation/orders/${encodeURIComponent(id)}/${command}`, body, { "Idempotency-Key": key }),
+    request<PreparationOrder>(
+      "POST",
+      `/preparation/orders/${encodeURIComponent(id)}/complete`,
+      { expected_version: expectedVersion },
+      { "Idempotency-Key": key },
+    ),
+  command: (
+    id: string,
+    command: "pause" | "resume" | "block",
+    body: { expected_version: number; reason?: string | null },
+    key: string,
+  ) =>
+    request<PreparationOrder>(
+      "POST",
+      `/preparation/orders/${encodeURIComponent(id)}/${command}`,
+      body,
+      { "Idempotency-Key": key },
+    ),
   create: (body: Record<string, unknown>, key: string) =>
-    request<PreparationOrder>("POST", "/preparation/orders", body, { "Idempotency-Key": key }),
-  manage: (id: string, command: "approve" | "schedule" | "reschedule" | "unblock" | "cancel", body: Record<string, unknown>, key: string) =>
-    request<PreparationOrder>("POST", `/preparation/orders/${encodeURIComponent(id)}/${command}`, body, { "Idempotency-Key": key }),
+    request<PreparationOrder>("POST", "/preparation/orders", body, {
+      "Idempotency-Key": key,
+    }),
+  manage: (
+    id: string,
+    command: "approve" | "schedule" | "reschedule" | "unblock" | "cancel",
+    body: Record<string, unknown>,
+    key: string,
+  ) =>
+    request<PreparationOrder>(
+      "POST",
+      `/preparation/orders/${encodeURIComponent(id)}/${command}`,
+      body,
+      { "Idempotency-Key": key },
+    ),
   simulate: (body: Record<string, unknown>, key: string) =>
-    request<ProductionPlanSimulation>("POST", "/gestao/production-plans/simulations", body, { "Idempotency-Key": key }),
-  approvePlan: (id: string, body: { expected_version: number; reason: string }, key: string) =>
-    request<ProductionPlanSimulation>("POST", `/gestao/production-plans/${encodeURIComponent(id)}/approve`, body, { "Idempotency-Key": key }),
+    request<ProductionPlanSimulation>(
+      "POST",
+      "/gestao/production-plans/simulations",
+      body,
+      { "Idempotency-Key": key },
+    ),
+  approvePlan: (
+    id: string,
+    body: { expected_version: number; reason: string },
+    key: string,
+  ) =>
+    request<ProductionPlanSimulation>(
+      "POST",
+      `/gestao/production-plans/${encodeURIComponent(id)}/approve`,
+      body,
+      { "Idempotency-Key": key },
+    ),
 };
 
 export const preparationLabelsApi = {
-  preview: (executionId: string, printerId?: string | null, templateId?: string | null) => {
+  preview: (
+    executionId: string,
+    printerId?: string | null,
+    templateId?: string | null,
+  ) => {
     const query = new URLSearchParams();
     if (printerId) query.set("printer_id", printerId);
     if (templateId) query.set("template_id", templateId);
     const suffix = query.toString();
-    return get<PreparationLabelPreview>(`/kds/dispatch/preparation-executions/${encodeURIComponent(executionId)}/labels/preview${suffix ? `?${suffix}` : ""}`);
+    return get<PreparationLabelPreview>(
+      `/kds/dispatch/preparation-executions/${encodeURIComponent(executionId)}/labels/preview${suffix ? `?${suffix}` : ""}`,
+    );
   },
-  print: (executionId: string, body: { printer_id?: string | null; template_id?: string | null; copies?: number; idempotency_key: string }) =>
-    request<PreparationLabelPrintResult>("POST", `/kds/dispatch/preparation-executions/${encodeURIComponent(executionId)}/labels/print`, body, { "Idempotency-Key": body.idempotency_key }),
-  reprint: (executionId: string, body: { printer_id?: string | null; template_id?: string | null; copies?: number; idempotency_key: string; reason: string }) =>
-    request<PreparationLabelPrintResult>("POST", `/kds/dispatch/preparation-executions/${encodeURIComponent(executionId)}/labels/reprint`, body, { "Idempotency-Key": body.idempotency_key }),
+  print: (
+    executionId: string,
+    body: {
+      printer_id?: string | null;
+      template_id?: string | null;
+      copies?: number;
+      idempotency_key: string;
+    },
+  ) =>
+    request<PreparationLabelPrintResult>(
+      "POST",
+      `/kds/dispatch/preparation-executions/${encodeURIComponent(executionId)}/labels/print`,
+      body,
+      { "Idempotency-Key": body.idempotency_key },
+    ),
+  reprint: (
+    executionId: string,
+    body: {
+      printer_id?: string | null;
+      template_id?: string | null;
+      copies?: number;
+      idempotency_key: string;
+      reason: string;
+    },
+  ) =>
+    request<PreparationLabelPrintResult>(
+      "POST",
+      `/kds/dispatch/preparation-executions/${encodeURIComponent(executionId)}/labels/reprint`,
+      body,
+      { "Idempotency-Key": body.idempotency_key },
+    ),
 };
 
 export interface OperationalRecipeIngredient {
@@ -10409,51 +13574,137 @@ export interface OperationalRecipeVersion {
   reference_image_url?: string | null;
   items: OperationalRecipeIngredient[];
 }
-export type OperationalRecipeInput = Omit<OperationalRecipeVersion, "id" | "product_id" | "version_number" | "product_size_label" | "product_crust_type_name" | "product_drink_variant_name" | "items"> & {
+export type OperationalRecipeInput = Omit<
+  OperationalRecipeVersion,
+  | "id"
+  | "product_id"
+  | "version_number"
+  | "product_size_label"
+  | "product_crust_type_name"
+  | "product_drink_variant_name"
+  | "items"
+> & {
   expected_version: number;
-  items: (Omit<OperationalRecipeIngredient, "id" | "quantity" | "inventory_item_name" | "unit_symbol" | "conversion_factor_snapshot"> & { quantity?: string })[];
+  items: (Omit<
+    OperationalRecipeIngredient,
+    | "id"
+    | "quantity"
+    | "inventory_item_name"
+    | "unit_symbol"
+    | "conversion_factor_snapshot"
+  > & { quantity?: string })[];
 };
 export interface RecipeCompositionIngredient {
-  inventory_item_id: string; name: string; quantity: string; unit_id: string | null;
-  unit_symbol: string | null; recipe_version_id?: string | null; component_role: string;
-  scope_product_id?: string | null; position: number; waste_percent: string;
+  inventory_item_id: string;
+  name: string;
+  quantity: string;
+  unit_id: string | null;
+  unit_symbol: string | null;
+  recipe_version_id?: string | null;
+  component_role: string;
+  scope_product_id?: string | null;
+  position: number;
+  waste_percent: string;
 }
 export interface RecipeCompositionPreview {
-  product_id: string; quantity: number; complete: boolean; missing: string[];
-  recipe_version_ids: string[]; common_components: RecipeCompositionIngredient[];
-  flavors: { product_id: string; name: string; fraction: string; ingredients: RecipeCompositionIngredient[] }[];
-  ingredients: RecipeCompositionIngredient[]; removed_ingredients: RecipeCompositionIngredient[]; substitutions: RecipeCompositionCustomization[];
-  methods: { recipe_version_id: string; instructions: string | null; preparation_steps: string[]; reference_image_url: string | null }[];
+  product_id: string;
+  quantity: number;
+  complete: boolean;
+  missing: string[];
+  recipe_version_ids: string[];
+  common_components: RecipeCompositionIngredient[];
+  flavors: {
+    product_id: string;
+    name: string;
+    fraction: string;
+    ingredients: RecipeCompositionIngredient[];
+  }[];
+  ingredients: RecipeCompositionIngredient[];
+  removed_ingredients: RecipeCompositionIngredient[];
+  substitutions: RecipeCompositionCustomization[];
+  methods: {
+    recipe_version_id: string;
+    instructions: string | null;
+    preparation_steps: string[];
+    reference_image_url: string | null;
+  }[];
   notes: string | null;
 }
 export interface RecipeCompositionCustomization {
-  action: "remove" | "substitute"; inventory_item_id: string;
-  scope_product_id?: string | null; scope_component_role?: OperationalRecipeVersion["component_role"] | null;
+  action: "remove" | "substitute";
+  inventory_item_id: string;
+  scope_product_id?: string | null;
+  scope_component_role?: OperationalRecipeVersion["component_role"] | null;
   replacement_recipe_id?: string | null;
 }
 
-const recipePath = (productId: string) => `${FOUNDATION_PATH}/products/${encodeURIComponent(productId)}/recipes`;
+const recipePath = (productId: string) =>
+  `${FOUNDATION_PATH}/products/${encodeURIComponent(productId)}/recipes`;
 export const productRecipesApi = {
-  list: (productId: string) => get<{ items: OperationalRecipeVersion[]; latest_version: number; next_cursor: string | null }>(recipePath(productId)),
+  list: (productId: string) =>
+    get<{
+      items: OperationalRecipeVersion[];
+      latest_version: number;
+      next_cursor: string | null;
+    }>(recipePath(productId)),
   create: (productId: string, body: OperationalRecipeInput, key: string) =>
-    request<OperationalRecipeVersion>("POST", recipePath(productId), body, { "Idempotency-Key": key }),
-  update: (productId: string, recipeId: string, body: OperationalRecipeInput, key: string) =>
-    request<OperationalRecipeVersion>("PUT", `${recipePath(productId)}/${encodeURIComponent(recipeId)}`, body, { "Idempotency-Key": key }),
-  archive: (productId: string, recipeId: string, expectedVersion: number, key: string) =>
-    request<OperationalRecipeVersion>("POST", `${recipePath(productId)}/${encodeURIComponent(recipeId)}/archive`, { expected_version: expectedVersion }, { "Idempotency-Key": key }),
-  preview: (body: Record<string, unknown>) => post<RecipeCompositionPreview>(`${FOUNDATION_PATH}/composition/preview`, body),
+    request<OperationalRecipeVersion>("POST", recipePath(productId), body, {
+      "Idempotency-Key": key,
+    }),
+  update: (
+    productId: string,
+    recipeId: string,
+    body: OperationalRecipeInput,
+    key: string,
+  ) =>
+    request<OperationalRecipeVersion>(
+      "PUT",
+      `${recipePath(productId)}/${encodeURIComponent(recipeId)}`,
+      body,
+      { "Idempotency-Key": key },
+    ),
+  archive: (
+    productId: string,
+    recipeId: string,
+    expectedVersion: number,
+    key: string,
+  ) =>
+    request<OperationalRecipeVersion>(
+      "POST",
+      `${recipePath(productId)}/${encodeURIComponent(recipeId)}/archive`,
+      { expected_version: expectedVersion },
+      { "Idempotency-Key": key },
+    ),
+  preview: (body: Record<string, unknown>) =>
+    post<RecipeCompositionPreview>(
+      `${FOUNDATION_PATH}/composition/preview`,
+      body,
+    ),
   uploadImage: async (file: File) => {
     const form = new FormData();
     form.append("file", file);
-    return requestForm<{ url: string }>("POST", "/gestao/inventory/recipe-images", form);
+    return requestForm<{ url: string }>(
+      "POST",
+      "/gestao/inventory/recipe-images",
+      form,
+    );
   },
   imageBlob: async (url: string): Promise<Blob> => {
     // Never send an authenticated request to an arbitrary URL from stored content.
-    if (!/^\/api\/gestao\/inventory\/recipe-images\/[a-zA-Z0-9_-]+$/.test(url)) throw new Error("Referencia de imagem privada invalida.");
+    if (!/^\/api\/gestao\/inventory\/recipe-images\/[a-zA-Z0-9_-]+$/.test(url))
+      throw new Error("Referencia de imagem privada invalida.");
     const path = url.replace(/^\/api/, "");
-    const response = await fetch(`${API_BASES[0]}${path}`, { headers: authHeaders(), cache: "no-store" });
-    if (!response.ok) throw new ApiRequestError("Imagem de referencia indisponivel.", response.status);
-    if (!(response.headers.get("content-type") ?? "").startsWith("image/")) throw new Error("Imagem de referencia invalida.");
+    const response = await fetch(`${API_BASES[0]}${path}`, {
+      headers: authHeaders(),
+      cache: "no-store",
+    });
+    if (!response.ok)
+      throw new ApiRequestError(
+        "Imagem de referencia indisponivel.",
+        response.status,
+      );
+    if (!(response.headers.get("content-type") ?? "").startsWith("image/"))
+      throw new Error("Imagem de referencia invalida.");
     return response.blob();
   },
 };
@@ -10461,7 +13712,13 @@ export const productRecipesApi = {
 // ── Print Pedido ─────────────────────────────────────────────────────────────
 
 export type PrintOrderPlatform = "ifood" | "99food" | "keeta" | "unknown";
-export type PrintOrderStatus = "awaiting_review" | "ready" | "imported" | "duplicate" | "error" | "cancelled";
+export type PrintOrderStatus =
+  | "awaiting_review"
+  | "ready"
+  | "imported"
+  | "duplicate"
+  | "error"
+  | "cancelled";
 export type PrintOrderMatchStatus = "unmatched" | "review" | "matched";
 
 export interface ApiPrintOrderItem {
@@ -10510,7 +13767,12 @@ export interface ApiPrintOrderImport {
     platform_discount?: number | string | null;
     total_paid?: number | string | null;
   };
-  reconciliation?: { status?: string; expected_total?: number | string | null; printed_total?: number | string | null; delta?: number | string | null };
+  reconciliation?: {
+    status?: string;
+    expected_total?: number | string | null;
+    printed_total?: number | string | null;
+    delta?: number | string | null;
+  };
   created_at: string;
 }
 
@@ -10560,38 +13822,131 @@ export interface ApiPrintOrderMapping {
 }
 
 export const printOrderApi = {
-  capture: (file: File, platform?: PrintOrderPlatform, extractedText?: string) => {
+  capture: (
+    file: File,
+    platform?: PrintOrderPlatform,
+    extractedText?: string,
+  ) => {
     const form = new FormData();
     form.append("file", file);
     if (platform) form.append("platform", platform);
-    if (extractedText?.trim()) form.append("extracted_text", extractedText.trim());
-    return postForm<ApiPrintOrderImport>("/operacoes/print-pedido/imports", form);
+    if (extractedText?.trim())
+      form.append("extracted_text", extractedText.trim());
+    return postForm<ApiPrintOrderImport>(
+      "/operacoes/print-pedido/imports",
+      form,
+    );
   },
   list: () => get<ApiPrintOrderImport[]>("/operacoes/print-pedido/imports"),
-  get: (importId: string) => get<ApiPrintOrderImport>(`/operacoes/print-pedido/imports/${encodeURIComponent(importId)}`),
+  get: (importId: string) =>
+    get<ApiPrintOrderImport>(
+      `/operacoes/print-pedido/imports/${encodeURIComponent(importId)}`,
+    ),
   review: (importId: string, body: ApiPrintOrderReviewInput) =>
-    patch<ApiPrintOrderImport>(`/operacoes/print-pedido/imports/${encodeURIComponent(importId)}`, body),
+    patch<ApiPrintOrderImport>(
+      `/operacoes/print-pedido/imports/${encodeURIComponent(importId)}`,
+      body,
+    ),
   confirm: (importId: string, idempotencyKey: string) =>
-    request<ApiPrintOrderImport>("POST", `/operacoes/print-pedido/imports/${encodeURIComponent(importId)}/confirm`, undefined, { "Idempotency-Key": idempotencyKey }),
-  listMappings: () => get<ApiPrintOrderMapping[]>("/operacoes/print-pedido/mappings"),
-  createMapping: (body: Omit<ApiPrintOrderMapping, "id" | "tenant_id" | "normalized_external_name" | "status" | "created_at">) =>
-    post<ApiPrintOrderMapping>("/operacoes/print-pedido/mappings", body),
+    request<ApiPrintOrderImport>(
+      "POST",
+      `/operacoes/print-pedido/imports/${encodeURIComponent(importId)}/confirm`,
+      undefined,
+      { "Idempotency-Key": idempotencyKey },
+    ),
+  listMappings: () =>
+    get<ApiPrintOrderMapping[]>("/operacoes/print-pedido/mappings"),
+  createMapping: (
+    body: Omit<
+      ApiPrintOrderMapping,
+      "id" | "tenant_id" | "normalized_external_name" | "status" | "created_at"
+    >,
+  ) => post<ApiPrintOrderMapping>("/operacoes/print-pedido/mappings", body),
 };
 
 export const printPedidoApi = printOrderApi;
 
 // Tenant-scoped Print Server control-plane contract. The backend can expose
 // each resource independently so the UI can refresh a single operational area.
-export type PrintServerStationStatus = "online" | "offline" | "degraded" | "unknown";
-export type PrintServerPrinterStatus = "ready" | "offline" | "error" | "unknown";
-export type PrintServerJobStatus = "pending" | "received" | "queued" | "processing" | "spooled" | "printed" | "error" | "cancelled" | "uncertain";
+export type PrintServerStationStatus =
+  | "online"
+  | "offline"
+  | "degraded"
+  | "unknown";
+export type PrintServerPrinterStatus =
+  | "ready"
+  | "offline"
+  | "error"
+  | "unknown";
+export type PrintServerJobStatus =
+  | "pending"
+  | "received"
+  | "queued"
+  | "processing"
+  | "spooled"
+  | "printed"
+  | "error"
+  | "cancelled"
+  | "uncertain";
 
-export interface ApiPrintServerStation { id: string; name: string; hostname?: string | null; status: PrintServerStationStatus; last_seen_at?: string | null; active: boolean; printer_count?: number; }
-export interface ApiPrintServerPrinter { id: string; name: string; station_id: string; station_name?: string | null; connection_type?: string | null; driver?: string | null; status: PrintServerPrinterStatus; print_type?: "thermal" | "label" | "document" | "unknown" | null; last_printed_at?: string | null; queued_jobs?: number; }
-export interface ApiPrintServerRule { id: string; name: string; event: string; sector: string; printer_ids: string[]; copies: number; active: boolean; }
-export interface ApiPrintServerJob { id: string; external_id?: string | null; station_name?: string | null; printer_name?: string | null; sector?: string | null; document_type?: string | null; status: PrintServerJobStatus; attempts: number; created_at: string; updated_at?: string | null; error_message?: string | null; }
-export interface ApiPrintServerSummary { stations_online: number; stations_total: number; printers_ready: number; printers_total: number; pending_jobs: number; failed_jobs: number; }
-export interface ApiPrintServerOverview { summary: ApiPrintServerSummary; stations: ApiPrintServerStation[]; printers: ApiPrintServerPrinter[]; rules: ApiPrintServerRule[]; queue: ApiPrintServerJob[]; }
+export interface ApiPrintServerStation {
+  id: string;
+  name: string;
+  hostname?: string | null;
+  status: PrintServerStationStatus;
+  last_seen_at?: string | null;
+  active: boolean;
+  printer_count?: number;
+}
+export interface ApiPrintServerPrinter {
+  id: string;
+  name: string;
+  station_id: string;
+  station_name?: string | null;
+  connection_type?: string | null;
+  driver?: string | null;
+  status: PrintServerPrinterStatus;
+  print_type?: "thermal" | "label" | "document" | "unknown" | null;
+  last_printed_at?: string | null;
+  queued_jobs?: number;
+}
+export interface ApiPrintServerRule {
+  id: string;
+  name: string;
+  event: string;
+  sector: string;
+  printer_ids: string[];
+  copies: number;
+  active: boolean;
+}
+export interface ApiPrintServerJob {
+  id: string;
+  external_id?: string | null;
+  station_name?: string | null;
+  printer_name?: string | null;
+  sector?: string | null;
+  document_type?: string | null;
+  status: PrintServerJobStatus;
+  attempts: number;
+  created_at: string;
+  updated_at?: string | null;
+  error_message?: string | null;
+}
+export interface ApiPrintServerSummary {
+  stations_online: number;
+  stations_total: number;
+  printers_ready: number;
+  printers_total: number;
+  pending_jobs: number;
+  failed_jobs: number;
+}
+export interface ApiPrintServerOverview {
+  summary: ApiPrintServerSummary;
+  stations: ApiPrintServerStation[];
+  printers: ApiPrintServerPrinter[];
+  rules: ApiPrintServerRule[];
+  queue: ApiPrintServerJob[];
+}
 export interface ApiPrintServerAgentRelease {
   available: boolean;
   version?: string | null;
@@ -10610,43 +13965,146 @@ export interface ApiPrintServerAgentDownload {
   fileName: string;
 }
 
-export interface ApiPrintServerPairingCode { station_id: string; code: string; expires_in_minutes: number; }
+export interface ApiPrintServerPairingCode {
+  station_id: string;
+  code: string;
+  expires_in_minutes: number;
+}
 
 export const printServerApi = {
   overview: async () => {
-    const raw = await get<{ stations: number; printers: number; pending_jobs: number; processed_jobs: number; failed_jobs: number }>("/admin/print-center/overview");
+    const raw = await get<{
+      stations: number;
+      printers: number;
+      pending_jobs: number;
+      processed_jobs: number;
+      failed_jobs: number;
+    }>("/admin/print-center/overview");
     const [stations, printers, rules, jobs] = await Promise.all([
       get<Array<Record<string, unknown>>>("/admin/print-center/stations"),
       get<Array<Record<string, unknown>>>("/admin/print-center/printers"),
       get<Array<Record<string, unknown>>>("/admin/print-center/rules"),
       get<Array<Record<string, unknown>>>("/admin/print-center/jobs"),
     ]);
-    const printerById = new Map(printers.map((printer) => [String(printer.id), printer]));
-    const stationById = new Map(stations.map((station) => [String(station.id), station]));
+    const printerById = new Map(
+      printers.map((printer) => [String(printer.id), printer]),
+    );
+    const stationById = new Map(
+      stations.map((station) => [String(station.id), station]),
+    );
     return {
-      summary: { stations_online: stations.filter((station) => station.connected).length, stations_total: stations.length, printers_ready: printers.filter((printer) => printer.status === "ready").length, printers_total: printers.length, pending_jobs: raw.pending_jobs, failed_jobs: raw.failed_jobs },
-      stations: stations.map((station) => ({ id: String(station.id), name: String(station.name), hostname: station.hostname as string | null, status: station.connected ? "online" : "offline", last_seen_at: station.last_seen_at as string | null, active: Boolean(station.active), printer_count: printers.filter((printer) => printer.station_id === station.id).length })),
-      printers: printers.map((printer) => ({ id: String(printer.id), name: String(printer.name), station_id: String(printer.station_id), station_name: String(stationById.get(String(printer.station_id))?.name ?? printer.station_id), connection_type: printer.connection_type as string, driver: printer.driver_name as string | null, status: printer.status as PrintServerPrinterStatus, print_type: printer.printer_type as ApiPrintServerPrinter["print_type"], last_printed_at: printer.last_seen_at as string | null, queued_jobs: jobs.filter((job) => job.printer_id === printer.id && ["pending", "received", "queued", "processing", "uncertain"].includes(String(job.status))).length })),
-      rules: rules.map((rule) => ({ id: String(rule.id), name: `${rule.sector} / ${rule.document_type}`, event: String(rule.document_type), sector: String(rule.sector), printer_ids: [String(rule.printer_id)], copies: Number(rule.copies), active: Boolean(rule.enabled) })),
-      queue: jobs.map((job) => ({ id: String(job.id), external_id: job.external_job_id as string, station_name: String(stationById.get(String(job.station_id))?.name ?? job.station_id ?? ""), printer_name: String(printerById.get(String(job.printer_id))?.name ?? job.printer_id), sector: job.sector as string, document_type: job.document_type as string, status: job.status as PrintServerJobStatus, attempts: Number(job.attempts ?? 0), created_at: String(job.created_at), updated_at: job.updated_at as string | null, error_message: job.last_error as string | null })),
+      summary: {
+        stations_online: stations.filter((station) => station.connected).length,
+        stations_total: stations.length,
+        printers_ready: printers.filter((printer) => printer.status === "ready")
+          .length,
+        printers_total: printers.length,
+        pending_jobs: raw.pending_jobs,
+        failed_jobs: raw.failed_jobs,
+      },
+      stations: stations.map((station) => ({
+        id: String(station.id),
+        name: String(station.name),
+        hostname: station.hostname as string | null,
+        status: station.connected ? "online" : "offline",
+        last_seen_at: station.last_seen_at as string | null,
+        active: Boolean(station.active),
+        printer_count: printers.filter(
+          (printer) => printer.station_id === station.id,
+        ).length,
+      })),
+      printers: printers.map((printer) => ({
+        id: String(printer.id),
+        name: String(printer.name),
+        station_id: String(printer.station_id),
+        station_name: String(
+          stationById.get(String(printer.station_id))?.name ??
+            printer.station_id,
+        ),
+        connection_type: printer.connection_type as string,
+        driver: printer.driver_name as string | null,
+        status: printer.status as PrintServerPrinterStatus,
+        print_type: printer.printer_type as ApiPrintServerPrinter["print_type"],
+        last_printed_at: printer.last_seen_at as string | null,
+        queued_jobs: jobs.filter(
+          (job) =>
+            job.printer_id === printer.id &&
+            [
+              "pending",
+              "received",
+              "queued",
+              "processing",
+              "uncertain",
+            ].includes(String(job.status)),
+        ).length,
+      })),
+      rules: rules.map((rule) => ({
+        id: String(rule.id),
+        name: `${rule.sector} / ${rule.document_type}`,
+        event: String(rule.document_type),
+        sector: String(rule.sector),
+        printer_ids: [String(rule.printer_id)],
+        copies: Number(rule.copies),
+        active: Boolean(rule.enabled),
+      })),
+      queue: jobs.map((job) => ({
+        id: String(job.id),
+        external_id: job.external_job_id as string,
+        station_name: String(
+          stationById.get(String(job.station_id))?.name ?? job.station_id ?? "",
+        ),
+        printer_name: String(
+          printerById.get(String(job.printer_id))?.name ?? job.printer_id,
+        ),
+        sector: job.sector as string,
+        document_type: job.document_type as string,
+        status: job.status as PrintServerJobStatus,
+        attempts: Number(job.attempts ?? 0),
+        created_at: String(job.created_at),
+        updated_at: job.updated_at as string | null,
+        error_message: job.last_error as string | null,
+      })),
     } satisfies ApiPrintServerOverview;
   },
-  listStations: () => get<ApiPrintServerStation[]>("/admin/print-center/stations"),
-  listPrinters: () => get<ApiPrintServerPrinter[]>("/admin/print-center/printers"),
+  listStations: () =>
+    get<ApiPrintServerStation[]>("/admin/print-center/stations"),
+  listPrinters: () =>
+    get<ApiPrintServerPrinter[]>("/admin/print-center/printers"),
   listRules: () => get<ApiPrintServerRule[]>("/admin/print-center/rules"),
   listQueue: () => get<ApiPrintServerJob[]>("/admin/print-center/jobs"),
-  setStationActive: (stationId: string, active: boolean) => patch<ApiPrintServerStation>(`/admin/print-center/stations/${encodeURIComponent(stationId)}`, { active }),
-  testPrinter: (printerId: string) => post<{ accepted: boolean; job_id?: string }>(`/admin/print-center/printers/${encodeURIComponent(printerId)}/test`, {}),
-  retryJob: (jobId: string) => post<ApiPrintServerJob>(`/admin/print-center/jobs/${encodeURIComponent(jobId)}/retry`, {}),
-  createPairingCode: (stationId: string, ttlMinutes = 15) => post<ApiPrintServerPairingCode>(`/admin/print-center/stations/${encodeURIComponent(stationId)}/pairing-code`, { ttl_minutes: ttlMinutes }),
-  agentRelease: () => get<ApiPrintServerAgentRelease>("/admin/print-center/agent-release"),
+  setStationActive: (stationId: string, active: boolean) =>
+    patch<ApiPrintServerStation>(
+      `/admin/print-center/stations/${encodeURIComponent(stationId)}`,
+      { active },
+    ),
+  testPrinter: (printerId: string) =>
+    post<{ accepted: boolean; job_id?: string }>(
+      `/admin/print-center/printers/${encodeURIComponent(printerId)}/test`,
+      {},
+    ),
+  retryJob: (jobId: string) =>
+    post<ApiPrintServerJob>(
+      `/admin/print-center/jobs/${encodeURIComponent(jobId)}/retry`,
+      {},
+    ),
+  createPairingCode: (stationId: string, ttlMinutes = 15) =>
+    post<ApiPrintServerPairingCode>(
+      `/admin/print-center/stations/${encodeURIComponent(stationId)}/pairing-code`,
+      { ttl_minutes: ttlMinutes },
+    ),
+  agentRelease: () =>
+    get<ApiPrintServerAgentRelease>("/admin/print-center/agent-release"),
   downloadAgentInstaller: async (): Promise<ApiPrintServerAgentDownload> => {
-    const response = await apiDownload("/admin/print-center/agent-release/download");
+    const response = await apiDownload(
+      "/admin/print-center/agent-release/download",
+    );
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const disposition = response.headers.get("content-disposition") ?? "";
     const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
     const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
-    const fileName = encodedName ? decodeURIComponent(encodedName) : (plainName || "GranTorinoPrintService-Setup.exe");
+    const fileName = encodedName
+      ? decodeURIComponent(encodedName)
+      : plainName || "GranTorinoPrintService-Setup.exe";
     return { blob: await response.blob(), fileName };
   },
 };

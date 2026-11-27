@@ -21,11 +21,16 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
-import { checkoutTrackingPayload, trackEvent, getTrackingData, firePixelEvent } from "@/lib/tracking";
+import {
+  checkoutTrackingPayload,
+  trackEvent,
+  getTrackingData,
+  firePixelEvent,
+} from "@/lib/tracking";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { groupCartItems } from "@/lib/cartKits";
 import { scheduleShippingQuote } from "@/lib/checkoutShipping";
-import { useApp } from "@/context/AppContext";
+import { useApp, type CartItem } from "@/context/AppContext";
 import {
   couponsApi,
   customersApi,
@@ -52,19 +57,39 @@ import {
 type DeliveryMode = "delivery" | "pickup";
 type SelectedPaymentMethod = "pix" | "card" | "delivery";
 type DeliveryPaymentMethod = "card" | "cash";
-type PaymentState = "idle" | "loading" | "pending" | "approved" | "rejected" | "expired" | "error";
+type PaymentState =
+  | "idle"
+  | "loading"
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "expired"
+  | "error";
 
 declare global {
   interface Window {
-    MercadoPago?: new (publicKey: string, options?: Record<string, unknown>) => {
-      createCardToken: (data: Record<string, string>) => Promise<{ id: string }>;
-      getPaymentMethods: (data: { bin: string }) => Promise<{ results: Array<{ id: string; payment_type_id: string }> }>;
+    MercadoPago?: new (
+      publicKey: string,
+      options?: Record<string, unknown>,
+    ) => {
+      createCardToken: (
+        data: Record<string, string>,
+      ) => Promise<{ id: string }>;
+      getPaymentMethods: (data: {
+        bin: string;
+      }) => Promise<{
+        results: Array<{ id: string; payment_type_id: string }>;
+      }>;
     };
   }
 }
 
 function formatCardNumber(v: string) {
-  return v.replace(/\D/g, "").slice(0, 16).replace(/(.{4})/g, "$1 ").trim();
+  return v
+    .replace(/\D/g, "")
+    .slice(0, 16)
+    .replace(/(.{4})/g, "$1 ")
+    .trim();
 }
 function formatExpiry(v: string) {
   const d = v.replace(/\D/g, "").slice(0, 4);
@@ -83,7 +108,8 @@ function formatCpfCnpj(v: string) {
   if (d.length <= 2) return d;
   if (d.length <= 5) return `${d.slice(0, 2)}.${d.slice(2)}`;
   if (d.length <= 8) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5)}`;
-  if (d.length <= 12) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8)}`;
+  if (d.length <= 12)
+    return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8)}`;
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
 }
 function documentDigits(value: string) {
@@ -96,12 +122,64 @@ function validCpfCnpjDigits(value: string) {
 function paymentExpiryMs(payment: ApiPayment | null) {
   if (!payment?.pix_expires_at) return Date.now() + 30 * 60 * 1000;
   const parsed = new Date(payment.pix_expires_at).getTime();
-  return Number.isFinite(parsed) && parsed > Date.now() ? parsed : Date.now() + 30 * 60 * 1000;
+  return Number.isFinite(parsed) && parsed > Date.now()
+    ? parsed
+    : Date.now() + 30 * 60 * 1000;
 }
 function addressNumberFrom(value: string) {
-  const afterComma = value.split(",").slice(1).join(",").match(/\d+[a-zA-Z]?/);
+  const afterComma = value
+    .split(",")
+    .slice(1)
+    .join(",")
+    .match(/\d+[a-zA-Z]?/);
   if (afterComma?.[0]) return afterComma[0];
   return value.match(/\d+[a-zA-Z]?/)?.[0] || "";
+}
+
+function checkoutItemFromCart(
+  item: CartItem,
+): import("@/lib/api").CheckoutItemIn {
+  if (item.strategicGroup?.referenceType === "kit" && item.kit?.id) {
+    return {
+      kit_id: item.kit.id,
+      quantity: 1,
+      selected_size: "Combo",
+      flavor_division: 1,
+      flavors: [],
+      final_price: item.finalPrice,
+      add_ons: [],
+    };
+  }
+  return {
+    product_id: item.productId,
+    quantity: item.quantity,
+    selected_size: item.selectedSize,
+    selected_size_id: item.selectedSizeId ?? null,
+    flavor_division: item.flavorDivision,
+    flavors: item.flavors.map((flavor) => ({
+      product_id: flavor.productId,
+      name: flavor.name,
+      price: flavor.price,
+      icon: flavor.icon,
+    })),
+    final_price: item.finalPrice,
+    add_ons: item.selectedAddOns,
+    selected_crust_type_id: item.selectedCrustType?.id ?? null,
+    selected_crust_type_name: item.selectedCrustType?.name ?? null,
+    selected_border_id: item.selectedBorder?.id ?? null,
+    selected_border_name: item.selectedBorder?.name ?? null,
+    selected_drink_variant_id: item.selectedDrinkVariant?.id ?? null,
+    selected_drink_variant_name: item.selectedDrinkVariant?.name ?? null,
+    notes: item.notes ?? null,
+    option_selections: item.selectedOptions.map((option) => ({
+      group_id: option.groupId,
+      group_name: option.groupName,
+      option_id: option.optionId,
+      label: option.label,
+      quantity: option.quantity,
+      price_addition: option.priceAddition,
+    })),
+  };
 }
 
 // sessionStorage key that persists the locked order across page refreshes and back-navigation
@@ -115,21 +193,45 @@ function statusClass(state: PaymentState): string {
 
 export default function Checkout() {
   const navigate = useNavigate();
-  const { cart, cartSubtotal, clearCart, siteContent, customer, customerLogout } = useApp();
+  const {
+    cart,
+    cartSubtotal,
+    clearCart,
+    siteContent,
+    customer,
+    customerLogout,
+  } = useApp();
   const cartGroups = useMemo(() => groupCartItems(cart), [cart]);
-  const [strategicCommercialConfig, setStrategicCommercialConfig] = useState<import("@/lib/api").StrategicCommercialConfig | null>(null);
-  const strategicCampaignSlug = cart.length === 1 ? cart[0].strategicCampaignSlug : null;
+  const [strategicCommercialConfig, setStrategicCommercialConfig] = useState<
+    import("@/lib/api").StrategicCommercialConfig | null
+  >(null);
+  const strategicCampaignSlugs = [
+    ...new Set(cart.map((item) => item.strategicCampaignSlug).filter(Boolean)),
+  ];
+  const strategicCampaignSlug =
+    strategicCampaignSlugs.length === 1 ? strategicCampaignSlugs[0] : null;
   useEffect(() => {
-    if (!strategicCampaignSlug) { setStrategicCommercialConfig(null); return; }
-    strategicCampaignsApi.publicBySlug(strategicCampaignSlug)
-      .then((campaign) => setStrategicCommercialConfig(campaign.commercial_config))
+    if (!strategicCampaignSlug) {
+      setStrategicCommercialConfig(null);
+      return;
+    }
+    strategicCampaignsApi
+      .publicBySlug(strategicCampaignSlug)
+      .then((campaign) =>
+        setStrategicCommercialConfig(campaign.commercial_config),
+      )
       .catch(() => setStrategicCommercialConfig(null));
   }, [strategicCampaignSlug]);
-  const strategicRequiresSchedule = !!strategicCommercialConfig && (strategicCommercialConfig.sales_mode === "preorder" || strategicCommercialConfig.require_scheduled_order);
+  const strategicRequiresSchedule =
+    !!strategicCommercialConfig &&
+    (strategicCommercialConfig.sales_mode === "preorder" ||
+      strategicCommercialConfig.require_scheduled_order);
   const c = siteContent.pages.checkout;
 
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("delivery");
-  const [selectedAddressId, setSelectedAddressId] = useState<string | "new" | null>(null);
+  const [selectedAddressId, setSelectedAddressId] = useState<
+    string | "new" | null
+  >(null);
   const [form, setForm] = useState({
     name: customer?.name ?? "",
     phone: customer?.phone ?? "",
@@ -145,82 +247,129 @@ export default function Checkout() {
   const [couponGift, setCouponGift] = useState<ApiCouponGift | null>(null);
   const [couponMsg, setCouponMsg] = useState("");
   const [couponApplied, setCouponApplied] = useState(false);
-  const [shippingResult, setShippingResult] = useState<ApiShipping | null>(null);
+  const [shippingResult, setShippingResult] = useState<ApiShipping | null>(
+    null,
+  );
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingError, setShippingError] = useState("");
   const [shippingRetry, setShippingRetry] = useState(0);
   const [errors, setErrors] = useState<Partial<typeof form>>({});
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
-  const [reviewedQuote, setReviewedQuote] = useState<{ key: string; total: number; items: Array<{ unit_price: number }> } | null>(null);
-  useEffect(() => { setReviewedQuote(null); }, [cart, deliveryMode, form, couponCode]);
+  const [reviewedQuote, setReviewedQuote] = useState<{
+    key: string;
+    total: number;
+    items: Array<{ unit_price: number }>;
+  } | null>(null);
+  useEffect(() => {
+    setReviewedQuote(null);
+  }, [cart, deliveryMode, form, couponCode]);
   const [createdOrder, setCreatedOrder] = useState<ApiOrder | null>(null);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<SelectedPaymentMethod>("pix");
-  const [deliveryPaymentMethod, setDeliveryPaymentMethod] = useState<DeliveryPaymentMethod>("card");
+  const [selectedPaymentMethod, setSelectedPaymentMethod] =
+    useState<SelectedPaymentMethod>("pix");
+  const [deliveryPaymentMethod, setDeliveryPaymentMethod] =
+    useState<DeliveryPaymentMethod>("card");
   const [cashNeedsChange, setCashNeedsChange] = useState(false);
   const [cashChangeFor, setCashChangeFor] = useState("");
-  const [paymentMethods, setPaymentMethods] = useState<ApiPaymentMethods | null>(null);
-  const [paymentPublicConfig, setPaymentPublicConfig] = useState<ApiPaymentPublicConfig | null>(null);
+  const [paymentMethods, setPaymentMethods] =
+    useState<ApiPaymentMethods | null>(null);
+  const [paymentPublicConfig, setPaymentPublicConfig] =
+    useState<ApiPaymentPublicConfig | null>(null);
   const [paymentConfigLoading, setPaymentConfigLoading] = useState(true);
   const [payment, setPayment] = useState<ApiPayment | null>(null);
   const [paymentState, setPaymentState] = useState<PaymentState>("idle");
   const [paymentMessage, setPaymentMessage] = useState("");
-  const [storeStatus, setStoreStatus] = useState<StoreOperationStatus | null>(null);
+  const [storeStatus, setStoreStatus] = useState<StoreOperationStatus | null>(
+    null,
+  );
   const [scheduledFor, setScheduledFor] = useState("");
-  const [checkoutAddresses, setCheckoutAddresses] = useState<ApiAddress[] | null>(null);
+  const [checkoutAddresses, setCheckoutAddresses] = useState<
+    ApiAddress[] | null
+  >(null);
   const [cardNumber, setCardNumber] = useState("");
   const [cardName, setCardName] = useState("");
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvv, setCardCvv] = useState("");
   const [cardCpf, setCardCpf] = useState("");
   const [pixCpfCnpj, setPixCpfCnpj] = useState("");
-  const [cardFunction, setCardFunction] = useState<"credit" | "debit">("credit");
+  const [cardFunction, setCardFunction] = useState<"credit" | "debit">(
+    "credit",
+  );
   const [cardInstallments, setCardInstallments] = useState(1);
   const [cardSubmitting, setCardSubmitting] = useState(false);
   const [cardError, setCardError] = useState("");
   const [pixExpiresAt, setPixExpiresAt] = useState<number | null>(null);
   const [pixSecondsLeft, setPixSecondsLeft] = useState<number | null>(null);
   const paymentMethodsRef = useRef<ApiPaymentMethods | null>(null);
-  const pixProvider = paymentPublicConfig?.methods.pix.provider || paymentMethods?.pix_provider || payment?.provider || "";
+  const pixProvider =
+    paymentPublicConfig?.methods.pix.provider ||
+    paymentMethods?.pix_provider ||
+    payment?.provider ||
+    "";
   const pixConfig = paymentPublicConfig?.methods.pix;
   const pixAvailable = paymentPublicConfig
-    ? pixConfig?.enabled === true && pixConfig.implementation_status === "available"
+    ? pixConfig?.enabled === true &&
+      pixConfig.implementation_status === "available"
     : paymentMethods?.pix_provider === "pagarme"
       ? false
       : paymentMethods?.accept_pix !== false;
   const isAsaasPix = pixProvider === "asaas";
   const isPagarmePix = pixProvider === "pagarme";
   const pixNeedsDocument = isAsaasPix || isPagarmePix;
-  const pixGatewayName = isAsaasPix ? "ASAAS" : isPagarmePix ? "Pagar.me" : "Mercado Pago";
+  const pixGatewayName = isAsaasPix
+    ? "ASAAS"
+    : isPagarmePix
+      ? "Pagar.me"
+      : "Mercado Pago";
   const pixDocument = documentDigits(pixCpfCnpj || cardCpf);
   const displayPixQrCode = payment?.qr_code || payment?.pix_qr_code || "";
   const displayPixPayload = payment?.qr_code_text || payment?.pix_payload || "";
   const creditCardConfig = paymentPublicConfig?.methods.credit_card;
-  const maxCardInstallments = Math.max(1, Number(creditCardConfig?.max_installments || 1));
+  const maxCardInstallments = Math.max(
+    1,
+    Number(creditCardConfig?.max_installments || 1),
+  );
   const debitCardConfig = paymentPublicConfig?.methods.debit_card;
   const creditCardMercadoPagoAvailable = paymentPublicConfig
-    ? creditCardConfig?.enabled === true && creditCardConfig.provider === "mercado_pago" && creditCardConfig.implementation_status === "available"
-    : paymentMethods?.credit_card_provider !== "asaas"
-      && paymentMethods?.credit_card_provider !== "pagarme"
-      && paymentMethods?.accept_credit_card !== false;
+    ? creditCardConfig?.enabled === true &&
+      creditCardConfig.provider === "mercado_pago" &&
+      creditCardConfig.implementation_status === "available"
+    : paymentMethods?.credit_card_provider !== "asaas" &&
+      paymentMethods?.credit_card_provider !== "pagarme" &&
+      paymentMethods?.accept_credit_card !== false;
   const creditCardAsaasAvailable = paymentPublicConfig
-    ? creditCardConfig?.enabled === true && creditCardConfig.provider === "asaas" && creditCardConfig.implementation_status === "available"
+    ? creditCardConfig?.enabled === true &&
+      creditCardConfig.provider === "asaas" &&
+      creditCardConfig.implementation_status === "available"
     : false;
   const creditCardPagarmeAvailable = paymentPublicConfig
-    ? creditCardConfig?.enabled === true
-      && creditCardConfig.provider === "pagarme"
-      && creditCardConfig.implementation_status === "available"
-      && Boolean(creditCardConfig.public_key)
+    ? creditCardConfig?.enabled === true &&
+      creditCardConfig.provider === "pagarme" &&
+      creditCardConfig.implementation_status === "available" &&
+      Boolean(creditCardConfig.public_key)
     : false;
-  const creditCardAvailable = creditCardMercadoPagoAvailable || creditCardAsaasAvailable || creditCardPagarmeAvailable;
+  const creditCardAvailable =
+    creditCardMercadoPagoAvailable ||
+    creditCardAsaasAvailable ||
+    creditCardPagarmeAvailable;
   const debitCardMercadoPagoAvailable = paymentPublicConfig
-    ? debitCardConfig?.enabled === true && debitCardConfig.provider === "mercado_pago" && debitCardConfig.implementation_status === "available"
+    ? debitCardConfig?.enabled === true &&
+      debitCardConfig.provider === "mercado_pago" &&
+      debitCardConfig.implementation_status === "available"
     : paymentMethods?.accept_debit_card !== false;
-  const onlineCardAvailable = creditCardAvailable || debitCardMercadoPagoAvailable;
-  const selectedCardAvailable = cardFunction === "debit" ? debitCardMercadoPagoAvailable : creditCardAvailable;
+  const onlineCardAvailable =
+    creditCardAvailable || debitCardMercadoPagoAvailable;
+  const selectedCardAvailable =
+    cardFunction === "debit"
+      ? debitCardMercadoPagoAvailable
+      : creditCardAvailable;
   const isAsaasCard = cardFunction === "credit" && creditCardAsaasAvailable;
   const isPagarmeCard = cardFunction === "credit" && creditCardPagarmeAvailable;
-  const cardGatewayName = isAsaasCard ? "ASAAS" : isPagarmeCard ? "Pagar.me" : "Mercado Pago";
+  const cardGatewayName = isAsaasCard
+    ? "ASAAS"
+    : isPagarmeCard
+      ? "Pagar.me"
+      : "Mercado Pago";
   const cardUnavailableReason =
     creditCardConfig?.reason ||
     debitCardConfig?.reason ||
@@ -231,15 +380,22 @@ export default function Checkout() {
     const lockedId = sessionStorage.getItem(LOCKED_ORDER_KEY);
     if (!lockedId) return;
     let cancelled = false;
-    ordersApi.paymentStatus(lockedId).then((status) => {
-      if (cancelled) return;
-      if (status.checkout_locked) {
-        navigate(`/order-tracking?orderId=${lockedId}`, { replace: true });
-      } else {
-        sessionStorage.removeItem(LOCKED_ORDER_KEY);
-      }
-    }).catch(() => { if (!cancelled) sessionStorage.removeItem(LOCKED_ORDER_KEY); });
-    return () => { cancelled = true; };
+    ordersApi
+      .paymentStatus(lockedId)
+      .then((status) => {
+        if (cancelled) return;
+        if (status.checkout_locked) {
+          navigate(`/order-tracking?orderId=${lockedId}`, { replace: true });
+        } else {
+          sessionStorage.removeItem(LOCKED_ORDER_KEY);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) sessionStorage.removeItem(LOCKED_ORDER_KEY);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Intercept browser back-button once an order has been created and payment initiated.
@@ -256,10 +412,18 @@ export default function Checkout() {
 
   useEffect(() => {
     if (selectedPaymentMethod !== "card") return;
-    if (cardFunction === "credit" && !creditCardAvailable && debitCardMercadoPagoAvailable) {
+    if (
+      cardFunction === "credit" &&
+      !creditCardAvailable &&
+      debitCardMercadoPagoAvailable
+    ) {
       setCardFunction("debit");
     }
-    if (cardFunction === "debit" && !debitCardMercadoPagoAvailable && creditCardAvailable) {
+    if (
+      cardFunction === "debit" &&
+      !debitCardMercadoPagoAvailable &&
+      creditCardAvailable
+    ) {
       setCardFunction("credit");
     }
   }, [
@@ -275,22 +439,31 @@ export default function Checkout() {
 
   const savedAddresses = checkoutAddresses ?? customer?.addresses ?? [];
   const savedAddressSignature = savedAddresses
-    .map((addr) => [
-      addr.id,
-      addr.is_default,
-      addr.street,
-      addr.number ?? "",
-      addr.neighborhood ?? "",
-      addr.city,
-      addr.zip_code ?? "",
-      addr.complement ?? "",
-    ].join(":"))
+    .map((addr) =>
+      [
+        addr.id,
+        addr.is_default,
+        addr.street,
+        addr.number ?? "",
+        addr.neighborhood ?? "",
+        addr.city,
+        addr.zip_code ?? "",
+        addr.complement ?? "",
+      ].join(":"),
+    )
     .join("|");
 
   const applyAddress = (addrId: string | "new") => {
     setSelectedAddressId(addrId);
     if (addrId === "new") {
-      setForm((prev) => ({ ...prev, address: "", neighborhood: "", city: "", zip_code: "", complement: "" }));
+      setForm((prev) => ({
+        ...prev,
+        address: "",
+        neighborhood: "",
+        city: "",
+        zip_code: "",
+        complement: "",
+      }));
       return;
     }
     const addr = savedAddresses.find((a) => a.id === addrId);
@@ -324,7 +497,8 @@ export default function Checkout() {
 
     let cancelled = false;
     setCheckoutAddresses(customer.addresses ?? []);
-    customersApi.listAddresses(customer.id)
+    customersApi
+      .listAddresses(customer.id)
       .then((addresses) => {
         if (!cancelled) setCheckoutAddresses(addresses);
       })
@@ -338,42 +512,67 @@ export default function Checkout() {
   }, [customer?.id]);
 
   useEffect(() => {
-    if (!customer || deliveryMode !== "delivery" || savedAddresses.length === 0) return;
+    if (!customer || deliveryMode !== "delivery" || savedAddresses.length === 0)
+      return;
     if (selectedAddressId === "new") return;
 
     const selectedStillExists = selectedAddressId
       ? savedAddresses.some((addr) => addr.id === selectedAddressId)
       : false;
-    const def = savedAddresses.find((addr) => addr.is_default) ?? savedAddresses[0];
-    applyAddress(selectedStillExists && selectedAddressId ? selectedAddressId : def.id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    const def =
+      savedAddresses.find((addr) => addr.is_default) ?? savedAddresses[0];
+    applyAddress(
+      selectedStillExists && selectedAddressId ? selectedAddressId : def.id,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer?.id, deliveryMode, selectedAddressId, savedAddressSignature]);
 
   useEffect(() => {
     const td = getTrackingData();
-    customerEventsApi.register({
-      event_type: "checkout_started",
-      event_name: "Iniciou checkout",
-      customer_id: customer?.id ?? null,
-      session_id: td.session_id,
-      page_url: window.location.href,
-    }).catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    customerEventsApi
+      .register({
+        event_type: "checkout_started",
+        event_name: "Iniciou checkout",
+        customer_id: customer?.id ?? null,
+        session_id: td.session_id,
+        page_url: window.location.href,
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    storeOperationApi.status().then(setStoreStatus).catch(() => setStoreStatus(null));
-    const publicConfigRequest = paymentsApi.publicConfig().then(setPaymentPublicConfig).catch(() => setPaymentPublicConfig(null));
-    const methodsRequest = paymentsApi.methods().then((methods) => {
-      setPaymentMethods(methods);
-      paymentMethodsRef.current = methods;
-      if (!methods.accept_pix && (methods.accept_credit_card || methods.accept_debit_card)) {
-        setSelectedPaymentMethod("card");
-      } else if (!methods.accept_pix && !methods.accept_credit_card && !methods.accept_debit_card && methods.accept_cash) {
-        setSelectedPaymentMethod("delivery");
-      }
-    }).catch(() => setPaymentMethods(null));
-    Promise.allSettled([publicConfigRequest, methodsRequest]).finally(() => setPaymentConfigLoading(false));
+    storeOperationApi
+      .status()
+      .then(setStoreStatus)
+      .catch(() => setStoreStatus(null));
+    const publicConfigRequest = paymentsApi
+      .publicConfig()
+      .then(setPaymentPublicConfig)
+      .catch(() => setPaymentPublicConfig(null));
+    const methodsRequest = paymentsApi
+      .methods()
+      .then((methods) => {
+        setPaymentMethods(methods);
+        paymentMethodsRef.current = methods;
+        if (
+          !methods.accept_pix &&
+          (methods.accept_credit_card || methods.accept_debit_card)
+        ) {
+          setSelectedPaymentMethod("card");
+        } else if (
+          !methods.accept_pix &&
+          !methods.accept_credit_card &&
+          !methods.accept_debit_card &&
+          methods.accept_cash
+        ) {
+          setSelectedPaymentMethod("delivery");
+        }
+      })
+      .catch(() => setPaymentMethods(null));
+    Promise.allSettled([publicConfigRequest, methodsRequest]).finally(() =>
+      setPaymentConfigLoading(false),
+    );
   }, []);
 
   useEffect(() => {
@@ -392,19 +591,37 @@ export default function Checkout() {
       return;
     }
     if (!form.city.trim() || !form.address.trim()) {
-      setShippingResult(null); setShippingLoading(false); setShippingError("");
+      setShippingResult(null);
+      setShippingLoading(false);
+      setShippingError("");
       return;
     }
-    return scheduleShippingQuote(() => shippingApi.calculate(
+    return scheduleShippingQuote(
+      () =>
+        shippingApi.calculate(
           form.city,
           cartSubtotal,
           form.neighborhood || undefined,
           form.zip_code || undefined,
           false,
           false,
-          form.address || undefined
-        ), { result: setShippingResult, loading: setShippingLoading, error: setShippingError });
-  }, [form.address, form.city, form.neighborhood, form.zip_code, cartSubtotal, deliveryMode, shippingRetry]);
+          form.address || undefined,
+        ),
+      {
+        result: setShippingResult,
+        loading: setShippingLoading,
+        error: setShippingError,
+      },
+    );
+  }, [
+    form.address,
+    form.city,
+    form.neighborhood,
+    form.zip_code,
+    cartSubtotal,
+    deliveryMode,
+    shippingRetry,
+  ]);
 
   useEffect(() => {
     if (!createdOrder) return;
@@ -421,15 +638,19 @@ export default function Checkout() {
       try {
         const status = await ordersApi.paymentStatus(createdOrder.id);
         if (status.qr_code || status.qr_code_text || status.payment_url) {
-          setPayment((prev) => prev ? {
-            ...prev,
-            qr_code: status.qr_code ?? prev.qr_code,
-            qr_code_text: status.qr_code_text ?? prev.qr_code_text,
-            pix_payload: status.pix_payload ?? prev.pix_payload,
-            pix_qr_code: status.pix_qr_code ?? prev.pix_qr_code,
-            pix_expires_at: status.pix_expires_at ?? prev.pix_expires_at,
-            payment_url: status.payment_url ?? prev.payment_url,
-          } : prev);
+          setPayment((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  qr_code: status.qr_code ?? prev.qr_code,
+                  qr_code_text: status.qr_code_text ?? prev.qr_code_text,
+                  pix_payload: status.pix_payload ?? prev.pix_payload,
+                  pix_qr_code: status.pix_qr_code ?? prev.pix_qr_code,
+                  pix_expires_at: status.pix_expires_at ?? prev.pix_expires_at,
+                  payment_url: status.payment_url ?? prev.payment_url,
+                }
+              : prev,
+          );
           if (status.pix_expires_at) {
             const expiresAt = new Date(status.pix_expires_at).getTime();
             if (Number.isFinite(expiresAt)) setPixExpiresAt(expiresAt);
@@ -443,29 +664,49 @@ export default function Checkout() {
         ) {
           setPaymentState("approved");
           setPaymentMessage("Pagamento aprovado! Pedido enviado para preparo.");
-          trackEvent("order_paid", createdOrder.total, { order_id: createdOrder.id });
-          firePixelEvent("Purchase", { value: createdOrder.total, order_id: createdOrder.id });
-          const _tdPaid = getTrackingData();
-          customerEventsApi.register({
-            event_type: "order_paid",
-            event_name: "Pagamento confirmado",
+          trackEvent("order_paid", createdOrder.total, {
             order_id: createdOrder.id,
-            customer_id: customer?.id ?? null,
-            session_id: _tdPaid.session_id,
-          }).catch(() => {});
+          });
+          firePixelEvent("Purchase", {
+            value: createdOrder.total,
+            order_id: createdOrder.id,
+          });
+          const _tdPaid = getTrackingData();
+          customerEventsApi
+            .register({
+              event_type: "order_paid",
+              event_name: "Pagamento confirmado",
+              order_id: createdOrder.id,
+              customer_id: customer?.id ?? null,
+              session_id: _tdPaid.session_id,
+            })
+            .catch(() => {});
           clearCart();
           sessionStorage.removeItem(LOCKED_ORDER_KEY);
           clearInterval(id);
-          setTimeout(() => navigate(`/order-tracking?orderId=${createdOrder.id}`), 1200);
-        } else if (status.payment_status === "rejected" || status.pedido_status === "pagamento_recusado") {
+          setTimeout(
+            () => navigate(`/order-tracking?orderId=${createdOrder.id}`),
+            1200,
+          );
+        } else if (
+          status.payment_status === "rejected" ||
+          status.pedido_status === "pagamento_recusado"
+        ) {
           sessionStorage.removeItem(LOCKED_ORDER_KEY);
           setPaymentState("rejected");
-          setPaymentMessage("O Mercado Pago recusou o cartao de credito. Escolha PIX ou pagamento na entrega para continuar com este pedido.");
+          setPaymentMessage(
+            "O Mercado Pago recusou o cartao de credito. Escolha PIX ou pagamento na entrega para continuar com este pedido.",
+          );
           clearInterval(id);
-        } else if (["cancelled", "expired"].includes(status.payment_status) || status.pedido_status === "pagamento_expirado") {
+        } else if (
+          ["cancelled", "expired"].includes(status.payment_status) ||
+          status.pedido_status === "pagamento_expirado"
+        ) {
           sessionStorage.removeItem(LOCKED_ORDER_KEY);
           setPaymentState("expired");
-          setPaymentMessage("Pagamento expirado ou cancelado. Tente novamente.");
+          setPaymentMessage(
+            "Pagamento expirado ou cancelado. Tente novamente.",
+          );
           clearCart();
           clearInterval(id);
         }
@@ -484,7 +725,9 @@ export default function Checkout() {
       setPixSecondsLeft(left);
       if (left === 0) {
         setPaymentState("expired");
-        setPaymentMessage("PIX expirado. Gere um novo PIX, mude a forma de pagamento ou cancele o pedido.");
+        setPaymentMessage(
+          "PIX expirado. Gere um novo PIX, mude a forma de pagamento ou cancele o pedido.",
+        );
         clearCart();
       }
     };
@@ -493,14 +736,25 @@ export default function Checkout() {
     return () => clearInterval(id);
   }, [pixExpiresAt, clearCart]);
 
-  const promotionBlocksCoupons = cart.some((item) => item.promotionApplied && item.promotionBlocksOtherCoupons);
-  const promotionFreeShipping = cart.some((item) => item.promotionApplied && item.promotionFreeShipping);
+  const promotionBlocksCoupons = cart.some(
+    (item) => item.promotionApplied && item.promotionBlocksOtherCoupons,
+  );
+  const promotionFreeShipping = cart.some(
+    (item) => item.promotionApplied && item.promotionFreeShipping,
+  );
   const promotionGifts = useMemo<ApiCouponGift[]>(() => {
     const gifts = new Map<string, ApiCouponGift>();
     cart.forEach((item) => {
-      if (!item.promotionApplied || !item.promotionGiftEnabled || !item.promotionGiftProductId || !item.promotionGiftName) return;
+      if (
+        !item.promotionApplied ||
+        !item.promotionGiftEnabled ||
+        !item.promotionGiftProductId ||
+        !item.promotionGiftName
+      )
+        return;
       const key = `${item.promotionId ?? "promotion"}-${item.promotionGiftProductId}`;
-      const quantity = Math.max(1, item.promotionGiftQuantity ?? 1) * item.quantity;
+      const quantity =
+        Math.max(1, item.promotionGiftQuantity ?? 1) * item.quantity;
       const current = gifts.get(key);
       if (current) {
         current.quantity += quantity;
@@ -529,7 +783,9 @@ export default function Checkout() {
     setCouponFreeShipping(false);
     setCouponGift(null);
     setCouponApplied(false);
-    setCouponMsg("Este carrinho tem produto em promocao que bloqueia outros cupons.");
+    setCouponMsg(
+      "Este carrinho tem produto em promocao que bloqueia outros cupons.",
+    );
   }, [promotionBlocksCoupons, couponApplied]);
 
   if (!customer && !createdOrder) {
@@ -543,9 +799,17 @@ export default function Checkout() {
   }
 
   const deliveryFee = shippingResult?.shipping_price ?? 0;
-  const shippingAvailable = !shippingLoading && !shippingError && shippingResult?.available === true;
-  const deliveryFeeFinal = couponFreeShipping || promotionFreeShipping || deliveryMode === "pickup" || shippingResult?.free ? 0 : deliveryFee;
-  const total = reviewedQuote?.total ?? cartSubtotal + deliveryFeeFinal - couponDiscount;
+  const shippingAvailable =
+    !shippingLoading && !shippingError && shippingResult?.available === true;
+  const deliveryFeeFinal =
+    couponFreeShipping ||
+    promotionFreeShipping ||
+    deliveryMode === "pickup" ||
+    shippingResult?.free
+      ? 0
+      : deliveryFee;
+  const total =
+    reviewedQuote?.total ?? cartSubtotal + deliveryFeeFinal - couponDiscount;
 
   const handleChange = (field: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -567,12 +831,20 @@ export default function Checkout() {
   const handleApplyCoupon = async () => {
     if (!couponCode.trim()) return;
     if (promotionBlocksCoupons) {
-      setCouponMsg("Este carrinho tem produto em promocao que bloqueia outros cupons.");
+      setCouponMsg(
+        "Este carrinho tem produto em promocao que bloqueia outros cupons.",
+      );
       return;
     }
     setCouponMsg("");
     try {
-      const result = await couponsApi.apply(couponCode.trim(), cartSubtotal, customer?.id, form.phone, deliveryFee);
+      const result = await couponsApi.apply(
+        couponCode.trim(),
+        cartSubtotal,
+        customer?.id,
+        form.phone,
+        deliveryFee,
+      );
       if (result.valid) {
         setCouponDiscount(result.discount_amount);
         setCouponFreeShipping(result.free_shipping_applied);
@@ -605,34 +877,62 @@ export default function Checkout() {
       setApiError("Aguarde enquanto carregamos as formas de pagamento.");
       return;
     }
-    const mustSchedule = strategicRequiresSchedule || (!!storeStatus && !storeStatus.is_open && storeStatus.allow_scheduled_orders);
-    const campaignMayOrderWhileClosed = !!strategicCommercialConfig?.allow_when_store_closed;
-    if (storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders && !campaignMayOrderWhileClosed) {
+    const mustSchedule =
+      strategicRequiresSchedule ||
+      (!!storeStatus &&
+        !storeStatus.is_open &&
+        storeStatus.allow_scheduled_orders);
+    const campaignMayOrderWhileClosed =
+      !!strategicCommercialConfig?.allow_when_store_closed;
+    if (
+      storeStatus &&
+      !storeStatus.is_open &&
+      !storeStatus.allow_scheduled_orders &&
+      !campaignMayOrderWhileClosed
+    ) {
       setApiError(storeStatus.message || "Loja fechada no momento.");
       return;
     }
     if (mustSchedule && !scheduledFor) {
-      setApiError("Escolha um horario futuro disponivel para agendar o pedido.");
+      setApiError(
+        "Escolha um horario futuro disponivel para agendar o pedido.",
+      );
       return;
     }
     if (!shippingAvailable && deliveryMode === "delivery") {
-      setApiError(shippingError || (shippingLoading ? "Aguarde o cálculo do frete." : shippingResult?.message || "Informe o endereço completo e aguarde a confirmação do frete."));
+      setApiError(
+        shippingError ||
+          (shippingLoading
+            ? "Aguarde o cálculo do frete."
+            : shippingResult?.message ||
+              "Informe o endereço completo e aguarde a confirmação do frete."),
+      );
       return;
     }
     if (paymentMethods) {
       const pixDisabled = selectedPaymentMethod === "pix" && !pixAvailable;
-      const cardDisabled = selectedPaymentMethod === "card" && !onlineCardAvailable;
-      const deliveryDisabled = selectedPaymentMethod === "delivery" && !paymentMethods.accept_cash;
+      const cardDisabled =
+        selectedPaymentMethod === "card" && !onlineCardAvailable;
+      const deliveryDisabled =
+        selectedPaymentMethod === "delivery" && !paymentMethods.accept_cash;
       if (pixDisabled || cardDisabled || deliveryDisabled) {
         setApiError("Forma de pagamento indisponivel no momento.");
         return;
       }
     }
-    if (selectedPaymentMethod === "pix" && pixNeedsDocument && !validCpfCnpjDigits(pixCpfCnpj)) {
+    if (
+      selectedPaymentMethod === "pix" &&
+      pixNeedsDocument &&
+      !validCpfCnpjDigits(pixCpfCnpj)
+    ) {
       setApiError("Informe CPF ou CNPJ valido para gerar o Pix.");
       return;
     }
-    if (selectedPaymentMethod === "delivery" && deliveryPaymentMethod === "cash" && cashNeedsChange) {
+    if (
+      selectedPaymentMethod === "delivery" &&
+      deliveryPaymentMethod === "cash" &&
+      cashNeedsChange
+    ) {
       const changeFor = Number(cashChangeFor.replace(",", "."));
       if (!Number.isFinite(changeFor) || changeFor <= total) {
         setApiError("Informe um valor de troco maior que o total do pedido.");
@@ -651,97 +951,167 @@ export default function Checkout() {
     trackEvent("checkout_start", cartSubtotal);
     firePixelEvent("InitiateCheckout", { value: cartSubtotal });
     const tracking = checkoutTrackingPayload();
-    const strategicOfferIds = new Set(cart.map((item) => item.strategicOfferId).filter(Boolean));
-    const strategicOfferId = cart.length === 1 && strategicOfferIds.size === 1
-      ? [...strategicOfferIds][0]
-      : undefined;
+    const ungroupedStrategicItems = cart.filter(
+      (item) => item.strategicOfferId && !item.strategicGroup?.instanceId,
+    );
+    const strategicOfferIds = new Set(
+      ungroupedStrategicItems
+        .map((item) => item.strategicOfferId)
+        .filter(Boolean),
+    );
+    const strategicOfferId =
+      cart.length === 1 && strategicOfferIds.size === 1
+        ? [...strategicOfferIds][0]
+        : undefined;
+    const strategicOfferGroups = cartGroups
+      .filter(
+        (
+          group,
+        ): group is Extract<
+          (typeof cartGroups)[number],
+          { kind: "strategic" }
+        > => group.kind === "strategic",
+      )
+      .map((group) => ({
+        offer_id: group.items[0].strategicOfferId!,
+        campaign_version: group.strategic.campaignVersion,
+        composition_revision: group.strategic.compositionRevision,
+        quantity: group.strategic.quantity ?? 1,
+        selections: group.items.map((item) => ({
+          step_key: item.strategicGroup?.stepKey || "",
+          item: checkoutItemFromCart(item),
+        })),
+      }));
     const changeFor = Number(cashChangeFor.replace(",", "."));
     const payload: CheckoutIn = {
-      items: cartGroups.map((group) => {
+      items: cartGroups.flatMap((group) => {
+        if (group.kind === "strategic") return [];
         if (group.kind === "kit") {
           const first = group.items[0];
-          const component = group.kit.components.find((entry) => entry.productId === first.productId);
-          const kitQuantity = component && first.quantity % component.quantity === 0
-            ? first.quantity / component.quantity
-            : 0;
-          if (!kitQuantity) throw new Error("A composição do combo no carrinho é inválida. Remova e adicione o combo novamente.");
-          return { kit_id: group.kit.id, quantity: kitQuantity, selected_size: "Combo", flavor_division: 1, flavors: [], final_price: first.finalPrice, add_ons: [] };
+          const component = group.kit.components.find(
+            (entry) => entry.productId === first.productId,
+          );
+          const kitQuantity =
+            component && first.quantity % component.quantity === 0
+              ? first.quantity / component.quantity
+              : 0;
+          if (!kitQuantity)
+            throw new Error(
+              "A composição do combo no carrinho é inválida. Remova e adicione o combo novamente.",
+            );
+          return {
+            kit_id: group.kit.id,
+            quantity: kitQuantity,
+            selected_size: "Combo",
+            flavor_division: 1,
+            flavors: [],
+            final_price: first.finalPrice,
+            add_ons: [],
+          };
         }
-        const item = group.item;
-        return {
-          product_id: item.productId,
-          quantity: item.quantity,
-          selected_size: item.selectedSize,
-          selected_size_id: item.selectedSizeId ?? null,
-          flavor_division: item.flavorDivision,
-          flavors: item.flavors.map((f) => ({ product_id: f.productId, name: f.name, price: f.price, icon: f.icon })),
-          final_price: item.finalPrice,
-          add_ons: item.selectedAddOns,
-          selected_crust_type_id: item.selectedCrustType?.id ?? null,
-          selected_crust_type_name: item.selectedCrustType?.name ?? null,
-          selected_border_id: item.selectedBorder?.id ?? null,
-          selected_border_name: item.selectedBorder?.name ?? null,
-          selected_drink_variant_id: item.selectedDrinkVariant?.id ?? null,
-          selected_drink_variant_name: item.selectedDrinkVariant?.name ?? null,
-          notes: item.notes ?? null,
-          option_selections: item.selectedOptions.map((option) => ({ group_id: option.groupId, group_name: option.groupName, option_id: option.optionId, label: option.label, quantity: option.quantity, price_addition: option.priceAddition })),
-        };
+        return [checkoutItemFromCart(group.item)];
       }),
       delivery: {
         name: form.name,
         phone: form.phone,
         street: deliveryMode === "pickup" ? "Retirada no local" : form.address,
         city: form.city || "Retirada",
-        neighborhood: deliveryMode === "pickup" ? undefined : form.neighborhood || undefined,
-        zip_code: deliveryMode === "pickup" ? undefined : form.zip_code || undefined,
+        neighborhood:
+          deliveryMode === "pickup"
+            ? undefined
+            : form.neighborhood || undefined,
+        zip_code:
+          deliveryMode === "pickup" ? undefined : form.zip_code || undefined,
         complement: form.complement || undefined,
-        distance_km: deliveryMode === "pickup" ? null : shippingResult?.distance_km ?? null,
+        distance_km:
+          deliveryMode === "pickup"
+            ? null
+            : (shippingResult?.distance_km ?? null),
         is_pickup: deliveryMode === "pickup",
         is_scheduled: mustSchedule,
-        scheduled_for: mustSchedule ? new Date(scheduledFor).toISOString() : null,
+        scheduled_for: mustSchedule
+          ? new Date(scheduledFor).toISOString()
+          : null,
       },
-      payment_method: selectedPaymentMethod === "pix"
-        ? "pix"
-        : selectedPaymentMethod === "card"
-          ? (cardFunction === "debit" ? "debit_card" : "credit_card")
-          : "pay_on_delivery",
-      ...(selectedPaymentMethod === "delivery" ? {
-        delivery_payment_method: deliveryPaymentMethod,
-        cash_needs_change: deliveryPaymentMethod === "cash" ? cashNeedsChange : null,
-        cash_change_for: deliveryPaymentMethod === "cash" && cashNeedsChange ? changeFor : null,
-      } : {}),
+      payment_method:
+        selectedPaymentMethod === "pix"
+          ? "pix"
+          : selectedPaymentMethod === "card"
+            ? cardFunction === "debit"
+              ? "debit_card"
+              : "credit_card"
+            : "pay_on_delivery",
+      ...(selectedPaymentMethod === "delivery"
+        ? {
+            delivery_payment_method: deliveryPaymentMethod,
+            cash_needs_change:
+              deliveryPaymentMethod === "cash" ? cashNeedsChange : null,
+            cash_change_for:
+              deliveryPaymentMethod === "cash" && cashNeedsChange
+                ? changeFor
+                : null,
+          }
+        : {}),
       ...tracking,
-      ...(couponApplied && couponCode && !promotionBlocksCoupons ? { coupon_code: couponCode } : {}),
+      ...(couponApplied && couponCode && !promotionBlocksCoupons
+        ? { coupon_code: couponCode }
+        : {}),
       ...(customer ? { customer_id: customer.id } : {}),
       ...(strategicOfferId ? { strategic_offer_id: strategicOfferId } : {}),
+      ...(strategicOfferGroups.length
+        ? { strategic_offer_groups: strategicOfferGroups }
+        : {}),
+      entry_channel: "landing_page",
     };
 
     try {
       const quote = await ordersApi.quoteCheckout(payload);
-      const quoteKey = JSON.stringify({ payload, total: quote.total, prices: quote.items.map((item) => item.unit_price) });
-      const changed = Math.abs(quote.total - (cartSubtotal + deliveryFeeFinal - couponDiscount)) > 0.01 || quote.items.some((item, index) => Math.abs(item.unit_price - cart[index].finalPrice) > 0.01);
+      const quoteKey = JSON.stringify({
+        payload,
+        total: quote.total,
+        prices: quote.items.map((item) => item.unit_price),
+      });
+      const changed =
+        Math.abs(
+          quote.total - (cartSubtotal + deliveryFeeFinal - couponDiscount),
+        ) > 0.01;
       if (changed && reviewedQuote?.key !== quoteKey) {
-        setReviewedQuote({ key: quoteKey, total: quote.total, items: quote.items });
-        setApiError(`Os valores foram atualizados. Novo total: R$ ${quote.total.toFixed(2)}. Revise os valores abaixo e confirme novamente para continuar.`);
+        setReviewedQuote({
+          key: quoteKey,
+          total: quote.total,
+          items: quote.items,
+        });
+        setApiError(
+          `Os valores foram atualizados. Novo total: R$ ${quote.total.toFixed(2)}. Revise os valores abaixo e confirme novamente para continuar.`,
+        );
         return;
       }
-      const order = await ordersApi.checkout({ ...payload, expected_total: quote.total });
+      const order = await ordersApi.checkout({
+        ...payload,
+        expected_total: quote.total,
+      });
       trackEvent("order_created", order.total, { order_id: order.id });
       const _td = getTrackingData();
-      customerEventsApi.register({
-        event_type: "order_created",
-        event_name: "Pedido criado",
-        order_id: order.id,
-        customer_id: customer?.id ?? null,
-        session_id: _td.session_id,
-      }).catch(() => {});
+      customerEventsApi
+        .register({
+          event_type: "order_created",
+          event_name: "Pedido criado",
+          order_id: order.id,
+          customer_id: customer?.id ?? null,
+          session_id: _td.session_id,
+        })
+        .catch(() => {});
       setCreatedOrder(order);
       setPayment(null);
       if (selectedPaymentMethod === "pix") {
         sessionStorage.setItem(LOCKED_ORDER_KEY, order.id);
         setPaymentState("loading");
         setPaymentMessage("Gerando PIX seguro...");
-        const pixPayment = await paymentsApi.createPix(order.id, order.total, pixNeedsDocument ? pixDocument : undefined);
+        const pixPayment = await paymentsApi.createPix(
+          order.id,
+          order.total,
+          pixNeedsDocument ? pixDocument : undefined,
+        );
         setPayment(pixPayment);
         setPixExpiresAt(paymentExpiryMs(pixPayment));
         setPaymentState("pending");
@@ -758,7 +1128,9 @@ export default function Checkout() {
         } else {
           sessionStorage.removeItem(LOCKED_ORDER_KEY);
           setPaymentState("approved");
-          setPaymentMessage("Pedido finalizado. O pagamento sera feito na entrega.");
+          setPaymentMessage(
+            "Pedido finalizado. O pagamento sera feito na entrega.",
+          );
           navigate(`/order-tracking?orderId=${order.id}`, { replace: true });
           clearCart();
           return;
@@ -766,8 +1138,14 @@ export default function Checkout() {
       }
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Erro ao criar pedido. Tente novamente.";
-      if (msg.includes("Conta não encontrada") || msg.includes("CustomerNotFound")) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Erro ao criar pedido. Tente novamente.";
+      if (
+        msg.includes("Conta não encontrada") ||
+        msg.includes("CustomerNotFound")
+      ) {
         customerLogout();
         navigate("/conta?redirect=/checkout", { replace: true });
         return;
@@ -789,7 +1167,8 @@ export default function Checkout() {
     let submittedSensitiveCardData = false;
     try {
       const [expMonth, expYearShort] = cardExpiry.split("/");
-      const expYear = (expYearShort?.length === 2) ? `20${expYearShort}` : expYearShort;
+      const expYear =
+        expYearShort?.length === 2 ? `20${expYearShort}` : expYearShort;
       const cardDigits = cardNumber.replace(/\s/g, "");
       const cpfDigits = cardCpf.replace(/\D/g, "");
 
@@ -801,51 +1180,67 @@ export default function Checkout() {
           return;
         }
         if (postalCode.length !== 8 || !addressNumber) {
-          setCardError("Informe CEP e numero do endereco para validar o titular no ASAAS.");
+          setCardError(
+            "Informe CEP e numero do endereco para validar o titular no ASAAS.",
+          );
           return;
         }
 
         submittedSensitiveCardData = true;
         const phoneDigits = documentDigits(form.phone);
-        const holderInfo: ApiAsaasCreditCardPaymentInput["creditCardHolderInfo"] = {
-          name: cardName.trim(),
-          email: customer?.email || `cliente.${createdOrder.id.slice(0, 8).toLowerCase()}@delivery.moschettieri.com.br`,
-          cpfCnpj: cpfDigits,
-          postalCode,
-          addressNumber,
-          addressComplement: form.complement || null,
-          phone: phoneDigits || null,
-          mobilePhone: phoneDigits || null,
-        };
+        const holderInfo: ApiAsaasCreditCardPaymentInput["creditCardHolderInfo"] =
+          {
+            name: cardName.trim(),
+            email:
+              customer?.email ||
+              `cliente.${createdOrder.id.slice(0, 8).toLowerCase()}@delivery.moschettieri.com.br`,
+            cpfCnpj: cpfDigits,
+            postalCode,
+            addressNumber,
+            addressComplement: form.complement || null,
+            phone: phoneDigits || null,
+            mobilePhone: phoneDigits || null,
+          };
 
-        const createdPayment = await paymentsApi.createAsaasCreditCard(createdOrder.id, {
-          amount: createdOrder.total,
-          installments: cardInstallments,
-          creditCard: {
-            holderName: cardName.trim(),
-            number: cardDigits,
-            expiryMonth: expMonth,
-            expiryYear: expYear,
-            ccv: cardCvv,
+        const createdPayment = await paymentsApi.createAsaasCreditCard(
+          createdOrder.id,
+          {
+            amount: createdOrder.total,
+            installments: cardInstallments,
+            creditCard: {
+              holderName: cardName.trim(),
+              number: cardDigits,
+              expiryMonth: expMonth,
+              expiryYear: expYear,
+              ccv: cardCvv,
+            },
+            creditCardHolderInfo: holderInfo,
           },
-          creditCardHolderInfo: holderInfo,
-        });
+        );
 
         setPayment(createdPayment);
-        if (createdPayment.status === "rejected" || createdPayment.status === "cancelled") {
+        if (
+          createdPayment.status === "rejected" ||
+          createdPayment.status === "cancelled"
+        ) {
           setPaymentState("rejected");
           sessionStorage.removeItem(LOCKED_ORDER_KEY);
-          setPaymentMessage("O ASAAS recusou o cartao. Revise os dados ou escolha outra forma de pagamento.");
+          setPaymentMessage(
+            "O ASAAS recusou o cartao. Revise os dados ou escolha outra forma de pagamento.",
+          );
         } else {
           setPaymentState("pending");
-          setPaymentMessage("Pagamento enviado ao ASAAS. Aguardando confirmacao do banco.");
+          setPaymentMessage(
+            "Pagamento enviado ao ASAAS. Aguardando confirmacao do banco.",
+          );
         }
         return;
       }
 
       if (isPagarmeCard) {
         const publicKey = creditCardConfig?.public_key?.trim();
-        if (!publicKey) throw new Error("Chave publica Pagar.me nao configurada.");
+        if (!publicKey)
+          throw new Error("Chave publica Pagar.me nao configurada.");
         submittedSensitiveCardData = true;
         const token = await paymentsApi.tokenizePagarmeCard(publicKey, {
           number: cardDigits,
@@ -854,23 +1249,39 @@ export default function Checkout() {
           exp_year: expYear,
           cvv: cardCvv,
         });
-        const createdPayment = await paymentsApi.createPagarmeCreditCard(createdOrder.id, token.id, cardInstallments);
+        const createdPayment = await paymentsApi.createPagarmeCreditCard(
+          createdOrder.id,
+          token.id,
+          cardInstallments,
+        );
         setPayment(createdPayment);
-        if (createdPayment.status === "rejected" || createdPayment.status === "cancelled") {
+        if (
+          createdPayment.status === "rejected" ||
+          createdPayment.status === "cancelled"
+        ) {
           setPaymentState("rejected");
           sessionStorage.removeItem(LOCKED_ORDER_KEY);
-          setPaymentMessage("O Pagar.me recusou o cartao. Revise os dados ou escolha outra forma de pagamento.");
+          setPaymentMessage(
+            "O Pagar.me recusou o cartao. Revise os dados ou escolha outra forma de pagamento.",
+          );
         } else {
           setPaymentState("pending");
-          setPaymentMessage("Pagamento enviado ao Pagar.me. Aguardando confirmacao do banco.");
+          setPaymentMessage(
+            "Pagamento enviado ao Pagar.me. Aguardando confirmacao do banco.",
+          );
         }
         return;
       }
 
       if (!window.MercadoPago) {
         await new Promise<void>((resolve, reject) => {
-          const existing = document.querySelector<HTMLScriptElement>("script[src='https://sdk.mercadopago.com/js/v2']");
-          if (existing) { existing.addEventListener("load", () => resolve(), { once: true }); return; }
+          const existing = document.querySelector<HTMLScriptElement>(
+            "script[src='https://sdk.mercadopago.com/js/v2']",
+          );
+          if (existing) {
+            existing.addEventListener("load", () => resolve(), { once: true });
+            return;
+          }
           const s = document.createElement("script");
           s.src = "https://sdk.mercadopago.com/js/v2";
           s.onload = () => resolve();
@@ -886,17 +1297,20 @@ export default function Checkout() {
 
       const bin = cardNumber.replace(/\s/g, "").slice(0, 6);
       let paymentMethodId = "";
-      let paymentTypeId = cardFunction === "debit" ? "debit_card" : "credit_card";
+      let paymentTypeId =
+        cardFunction === "debit" ? "debit_card" : "credit_card";
       try {
         const methods = await mp.getPaymentMethods({ bin });
         if (methods.results?.length) {
-          const preferred = methods.results.find(
-            (m) => m.payment_type_id === paymentTypeId
-          ) ?? methods.results[0];
+          const preferred =
+            methods.results.find((m) => m.payment_type_id === paymentTypeId) ??
+            methods.results[0];
           paymentMethodId = preferred.id;
           paymentTypeId = preferred.payment_type_id;
         }
-      } catch { /* será omitido do body se vazio */ }
+      } catch {
+        /* será omitido do body se vazio */
+      }
 
       submittedSensitiveCardData = true;
       const token = await mp.createCardToken({
@@ -909,30 +1323,45 @@ export default function Checkout() {
         identificationNumber: cpfDigits,
       });
 
-      const createdPayment = await paymentsApi.createFromBrick(createdOrder.id, {
-        token: token.id,
-        ...(paymentMethodId ? { payment_method_id: paymentMethodId } : {}),
-        payment_type_id: paymentTypeId,
-        installments: cardFunction === "credit" ? cardInstallments : 1,
-        transaction_amount: createdOrder.total,
-        payer: {
-          email: `cliente.${createdOrder.id.slice(0, 8)}@delivery.moschettieri.com.br`,
-          ...(cpfDigits ? { identification: { type: "CPF", number: cpfDigits } } : {}),
+      const createdPayment = await paymentsApi.createFromBrick(
+        createdOrder.id,
+        {
+          token: token.id,
+          ...(paymentMethodId ? { payment_method_id: paymentMethodId } : {}),
+          payment_type_id: paymentTypeId,
+          installments: cardFunction === "credit" ? cardInstallments : 1,
+          transaction_amount: createdOrder.total,
+          payer: {
+            email: `cliente.${createdOrder.id.slice(0, 8)}@delivery.moschettieri.com.br`,
+            ...(cpfDigits
+              ? { identification: { type: "CPF", number: cpfDigits } }
+              : {}),
+          },
         },
-      });
+      );
 
       setPayment(createdPayment);
-      if (createdPayment.status === "rejected" || createdPayment.status === "cancelled") {
+      if (
+        createdPayment.status === "rejected" ||
+        createdPayment.status === "cancelled"
+      ) {
         setPaymentState("rejected");
         sessionStorage.removeItem(LOCKED_ORDER_KEY);
-        setPaymentMessage("O Mercado Pago recusou o cartao de credito. Escolha PIX ou pagamento na entrega para continuar com este pedido.");
+        setPaymentMessage(
+          "O Mercado Pago recusou o cartao de credito. Escolha PIX ou pagamento na entrega para continuar com este pedido.",
+        );
       } else {
         setPaymentState("pending");
-        setPaymentMessage("Pagamento enviado. Aguardando confirmacao do banco.");
+        setPaymentMessage(
+          "Pagamento enviado. Aguardando confirmacao do banco.",
+        );
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
-      setCardError(msg || "Erro ao processar cartao. Verifique os dados e tente novamente.");
+      setCardError(
+        msg ||
+          "Erro ao processar cartao. Verifique os dados e tente novamente.",
+      );
     } finally {
       if (submittedSensitiveCardData) {
         setCardNumber("");
@@ -958,7 +1387,11 @@ export default function Checkout() {
     setPaymentMessage("Gerando PIX seguro...");
     setCardError("");
     try {
-      const pixPayment = await paymentsApi.createPix(createdOrder.id, createdOrder.total, pixNeedsDocument ? pixDocument : undefined);
+      const pixPayment = await paymentsApi.createPix(
+        createdOrder.id,
+        createdOrder.total,
+        pixNeedsDocument ? pixDocument : undefined,
+      );
       setPayment(pixPayment);
       setPixExpiresAt(paymentExpiryMs(pixPayment));
       setPaymentState("pending");
@@ -969,7 +1402,11 @@ export default function Checkout() {
       );
     } catch (err) {
       setPaymentState("error");
-      setPaymentMessage(err instanceof Error ? err.message : "Erro ao gerar PIX. Tente novamente.");
+      setPaymentMessage(
+        err instanceof Error
+          ? err.message
+          : "Erro ao gerar PIX. Tente novamente.",
+      );
     }
   };
 
@@ -978,7 +1415,9 @@ export default function Checkout() {
     if (deliveryPaymentMethod === "cash" && cashNeedsChange) {
       const changeFor = Number(cashChangeFor.replace(",", "."));
       if (!Number.isFinite(changeFor) || changeFor <= createdOrder.total) {
-        setPaymentMessage("Informe um valor de troco maior que o total do pedido.");
+        setPaymentMessage(
+          "Informe um valor de troco maior que o total do pedido.",
+        );
         return;
       }
     }
@@ -987,54 +1426,84 @@ export default function Checkout() {
     setPaymentMessage("Alterando para pagamento na entrega...");
     setCardError("");
     try {
-      const deliveryPayment = await paymentsApi.switchToPayOnDelivery(createdOrder.id, {
-        delivery_payment_method: deliveryPaymentMethod,
-        cash_needs_change: deliveryPaymentMethod === "cash" ? cashNeedsChange : null,
-        cash_change_for: deliveryPaymentMethod === "cash" && cashNeedsChange
-          ? Number(cashChangeFor.replace(",", "."))
-          : null,
-      });
+      const deliveryPayment = await paymentsApi.switchToPayOnDelivery(
+        createdOrder.id,
+        {
+          delivery_payment_method: deliveryPaymentMethod,
+          cash_needs_change:
+            deliveryPaymentMethod === "cash" ? cashNeedsChange : null,
+          cash_change_for:
+            deliveryPaymentMethod === "cash" && cashNeedsChange
+              ? Number(cashChangeFor.replace(",", "."))
+              : null,
+        },
+      );
       setPayment(deliveryPayment);
       sessionStorage.removeItem(LOCKED_ORDER_KEY);
       setPaymentState("approved");
-      setPaymentMessage("Pedido confirmado. O pagamento sera feito na entrega.");
+      setPaymentMessage(
+        "Pedido confirmado. O pagamento sera feito na entrega.",
+      );
       clearCart();
-      setTimeout(() => navigate(`/order-tracking?orderId=${createdOrder.id}`), 900);
+      setTimeout(
+        () => navigate(`/order-tracking?orderId=${createdOrder.id}`),
+        900,
+      );
     } catch (err) {
       setSelectedPaymentMethod("card");
       setPaymentState("rejected");
-      setPaymentMessage(err instanceof Error ? err.message : "Nao foi possivel alterar para pagamento na entrega.");
+      setPaymentMessage(
+        err instanceof Error
+          ? err.message
+          : "Nao foi possivel alterar para pagamento na entrega.",
+      );
     }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
       <div className="bg-brand-dark px-4 py-3 flex justify-between items-center sticky top-0 z-30">
-        <button onClick={() => navigate("/cart")} className="translate-y-4 text-parchment hover:text-cream transition-colors lg:translate-y-2">
+        <button
+          onClick={() => navigate("/cart")}
+          className="translate-y-4 text-parchment hover:text-cream transition-colors lg:translate-y-2"
+        >
           <ChevronLeft size={24} />
         </button>
-        <button onClick={() => navigate("/")} aria-label="Ir para a home da loja" className="translate-y-4 lg:translate-y-2">
+        <button
+          onClick={() => navigate("/")}
+          aria-label="Ir para a home da loja"
+          className="translate-y-4 lg:translate-y-2"
+        >
           <MoschettieriLogo className="text-cream text-base scale-[1.31] origin-center" />
         </button>
         <div className="w-6" />
       </div>
 
       <div className="px-4 pt-6 pb-36 space-y-6">
-        {strategicRequiresSchedule || (storeStatus && !storeStatus.is_open && storeStatus.allow_scheduled_orders) ? !createdOrder && (
-          <section className="bg-surface-02 border border-surface-03 rounded-xl p-4">
-            <h2 className="text-cream font-bold text-lg mb-2 flex items-center gap-2">
-              <Clock size={20} className="text-gold" />
-              Pedido agendado
-            </h2>
-            <p className="text-stone text-sm mb-3">{strategicRequiresSchedule ? "Esta campanha exige pedido antecipado em horario futuro." : "A loja esta fechada, mas aceita pedidos agendados para horarios disponiveis."}</p>
-            <input
-              type="datetime-local"
-              value={scheduledFor}
-              onChange={(e) => setScheduledFor(e.target.value)}
-              className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream outline-none focus:border-gold"
-            />
-          </section>
-        ) : null}
+        {strategicRequiresSchedule ||
+        (storeStatus &&
+          !storeStatus.is_open &&
+          storeStatus.allow_scheduled_orders)
+          ? !createdOrder && (
+              <section className="bg-surface-02 border border-surface-03 rounded-xl p-4">
+                <h2 className="text-cream font-bold text-lg mb-2 flex items-center gap-2">
+                  <Clock size={20} className="text-gold" />
+                  Pedido agendado
+                </h2>
+                <p className="text-stone text-sm mb-3">
+                  {strategicRequiresSchedule
+                    ? "Esta campanha exige pedido antecipado em horario futuro."
+                    : "A loja esta fechada, mas aceita pedidos agendados para horarios disponiveis."}
+                </p>
+                <input
+                  type="datetime-local"
+                  value={scheduledFor}
+                  onChange={(e) => setScheduledFor(e.target.value)}
+                  className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream outline-none focus:border-gold"
+                />
+              </section>
+            )
+          : null}
 
         <section>
           <h2 className="text-cream font-bold text-lg mb-3 flex items-center gap-2">
@@ -1042,10 +1511,12 @@ export default function Checkout() {
             Tipo de entrega
           </h2>
           <div className="grid grid-cols-2 gap-2">
-            {([
-              { value: "delivery", label: "Delivery", icon: Truck },
-              { value: "pickup", label: "Retirada", icon: Store },
-            ] as { value: DeliveryMode; label: string; icon: LucideIcon }[]).map(({ value, label, icon: Icon }) => (
+            {(
+              [
+                { value: "delivery", label: "Delivery", icon: Truck },
+                { value: "pickup", label: "Retirada", icon: Store },
+              ] as { value: DeliveryMode; label: string; icon: LucideIcon }[]
+            ).map(({ value, label, icon: Icon }) => (
               <button
                 key={value}
                 onClick={() => setDeliveryMode(value)}
@@ -1065,18 +1536,38 @@ export default function Checkout() {
 
         <section>
           <h2 className="text-cream font-bold text-lg mb-4 flex items-center gap-2">
-            {deliveryMode === "delivery" ? <MapPin size={20} className="text-gold" /> : <User size={20} className="text-gold" />}
+            {deliveryMode === "delivery" ? (
+              <MapPin size={20} className="text-gold" />
+            ) : (
+              <User size={20} className="text-gold" />
+            )}
             {deliveryMode === "delivery" ? c.deliveryTitle : "Seus dados"}
           </h2>
           <div className="space-y-3">
-            <Field icon={User} placeholder={c.fields.name} value={form.name} disabled={!!createdOrder} onChange={(v) => handleChange("name", v)} error={errors.name} />
-            <Field icon={Phone} placeholder={c.fields.phone} value={form.phone} disabled={!!createdOrder} onChange={(v) => handleChange("phone", v)} error={errors.phone} />
+            <Field
+              icon={User}
+              placeholder={c.fields.name}
+              value={form.name}
+              disabled={!!createdOrder}
+              onChange={(v) => handleChange("name", v)}
+              error={errors.name}
+            />
+            <Field
+              icon={Phone}
+              placeholder={c.fields.phone}
+              value={form.phone}
+              disabled={!!createdOrder}
+              onChange={(v) => handleChange("phone", v)}
+              error={errors.phone}
+            />
             {deliveryMode === "delivery" && (
               <>
                 {/* Saved address selector */}
                 {savedAddresses.length > 0 && !createdOrder && (
                   <div className="space-y-2">
-                    <p className="text-stone text-xs font-medium ml-0.5">Escolher endereço</p>
+                    <p className="text-stone text-xs font-medium ml-0.5">
+                      Escolher endereço
+                    </p>
                     <div className="space-y-2">
                       {savedAddresses.map((addr) => (
                         <button
@@ -1089,15 +1580,32 @@ export default function Checkout() {
                               : "border-surface-03 bg-surface-02 hover:border-brand-mid"
                           }`}
                         >
-                          <MapPin size={14} className={`mt-0.5 flex-shrink-0 ${selectedAddressId === addr.id ? "text-gold" : "text-stone"}`} />
+                          <MapPin
+                            size={14}
+                            className={`mt-0.5 flex-shrink-0 ${selectedAddressId === addr.id ? "text-gold" : "text-stone"}`}
+                          />
                           <div className="flex-1 min-w-0">
-                            {addr.label && <p className="text-gold text-xs font-semibold leading-none mb-0.5">{addr.label}</p>}
-                            <p className="text-cream text-xs break-words">{addr.street}{addr.number ? `, ${addr.number}` : ""}</p>
+                            {addr.label && (
+                              <p className="text-gold text-xs font-semibold leading-none mb-0.5">
+                                {addr.label}
+                              </p>
+                            )}
+                            <p className="text-cream text-xs break-words">
+                              {addr.street}
+                              {addr.number ? `, ${addr.number}` : ""}
+                            </p>
                             <p className="text-stone text-[11px] break-words">
-                              {[addr.neighborhood, addr.city, addr.zip_code].filter(Boolean).join(" · ")}
+                              {[addr.neighborhood, addr.city, addr.zip_code]
+                                .filter(Boolean)
+                                .join(" · ")}
                             </p>
                           </div>
-                          {selectedAddressId === addr.id && <Check size={14} className="text-gold flex-shrink-0 mt-0.5" />}
+                          {selectedAddressId === addr.id && (
+                            <Check
+                              size={14}
+                              className="text-gold flex-shrink-0 mt-0.5"
+                            />
+                          )}
                         </button>
                       ))}
                       <button
@@ -1109,20 +1617,58 @@ export default function Checkout() {
                             : "border-dashed border-surface-03 hover:border-brand-mid"
                         }`}
                       >
-                        <span className="text-gold text-lg leading-none">+</span>
-                        <span className="text-stone text-xs">Novo endereço</span>
+                        <span className="text-gold text-lg leading-none">
+                          +
+                        </span>
+                        <span className="text-stone text-xs">
+                          Novo endereço
+                        </span>
                       </button>
                     </div>
                   </div>
                 )}
                 {/* Address form — always visible for guests, visible when "new" selected for logged-in */}
-                {(savedAddresses.length === 0 || selectedAddressId === "new" || !customer) && (
+                {(savedAddresses.length === 0 ||
+                  selectedAddressId === "new" ||
+                  !customer) && (
                   <>
-                    <Field icon={Home} placeholder={c.fields.address} value={form.address} disabled={!!createdOrder} onChange={(v) => handleChange("address", v)} error={errors.address} />
-                    <Field icon={MapPin} placeholder="Bairro" value={form.neighborhood} disabled={!!createdOrder} onChange={(v) => handleChange("neighborhood", v)} />
-                    <Field icon={MapPin} placeholder={c.fields.city} value={form.city} disabled={!!createdOrder} onChange={(v) => handleChange("city", v)} error={errors.city} />
-                    <Field icon={Hash} placeholder="CEP (opcional)" value={form.zip_code} disabled={!!createdOrder} onChange={(v) => handleChange("zip_code", v)} />
-                    <Field icon={Home} placeholder={c.fields.complement} value={form.complement} disabled={!!createdOrder} onChange={(v) => handleChange("complement", v)} />
+                    <Field
+                      icon={Home}
+                      placeholder={c.fields.address}
+                      value={form.address}
+                      disabled={!!createdOrder}
+                      onChange={(v) => handleChange("address", v)}
+                      error={errors.address}
+                    />
+                    <Field
+                      icon={MapPin}
+                      placeholder="Bairro"
+                      value={form.neighborhood}
+                      disabled={!!createdOrder}
+                      onChange={(v) => handleChange("neighborhood", v)}
+                    />
+                    <Field
+                      icon={MapPin}
+                      placeholder={c.fields.city}
+                      value={form.city}
+                      disabled={!!createdOrder}
+                      onChange={(v) => handleChange("city", v)}
+                      error={errors.city}
+                    />
+                    <Field
+                      icon={Hash}
+                      placeholder="CEP (opcional)"
+                      value={form.zip_code}
+                      disabled={!!createdOrder}
+                      onChange={(v) => handleChange("zip_code", v)}
+                    />
+                    <Field
+                      icon={Home}
+                      placeholder={c.fields.complement}
+                      value={form.complement}
+                      disabled={!!createdOrder}
+                      onChange={(v) => handleChange("complement", v)}
+                    />
                   </>
                 )}
               </>
@@ -1130,28 +1676,74 @@ export default function Checkout() {
           </div>
         </section>
 
-        {deliveryMode === "delivery" && shippingLoading && <p role="status" className="flex items-center gap-2 text-sm text-stone"><Loader2 size={16} className="animate-spin" /> Calculando frete para este endereço...</p>}
-        {deliveryMode === "delivery" && shippingError && <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"><p>{shippingError}</p><button type="button" className="mt-2 min-h-11 rounded-lg border px-3 font-bold" onClick={() => setShippingRetry((value) => value + 1)}>Tentar calcular novamente</button></div>}
+        {deliveryMode === "delivery" && shippingLoading && (
+          <p
+            role="status"
+            className="flex items-center gap-2 text-sm text-stone"
+          >
+            <Loader2 size={16} className="animate-spin" /> Calculando frete para
+            este endereço...
+          </p>
+        )}
+        {deliveryMode === "delivery" && shippingError && (
+          <div
+            role="alert"
+            className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"
+          >
+            <p>{shippingError}</p>
+            <button
+              type="button"
+              className="mt-2 min-h-11 rounded-lg border px-3 font-bold"
+              onClick={() => setShippingRetry((value) => value + 1)}
+            >
+              Tentar calcular novamente
+            </button>
+          </div>
+        )}
         {shippingResult && (
-          <div className={`rounded-xl px-4 py-3 flex items-start gap-3 ${
-            !shippingResult.available
-              ? "bg-red-500/10 border border-red-500/30"
-              : shippingResult.free
-              ? "bg-green-500/10 border border-green-500/30"
-              : "bg-surface-02 border border-surface-03"
-          }`}>
-            {shippingLoading ? <Loader2 size={16} className="text-stone animate-spin mt-0.5 flex-shrink-0" /> : !shippingResult.available ? <AlertCircle size={16} className="text-red-400 mt-0.5 flex-shrink-0" /> : <Check size={16} className="text-green-400 mt-0.5 flex-shrink-0" />}
+          <div
+            className={`rounded-xl px-4 py-3 flex items-start gap-3 ${
+              !shippingResult.available
+                ? "bg-red-500/10 border border-red-500/30"
+                : shippingResult.free
+                  ? "bg-green-500/10 border border-green-500/30"
+                  : "bg-surface-02 border border-surface-03"
+            }`}
+          >
+            {shippingLoading ? (
+              <Loader2
+                size={16}
+                className="text-stone animate-spin mt-0.5 flex-shrink-0"
+              />
+            ) : !shippingResult.available ? (
+              <AlertCircle
+                size={16}
+                className="text-red-400 mt-0.5 flex-shrink-0"
+              />
+            ) : (
+              <Check
+                size={16}
+                className="text-green-400 mt-0.5 flex-shrink-0"
+              />
+            )}
             <div className="flex-1">
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                <p className={`min-w-0 break-words text-sm font-medium ${!shippingResult.available ? "text-red-400" : shippingResult.free ? "text-green-400" : "text-cream"}`}>
-                  {!shippingResult.available ? shippingResult.message || "Regiao nao atendida" : shippingResult.free ? "Frete gratis" : `R$ ${shippingResult.shipping_price.toFixed(2)}`}
+                <p
+                  className={`min-w-0 break-words text-sm font-medium ${!shippingResult.available ? "text-red-400" : shippingResult.free ? "text-green-400" : "text-cream"}`}
+                >
+                  {!shippingResult.available
+                    ? shippingResult.message || "Regiao nao atendida"
+                    : shippingResult.free
+                      ? "Frete gratis"
+                      : `R$ ${shippingResult.shipping_price.toFixed(2)}`}
                 </p>
-                {shippingResult.available && shippingResult.estimated_time > 0 && (
-                  <div className="flex shrink-0 items-center gap-1 text-stone text-xs">
-                    <Clock size={12} />
-                    <span>{shippingResult.estimated_time} min</span>
-                  </div>
-                )}
+                {shippingResult.available &&
+                  shippingResult.estimated_time > 0 && (
+                    <div className="flex shrink-0 items-center gap-1 text-stone text-xs">
+                      <Clock size={12} />
+                      <span>{shippingResult.estimated_time} min</span>
+                    </div>
+                  )}
               </div>
             </div>
           </div>
@@ -1164,7 +1756,9 @@ export default function Checkout() {
               Cupom de desconto
             </h2>
             {promotionBlocksCoupons && (
-              <p className="text-amber-300 text-xs mb-2">Produto em promocao neste carrinho bloqueia outros cupons.</p>
+              <p className="text-amber-300 text-xs mb-2">
+                Produto em promocao neste carrinho bloqueia outros cupons.
+              </p>
             )}
             <div className="flex gap-2">
               <input
@@ -1184,24 +1778,35 @@ export default function Checkout() {
               />
               <button
                 onClick={couponApplied ? handleRemoveCoupon : handleApplyCoupon}
-                disabled={promotionBlocksCoupons || (!couponApplied && !couponCode.trim())}
+                disabled={
+                  promotionBlocksCoupons ||
+                  (!couponApplied && !couponCode.trim())
+                }
                 className="px-4 py-3 bg-gold hover:bg-gold/90 rounded-xl text-cream font-bold text-sm transition-colors disabled:opacity-50"
               >
                 {couponApplied ? "Remover" : "Aplicar"}
               </button>
             </div>
-            {couponMsg && <p className={`text-xs mt-2 ml-1 ${couponApplied ? "text-green-400" : "text-red-400"}`}>{couponMsg}</p>}
+            {couponMsg && (
+              <p
+                className={`text-xs mt-2 ml-1 ${couponApplied ? "text-green-400" : "text-red-400"}`}
+              >
+                {couponMsg}
+              </p>
+            )}
           </section>
         )}
 
         {!createdOrder && (
           <section>
             <h2 className="text-cream font-bold text-lg mb-3 flex items-center gap-2">
-              {selectedPaymentMethod === "pix"
-                ? <QrCode size={20} className="text-gold" />
-                : selectedPaymentMethod === "card"
-                  ? <CreditCard size={20} className="text-gold" />
-                  : <Banknote size={20} className="text-gold" />}
+              {selectedPaymentMethod === "pix" ? (
+                <QrCode size={20} className="text-gold" />
+              ) : selectedPaymentMethod === "card" ? (
+                <CreditCard size={20} className="text-gold" />
+              ) : (
+                <Banknote size={20} className="text-gold" />
+              )}
               Forma de pagamento
             </h2>
             <p className="mb-3 rounded-xl border border-surface-03 bg-surface-02 px-3 py-2 text-xs leading-relaxed text-parchment">
@@ -1212,16 +1817,42 @@ export default function Checkout() {
                   : "Pagamento realizado na entrega do pedido."}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {([
-                { value: "pix", label: "PIX", icon: QrCode, helper: "QR Code na tela" },
-                { value: "card", label: "Cartao", icon: CreditCard, helper: "Credito ou debito" },
-                { value: "delivery", label: "Na entrega", icon: Banknote, helper: "Cartao ou dinheiro" },
-              ] as { value: SelectedPaymentMethod; label: string; icon: LucideIcon; helper: string }[]).map(({ value, label, icon: Icon, helper }) => {
-                const disabled = paymentConfigLoading || (value === "pix"
-                  ? !pixAvailable
-                  : value === "card"
-                    ? paymentMethods ? !onlineCardAvailable : false
-                    : paymentMethods?.accept_cash === false);
+              {(
+                [
+                  {
+                    value: "pix",
+                    label: "PIX",
+                    icon: QrCode,
+                    helper: "QR Code na tela",
+                  },
+                  {
+                    value: "card",
+                    label: "Cartao",
+                    icon: CreditCard,
+                    helper: "Credito ou debito",
+                  },
+                  {
+                    value: "delivery",
+                    label: "Na entrega",
+                    icon: Banknote,
+                    helper: "Cartao ou dinheiro",
+                  },
+                ] as {
+                  value: SelectedPaymentMethod;
+                  label: string;
+                  icon: LucideIcon;
+                  helper: string;
+                }[]
+              ).map(({ value, label, icon: Icon, helper }) => {
+                const disabled =
+                  paymentConfigLoading ||
+                  (value === "pix"
+                    ? !pixAvailable
+                    : value === "card"
+                      ? paymentMethods
+                        ? !onlineCardAvailable
+                        : false
+                      : paymentMethods?.accept_cash === false);
                 return (
                   <button
                     key={value}
@@ -1237,7 +1868,13 @@ export default function Checkout() {
                     <Icon size={20} className="flex-shrink-0" />
                     <span className="min-w-0">
                       <span className="block text-sm font-bold">{label}</span>
-                      <span className="block text-xs opacity-80">{paymentConfigLoading ? "Carregando..." : disabled ? "Indisponivel" : helper}</span>
+                      <span className="block text-xs opacity-80">
+                        {paymentConfigLoading
+                          ? "Carregando..."
+                          : disabled
+                            ? "Indisponivel"
+                            : helper}
+                      </span>
                     </span>
                   </button>
                 );
@@ -1251,17 +1888,23 @@ export default function Checkout() {
                   value={pixCpfCnpj}
                   disabled={!!createdOrder}
                   onChange={(v) => setPixCpfCnpj(formatCpfCnpj(v))}
-                  error={pixCpfCnpj && !validCpfCnpjDigits(pixCpfCnpj) ? "Informe 11 ou 14 digitos." : undefined}
+                  error={
+                    pixCpfCnpj && !validCpfCnpjDigits(pixCpfCnpj)
+                      ? "Informe 11 ou 14 digitos."
+                      : undefined
+                  }
                 />
               </div>
             )}
             {selectedPaymentMethod === "delivery" && (
               <div className="mt-3 rounded-xl border border-surface-03 bg-surface-02 p-3">
                 <div className="grid grid-cols-2 gap-2">
-                  {([
-                    { value: "card", label: "Cartao" },
-                    { value: "cash", label: "Dinheiro" },
-                  ] as { value: DeliveryPaymentMethod; label: string }[]).map(({ value, label }) => (
+                  {(
+                    [
+                      { value: "card", label: "Cartao" },
+                      { value: "cash", label: "Dinheiro" },
+                    ] as { value: DeliveryPaymentMethod; label: string }[]
+                  ).map(({ value, label }) => (
                     <button
                       key={value}
                       type="button"
@@ -1292,7 +1935,11 @@ export default function Checkout() {
                         type="text"
                         inputMode="decimal"
                         value={cashChangeFor}
-                        onChange={(e) => setCashChangeFor(e.target.value.replace(/[^\d,.]/g, ""))}
+                        onChange={(e) =>
+                          setCashChangeFor(
+                            e.target.value.replace(/[^\d,.]/g, ""),
+                          )
+                        }
                         placeholder="Troco para quanto?"
                         className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
                       />
@@ -1305,93 +1952,199 @@ export default function Checkout() {
         )}
 
         <section>
-          <h2 className="text-cream font-bold text-lg mb-4">{c.summaryTitle}</h2>
+          <h2 className="text-cream font-bold text-lg mb-4">
+            {c.summaryTitle}
+          </h2>
           <div className="space-y-3">
             {cartGroups.map((group) => {
-              const items = group.kind === "kit" ? group.items : [group.item];
+              const items = group.kind === "item" ? [group.item] : group.items;
               const item = items[0];
               const total = items.reduce((sum, current) => {
-                const quoteIndex = cart.findIndex((cartItem) => cartItem.cartItemId === current.cartItemId);
-                return sum + (reviewedQuote?.items[quoteIndex]?.unit_price ?? current.finalPrice) * current.quantity;
+                return sum + current.finalPrice * current.quantity;
               }, 0);
               const isMulti = item.flavorDivision > 1;
-              const displayName = group.kind === "kit" ? group.kit.name : isMulti ? item.flavors.map((f) => f.name).join(" + ") : item.productData.name;
+              const displayName =
+                group.kind === "kit"
+                  ? group.kit.name
+                  : group.kind === "strategic"
+                    ? group.strategic.name
+                    : isMulti
+                      ? item.flavors.map((f) => f.name).join(" + ")
+                      : item.productData.name;
               const iconSrc = item.flavors[0]?.icon ?? item.productData.icon;
               const hasImage = isAssetUrl(iconSrc);
               return (
-                <div key={group.key} className="bg-surface-02 rounded-xl p-4 flex min-w-0 items-center gap-4">
+                <div
+                  key={group.key}
+                  className="bg-surface-02 rounded-xl p-4 flex min-w-0 items-center gap-4"
+                >
                   <div className="w-12 h-12 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center text-xl overflow-hidden">
-                    {hasImage
-                      ? <img src={resolveAssetUrl(iconSrc)} alt={displayName} className="w-full h-full object-cover" />
-                      : <span>{iconSrc || "🍕"}</span>
-                    }
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-cream font-semibold text-sm break-words">{displayName}</p>
-                    {group.kind === "kit" ? (
-                      <>
-                        <p className="text-gold-light text-[11px] font-semibold mt-0.5">Kit promocional · composição fechada</p>
-                        <ul className="text-stone text-[11px] mt-1 space-y-0.5">
-                          {group.kit.components.map((component) => <li key={`${group.key}-${component.productId}`}>{component.quantity}x {component.name}</li>)}
-                        </ul>
-                      </>
-                    ) : <>
-                      <p className="text-stone text-xs">{item.quantity}x - {pizzaSizeLabel(item.selectedSize)}</p>
-                      {item.selectedOptions.length > 0 && <p className="text-stone text-[11px] mt-0.5">{item.selectedOptions.map((option) => `${option.groupName}: ${option.label}${option.quantity && option.quantity > 1 ? ` (${option.quantity}x)` : ""}`).join(" · ")}</p>}
-                    </>}
-                    {group.kind !== "kit" && item.promotionApplied && item.promotionName && (
-                      <p className="text-emerald-300 text-[11px] font-semibold mt-0.5">{item.promotionName} aplicada</p>
+                    {hasImage ? (
+                      <img
+                        src={resolveAssetUrl(iconSrc)}
+                        alt={displayName}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span>{iconSrc || "🍕"}</span>
                     )}
                   </div>
-                  <p className="text-gold font-bold text-sm flex-shrink-0">R$ {total.toFixed(2)}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-cream font-semibold text-sm break-words">
+                      {displayName}
+                    </p>
+                    {group.kind === "kit" ? (
+                      <>
+                        <p className="text-gold-light text-[11px] font-semibold mt-0.5">
+                          Kit promocional · composição fechada
+                        </p>
+                        <ul className="text-stone text-[11px] mt-1 space-y-0.5">
+                          {group.kit.components.map((component) => (
+                            <li key={`${group.key}-${component.productId}`}>
+                              {component.quantity}x {component.name}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : group.kind === "strategic" ? (
+                      <>
+                        <p className="mt-0.5 text-[11px] font-semibold text-gold-light">
+                          Oferta estratégica · unidade comercial
+                        </p>
+                        <ul className="mt-1 space-y-0.5 text-[11px] text-stone">
+                          {group.items.map((component) => (
+                            <li key={component.cartItemId}>
+                              {component.quantity}x {component.productData.name}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-stone text-xs">
+                          {item.quantity}x - {pizzaSizeLabel(item.selectedSize)}
+                        </p>
+                        {item.selectedOptions.length > 0 && (
+                          <p className="text-stone text-[11px] mt-0.5">
+                            {item.selectedOptions
+                              .map(
+                                (option) =>
+                                  `${option.groupName}: ${option.label}${option.quantity && option.quantity > 1 ? ` (${option.quantity}x)` : ""}`,
+                              )
+                              .join(" · ")}
+                          </p>
+                        )}
+                      </>
+                    )}
+                    {group.kind === "item" &&
+                      item.promotionApplied &&
+                      item.promotionName && (
+                        <p className="text-emerald-300 text-[11px] font-semibold mt-0.5">
+                          {item.promotionName} aplicada
+                        </p>
+                      )}
+                  </div>
+                  <p className="text-gold font-bold text-sm flex-shrink-0">
+                    R$ {total.toFixed(2)}
+                  </p>
                 </div>
               );
             })}
             {couponGift && (
               <div className="bg-green-500/10 rounded-xl p-4 flex items-center gap-4 border border-green-500/30">
                 <div className="w-12 h-12 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center text-xl overflow-hidden">
-                  {isAssetUrl(couponGift.icon)
-                    ? <img src={resolveAssetUrl(couponGift.icon)} alt={couponGift.name} className="w-full h-full object-cover" />
-                    : <span>{couponGift.icon || "🎁"}</span>
-                  }
+                  {isAssetUrl(couponGift.icon) ? (
+                    <img
+                      src={resolveAssetUrl(couponGift.icon)}
+                      alt={couponGift.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span>{couponGift.icon || "🎁"}</span>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <p className="text-cream font-semibold text-sm truncate">{couponGift.name}</p>
-                    <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold text-green-300">Brinde</span>
+                    <p className="text-cream font-semibold text-sm truncate">
+                      {couponGift.name}
+                    </p>
+                    <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold text-green-300">
+                      Brinde
+                    </span>
                   </div>
-                  <p className="text-stone text-xs">{couponGift.quantity}x - Cupom {couponGift.coupon_code}</p>
+                  <p className="text-stone text-xs">
+                    {couponGift.quantity}x - Cupom {couponGift.coupon_code}
+                  </p>
                 </div>
-                <p className="text-green-400 font-bold text-sm flex-shrink-0">R$ 0,00</p>
+                <p className="text-green-400 font-bold text-sm flex-shrink-0">
+                  R$ 0,00
+                </p>
               </div>
             )}
             {promotionGifts.map((gift) => (
-              <div key={`${gift.promotion_id}-${gift.product_id}`} className="bg-green-500/10 rounded-xl p-4 flex items-center gap-4 border border-green-500/30">
+              <div
+                key={`${gift.promotion_id}-${gift.product_id}`}
+                className="bg-green-500/10 rounded-xl p-4 flex items-center gap-4 border border-green-500/30"
+              >
                 <div className="w-12 h-12 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center text-xl overflow-hidden">
-                  {isAssetUrl(gift.icon)
-                    ? <img src={resolveAssetUrl(gift.icon)} alt={gift.name} className="w-full h-full object-cover" />
-                    : <span>{gift.icon || "🎁"}</span>
-                  }
+                  {isAssetUrl(gift.icon) ? (
+                    <img
+                      src={resolveAssetUrl(gift.icon)}
+                      alt={gift.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span>{gift.icon || "🎁"}</span>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <p className="text-cream font-semibold text-sm truncate">{gift.name}</p>
-                    <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold text-green-300">Brinde</span>
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <p className="text-cream font-semibold text-sm truncate">
+                      {gift.name}
+                    </p>
+                    <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold text-green-300">
+                      Brinde
+                    </span>
                   </div>
-                  <p className="text-stone text-xs">{gift.quantity}x - Promocao {gift.promotion_name}</p>
+                  <p className="text-stone text-xs">
+                    {gift.quantity}x - Promocao {gift.promotion_name}
+                  </p>
                 </div>
-                <p className="text-green-400 font-bold text-sm flex-shrink-0">R$ 0,00</p>
+                <p className="text-green-400 font-bold text-sm flex-shrink-0">
+                  R$ 0,00
+                </p>
               </div>
             ))}
 
             <div className="bg-surface-02 rounded-xl p-4 space-y-3 border border-surface-03">
               <Line label="Subtotal:" value={`R$ ${cartSubtotal.toFixed(2)}`} />
-              <Line label="Taxa de entrega:" value={deliveryMode === "delivery" && !shippingAvailable ? "A confirmar" : deliveryFeeFinal === 0 ? "Gratis" : `R$ ${deliveryFee.toFixed(2)}`} />
-              {promotionFreeShipping && <Line label="Frete gratis da promocao:" value="Aplicado" good />}
-              {couponDiscount > 0 && <Line label="Desconto cupom:" value={`-R$ ${couponDiscount.toFixed(2)}`} good />}
+              <Line
+                label="Taxa de entrega:"
+                value={
+                  deliveryMode === "delivery" && !shippingAvailable
+                    ? "A confirmar"
+                    : deliveryFeeFinal === 0
+                      ? "Gratis"
+                      : `R$ ${deliveryFee.toFixed(2)}`
+                }
+              />
+              {promotionFreeShipping && (
+                <Line label="Frete gratis da promocao:" value="Aplicado" good />
+              )}
+              {couponDiscount > 0 && (
+                <Line
+                  label="Desconto cupom:"
+                  value={`-R$ ${couponDiscount.toFixed(2)}`}
+                  good
+                />
+              )}
               <div className="border-t border-surface-03 pt-3 flex min-w-0 flex-wrap justify-between gap-x-3 gap-y-1">
-                <span className="min-w-0 break-words text-cream font-bold">Total:</span>
-                <span className="text-gold font-bold text-lg">R$ {Math.max(0, total).toFixed(2)}</span>
+                <span className="min-w-0 break-words text-cream font-bold">
+                  Total:
+                </span>
+                <span className="text-gold font-bold text-lg">
+                  R$ {Math.max(0, total).toFixed(2)}
+                </span>
               </div>
             </div>
           </div>
@@ -1406,7 +2159,9 @@ export default function Checkout() {
                   ? `Pagamento Pix ${pixGatewayName}`
                   : "Pagamento Mercado Pago"}
             </h2>
-            <p className={`text-sm mb-3 ${statusClass(paymentState)}`}>{paymentMessage || "Aguardando pagamento."}</p>
+            <p className={`text-sm mb-3 ${statusClass(paymentState)}`}>
+              {paymentMessage || "Aguardando pagamento."}
+            </p>
             {selectedPaymentMethod === "delivery" ? (
               <div className="rounded-xl border border-gold/25 bg-gold/10 px-4 py-3 text-sm text-parchment">
                 {deliveryPaymentMethod === "cash"
@@ -1418,24 +2173,43 @@ export default function Checkout() {
             ) : selectedPaymentMethod === "pix" ? (
               <div className="space-y-4">
                 {/* Timer de validade do PIX */}
-                {paymentState === "pending" && pixSecondsLeft !== null && pixSecondsLeft > 0 && (
-                  <div className={`flex items-center justify-between rounded-xl px-4 py-2 text-xs font-medium ${
-                    pixSecondsLeft < 300 ? "bg-red-500/10 border border-red-500/30 text-red-400" : "bg-surface-03 text-stone"
-                  }`}>
-                    <span className="flex items-center gap-1.5"><Clock size={12} />Validade do PIX</span>
-                    <span className={`font-mono font-bold ${pixSecondsLeft < 300 ? "text-red-400" : "text-cream"}`}>
-                      {String(Math.floor(pixSecondsLeft / 60)).padStart(2, "0")}:{String(pixSecondsLeft % 60).padStart(2, "0")}
-                    </span>
-                  </div>
-                )}
+                {paymentState === "pending" &&
+                  pixSecondsLeft !== null &&
+                  pixSecondsLeft > 0 && (
+                    <div
+                      className={`flex items-center justify-between rounded-xl px-4 py-2 text-xs font-medium ${
+                        pixSecondsLeft < 300
+                          ? "bg-red-500/10 border border-red-500/30 text-red-400"
+                          : "bg-surface-03 text-stone"
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Clock size={12} />
+                        Validade do PIX
+                      </span>
+                      <span
+                        className={`font-mono font-bold ${pixSecondsLeft < 300 ? "text-red-400" : "text-cream"}`}
+                      >
+                        {String(Math.floor(pixSecondsLeft / 60)).padStart(
+                          2,
+                          "0",
+                        )}
+                        :{String(pixSecondsLeft % 60).padStart(2, "0")}
+                      </span>
+                    </div>
+                  )}
 
                 {/* PIX expirado */}
                 {paymentState === "expired" && (
                   <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-4 space-y-3">
                     <p className="text-red-400 text-sm font-semibold flex items-center gap-2">
-                      <AlertCircle size={16} />PIX expirado sem pagamento.
+                      <AlertCircle size={16} />
+                      PIX expirado sem pagamento.
                     </p>
-                    <p className="text-stone text-xs">O pedido foi cancelado automaticamente. Você pode fazer um novo pedido quando quiser.</p>
+                    <p className="text-stone text-xs">
+                      O pedido foi cancelado automaticamente. Você pode fazer um
+                      novo pedido quando quiser.
+                    </p>
                     <button
                       onClick={() => navigate("/")}
                       className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold hover:bg-gold/90 active:scale-95 text-cream font-bold py-3 transition-colors text-sm"
@@ -1449,12 +2223,18 @@ export default function Checkout() {
                   <>
                     {displayPixQrCode && paymentState !== "approved" && (
                       <div className="mx-auto w-full max-w-[260px] rounded-xl bg-white p-3">
-                        <img src={displayPixQrCode} alt="QR Code PIX" className="h-auto w-full rounded-lg" />
+                        <img
+                          src={displayPixQrCode}
+                          alt="QR Code PIX"
+                          className="h-auto w-full rounded-lg"
+                        />
                       </div>
                     )}
                     {displayPixPayload && paymentState !== "approved" && (
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-stone">Codigo copia-e-cola</label>
+                        <label className="text-xs font-medium text-stone">
+                          Codigo copia-e-cola
+                        </label>
                         <textarea
                           readOnly
                           value={displayPixPayload}
@@ -1463,7 +2243,9 @@ export default function Checkout() {
                         />
                         <button
                           type="button"
-                          onClick={() => navigator.clipboard?.writeText(displayPixPayload)}
+                          onClick={() =>
+                            navigator.clipboard?.writeText(displayPixPayload)
+                          }
                           className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold px-4 py-3 text-sm font-bold text-cream transition-colors hover:bg-gold/90"
                         >
                           <Copy size={16} />
@@ -1471,11 +2253,14 @@ export default function Checkout() {
                         </button>
                       </div>
                     )}
-                    {paymentState !== "loading" && !displayPixPayload && paymentState !== "approved" && (
-                      <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
-                        O {pixGatewayName} ainda nao retornou o QR Code. A tela continua verificando o pagamento.
-                      </div>
-                    )}
+                    {paymentState !== "loading" &&
+                      !displayPixPayload &&
+                      paymentState !== "approved" && (
+                        <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
+                          O {pixGatewayName} ainda nao retornou o QR Code. A
+                          tela continua verificando o pagamento.
+                        </div>
+                      )}
                   </>
                 )}
               </div>
@@ -1490,7 +2275,8 @@ export default function Checkout() {
                         {cardGatewayName} recusou o cartao.
                       </p>
                       <p className="text-stone text-xs">
-                        Este pedido continua aberto. Escolha PIX ou pagamento na entrega para continuar.
+                        Este pedido continua aberto. Escolha PIX ou pagamento na
+                        entrega para continuar.
                       </p>
                       {pixNeedsDocument && (
                         <Field
@@ -1498,7 +2284,11 @@ export default function Checkout() {
                           placeholder="CPF/CNPJ para gerar o Pix"
                           value={pixCpfCnpj}
                           onChange={(v) => setPixCpfCnpj(formatCpfCnpj(v))}
-                          error={pixCpfCnpj && !validCpfCnpjDigits(pixCpfCnpj) ? "Informe 11 ou 14 digitos." : undefined}
+                          error={
+                            pixCpfCnpj && !validCpfCnpjDigits(pixCpfCnpj)
+                              ? "Informe 11 ou 14 digitos."
+                              : undefined
+                          }
                         />
                       )}
                       <button
@@ -1510,10 +2300,15 @@ export default function Checkout() {
                       </button>
                       <div className="rounded-xl border border-surface-03 bg-surface-03/70 p-3 space-y-3">
                         <div className="grid grid-cols-2 gap-2">
-                          {([
-                            { value: "card", label: "Cartao na entrega" },
-                            { value: "cash", label: "Dinheiro" },
-                          ] as { value: DeliveryPaymentMethod; label: string }[]).map(({ value, label }) => (
+                          {(
+                            [
+                              { value: "card", label: "Cartao na entrega" },
+                              { value: "cash", label: "Dinheiro" },
+                            ] as {
+                              value: DeliveryPaymentMethod;
+                              label: string;
+                            }[]
+                          ).map(({ value, label }) => (
                             <button
                               key={value}
                               type="button"
@@ -1534,7 +2329,9 @@ export default function Checkout() {
                               <input
                                 type="checkbox"
                                 checked={cashNeedsChange}
-                                onChange={(e) => setCashNeedsChange(e.target.checked)}
+                                onChange={(e) =>
+                                  setCashNeedsChange(e.target.checked)
+                                }
                                 className="h-4 w-4 accent-gold"
                               />
                               Vou precisar de troco
@@ -1544,7 +2341,11 @@ export default function Checkout() {
                                 type="text"
                                 inputMode="decimal"
                                 value={cashChangeFor}
-                                onChange={(e) => setCashChangeFor(e.target.value.replace(/[^\d,.]/g, ""))}
+                                onChange={(e) =>
+                                  setCashChangeFor(
+                                    e.target.value.replace(/[^\d,.]/g, ""),
+                                  )
+                                }
                                 placeholder="Troco para quanto?"
                                 className="w-full bg-surface-02 border border-surface-03 rounded-xl px-3 py-2 text-cream placeholder-stone/60 outline-none focus:border-gold text-xs"
                               />
@@ -1560,7 +2361,13 @@ export default function Checkout() {
                         </button>
                       </div>
                       <button
-                        onClick={() => { setPaymentState("pending"); setPaymentMessage("Preencha os dados do cartao para concluir."); setCardError(""); }}
+                        onClick={() => {
+                          setPaymentState("pending");
+                          setPaymentMessage(
+                            "Preencha os dados do cartao para concluir.",
+                          );
+                          setCardError("");
+                        }}
                         className="w-full text-center text-stone text-xs underline underline-offset-2"
                       >
                         Tentar com outro cartao
@@ -1580,7 +2387,11 @@ export default function Checkout() {
                           <button
                             key={fn}
                             type="button"
-                            disabled={fn === "credit" ? !creditCardAvailable : !debitCardMercadoPagoAvailable}
+                            disabled={
+                              fn === "credit"
+                                ? !creditCardAvailable
+                                : !debitCardMercadoPagoAvailable
+                            }
                             onClick={() => setCardFunction(fn)}
                             className={`py-2 rounded-xl border text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
                               cardFunction === fn
@@ -1599,7 +2410,9 @@ export default function Checkout() {
                           autoComplete="cc-number"
                           placeholder="Numero do cartao"
                           value={cardNumber}
-                          onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
+                          onChange={(e) =>
+                            setCardNumber(formatCardNumber(e.target.value))
+                          }
                           maxLength={19}
                           className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm tracking-widest"
                         />
@@ -1608,7 +2421,9 @@ export default function Checkout() {
                           autoComplete="cc-name"
                           placeholder="Nome no cartao (como no cartao)"
                           value={cardName}
-                          onChange={(e) => setCardName(e.target.value.toUpperCase())}
+                          onChange={(e) =>
+                            setCardName(e.target.value.toUpperCase())
+                          }
                           className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm uppercase"
                         />
                         <div className="grid grid-cols-2 gap-2">
@@ -1618,7 +2433,9 @@ export default function Checkout() {
                             autoComplete="cc-exp"
                             placeholder="Validade MM/AA"
                             value={cardExpiry}
-                            onChange={(e) => setCardExpiry(formatExpiry(e.target.value))}
+                            onChange={(e) =>
+                              setCardExpiry(formatExpiry(e.target.value))
+                            }
                             maxLength={5}
                             className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
                           />
@@ -1628,7 +2445,11 @@ export default function Checkout() {
                             autoComplete="cc-csc"
                             placeholder="CVV"
                             value={cardCvv}
-                            onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                            onChange={(e) =>
+                              setCardCvv(
+                                e.target.value.replace(/\D/g, "").slice(0, 4),
+                              )
+                            }
                             maxLength={4}
                             className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
                           />
@@ -1637,43 +2458,77 @@ export default function Checkout() {
                           type="text"
                           inputMode="numeric"
                           autoComplete="off"
-                          placeholder={isAsaasCard ? "CPF/CNPJ do titular" : "CPF do titular (opcional)"}
+                          placeholder={
+                            isAsaasCard
+                              ? "CPF/CNPJ do titular"
+                              : "CPF do titular (opcional)"
+                          }
                           value={cardCpf}
-                          onChange={(e) => setCardCpf(isAsaasCard ? formatCpfCnpj(e.target.value) : formatCpf(e.target.value))}
+                          onChange={(e) =>
+                            setCardCpf(
+                              isAsaasCard
+                                ? formatCpfCnpj(e.target.value)
+                                : formatCpf(e.target.value),
+                            )
+                          }
                           maxLength={isAsaasCard ? 18 : 14}
                           className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
                         />
-                        {cardFunction === "credit" && maxCardInstallments > 1 && (
-                          <select
-                            value={cardInstallments}
-                            onChange={(e) => setCardInstallments(Number(e.target.value))}
-                            className="w-full rounded-xl border border-surface-03 bg-surface-03 px-4 py-3 text-sm text-cream outline-none focus:border-gold"
-                            aria-label="Parcelas"
-                          >
-                            {Array.from({ length: maxCardInstallments }, (_, index) => index + 1).map((installment) => (
-                              <option key={installment} value={installment}>
-                                {installment === 1 ? "1x a vista" : `${installment}x no cartao`}
-                              </option>
-                            ))}
-                          </select>
-                        )}
+                        {cardFunction === "credit" &&
+                          maxCardInstallments > 1 && (
+                            <select
+                              value={cardInstallments}
+                              onChange={(e) =>
+                                setCardInstallments(Number(e.target.value))
+                              }
+                              className="w-full rounded-xl border border-surface-03 bg-surface-03 px-4 py-3 text-sm text-cream outline-none focus:border-gold"
+                              aria-label="Parcelas"
+                            >
+                              {Array.from(
+                                { length: maxCardInstallments },
+                                (_, index) => index + 1,
+                              ).map((installment) => (
+                                <option key={installment} value={installment}>
+                                  {installment === 1
+                                    ? "1x a vista"
+                                    : `${installment}x no cartao`}
+                                </option>
+                              ))}
+                            </select>
+                          )}
                       </div>
                       {(isAsaasCard || isPagarmeCard) && (
                         <p className="rounded-xl border border-surface-03 bg-surface-02 px-3 py-2 text-xs leading-relaxed text-stone">
-                          Nao armazenamos os dados do seu cartao. Eles sao usados apenas para processar esta compra com seguranca.
+                          Nao armazenamos os dados do seu cartao. Eles sao
+                          usados apenas para processar esta compra com
+                          seguranca.
                         </p>
                       )}
-                      {cardError && <p className="text-red-400 text-xs ml-1">{cardError}</p>}
+                      {cardError && (
+                        <p className="text-red-400 text-xs ml-1">{cardError}</p>
+                      )}
                       <button
                         onClick={handleCardPay}
-                        disabled={cardSubmitting || !selectedCardAvailable || !cardNumber || !cardName || !cardExpiry || !cardCvv}
+                        disabled={
+                          cardSubmitting ||
+                          !selectedCardAvailable ||
+                          !cardNumber ||
+                          !cardName ||
+                          !cardExpiry ||
+                          !cardCvv
+                        }
                         className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold hover:bg-gold/90 active:scale-95 text-cream font-bold py-4 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {cardSubmitting ? <Loader2 size={20} className="animate-spin" /> : <CreditCard size={20} />}
+                        {cardSubmitting ? (
+                          <Loader2 size={20} className="animate-spin" />
+                        ) : (
+                          <CreditCard size={20} />
+                        )}
                         {cardSubmitting ? "Processando..." : "Pagar com cartao"}
                       </button>
                       <p className="text-center text-stone text-xs">
-                        Pagamento seguro via {cardGatewayName}. Seus dados de cartao nao sao armazenados.
+                        Pagamento seguro via {cardGatewayName}. Seus dados de
+                        cartao nao sao armazenados.
                       </p>
                     </>
                   )}
@@ -1700,11 +2555,25 @@ export default function Checkout() {
         <div className="fixed bottom-0 left-0 right-0 bg-surface-00 border-t border-surface-02 px-4 py-4">
           <button
             onClick={handleConfirm}
-            disabled={loading || (!shippingAvailable && deliveryMode === "delivery") || (!!storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders && !strategicCommercialConfig?.allow_when_store_closed)}
+            disabled={
+              loading ||
+              (!shippingAvailable && deliveryMode === "delivery") ||
+              (!!storeStatus &&
+                !storeStatus.is_open &&
+                !storeStatus.allow_scheduled_orders &&
+                !strategicCommercialConfig?.allow_when_store_closed)
+            }
             className="w-full bg-gold hover:bg-gold/90 disabled:opacity-60 disabled:cursor-not-allowed text-cream font-bold py-4 px-4 rounded-full text-center transition-colors text-lg active:scale-95 flex items-center justify-center gap-2"
           >
             {loading && <Loader2 size={20} className="animate-spin" />}
-            {loading ? "Processando..." : storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders && !strategicCommercialConfig?.allow_when_store_closed ? "Loja fechada" : c.confirmButton}
+            {loading
+              ? "Processando..."
+              : storeStatus &&
+                  !storeStatus.is_open &&
+                  !storeStatus.allow_scheduled_orders &&
+                  !strategicCommercialConfig?.allow_when_store_closed
+                ? "Loja fechada"
+                : c.confirmButton}
           </button>
         </div>
       )}
@@ -1729,9 +2598,13 @@ function Field({
 }) {
   return (
     <div>
-      <div className={`flex min-w-0 items-center gap-3 bg-surface-02 rounded-xl px-4 py-3 border transition-colors ${
-        error ? "border-red-500/70" : "border-surface-03 focus-within:border-gold"
-      }`}>
+      <div
+        className={`flex min-w-0 items-center gap-3 bg-surface-02 rounded-xl px-4 py-3 border transition-colors ${
+          error
+            ? "border-red-500/70"
+            : "border-surface-03 focus-within:border-gold"
+        }`}
+      >
         <Icon size={18} className="text-stone flex-shrink-0" />
         <input
           type="text"
@@ -1747,9 +2620,19 @@ function Field({
   );
 }
 
-function Line({ label, value, good }: { label: string; value: string; good?: boolean }) {
+function Line({
+  label,
+  value,
+  good,
+}: {
+  label: string;
+  value: string;
+  good?: boolean;
+}) {
   return (
-    <div className={`flex min-w-0 flex-wrap justify-between gap-x-3 gap-y-1 text-sm ${good ? "text-green-400" : "text-parchment"}`}>
+    <div
+      className={`flex min-w-0 flex-wrap justify-between gap-x-3 gap-y-1 text-sm ${good ? "text-green-400" : "text-parchment"}`}
+    >
       <span className="min-w-0 break-words">{label}</span>
       <span>{value}</span>
     </div>

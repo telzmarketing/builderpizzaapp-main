@@ -1,24 +1,93 @@
 import { useState, useMemo, useEffect, useId, type PointerEvent } from "react";
-import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { ChevronLeft, Minus, Plus, AlertCircle, Check, Loader2, Search, X, ZoomIn } from "lucide-react";
+import {
+  Link,
+  useParams,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
+import {
+  ChevronLeft,
+  Minus,
+  Plus,
+  AlertCircle,
+  Check,
+  Loader2,
+  Search,
+  X,
+  ZoomIn,
+} from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import CategorySeal from "@/components/CategorySeal";
 import BestSellerSeal from "@/components/BestSellerSeal";
-import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation, CartItemOptionSelection, type MultiFlavorsConfig } from "@/context/AppContext";
-import { sizesApi, crustApi, productPromotionsApi, customerEventsApi, productsApi, ApiProductSize, ApiProductCrustType, ApiProductPriceQuote, ApiProductOptionGroup, getProductCategoryCapabilities, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl } from "@/lib/api";
-import { isAllowedPizzaSize, isPizzaBroto, pizzaSizeDescription, pizzaSizeLabel, PIZZA_SIZE_LABELS } from "@/lib/pizzaSizes";
-import { formatCrustAddition, isNapolitanaCrust, isNapolitanaCrustBlocked, normalizeCrustPriceAddition } from "@/lib/pricing";
+import {
+  useApp,
+  Pizza,
+  PizzaFlavor,
+  FlavorDivision,
+  PricingRule,
+  CartItemVariation,
+  CartItemOptionSelection,
+  type MultiFlavorsConfig,
+} from "@/context/AppContext";
+import {
+  sizesApi,
+  crustApi,
+  productPromotionsApi,
+  customerEventsApi,
+  productsApi,
+  ApiProductSize,
+  ApiProductCrustType,
+  ApiProductPriceQuote,
+  ApiProductOptionGroup,
+  getProductCategoryCapabilities,
+  isAssetUrl,
+  resolveAssetUrl,
+  resolveOptimizedAssetUrl,
+} from "@/lib/api";
+import {
+  isAllowedPizzaSize,
+  isPizzaBroto,
+  pizzaSizeDescription,
+  pizzaSizeLabel,
+  PIZZA_SIZE_LABELS,
+} from "@/lib/pizzaSizes";
+import {
+  formatCrustAddition,
+  isNapolitanaCrust,
+  isNapolitanaCrustBlocked,
+  normalizeCrustPriceAddition,
+} from "@/lib/pricing";
 import { firePixelEvent, trackEvent, getTrackingData } from "@/lib/tracking";
 
 // ─── Add-ons ──────────────────────────────────────────────────────────────────
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const DIVISION_OPTIONS: { value: FlavorDivision; label: string; emoji: string }[] = [
+const DIVISION_OPTIONS: {
+  value: FlavorDivision;
+  label: string;
+  emoji: string;
+}[] = [
   { value: 1, label: "Inteira", emoji: "🍕" },
   { value: 2, label: "Meio a Meio", emoji: "½" },
   { value: 3, label: "3 Sabores", emoji: "⅓" },
 ];
+
+function restrictedOptionGroups(
+  groups: ApiProductOptionGroup[],
+  allowedIds?: string[],
+) {
+  if (!allowedIds?.length) return groups;
+  const allowed = new Set(allowedIds);
+  return groups
+    .map((group) => ({
+      ...group,
+      options: group.options.filter((option) => allowed.has(option.id)),
+    }))
+    .filter(
+      (group) => group.selection_type === "text" || group.options.length > 0,
+    );
+}
 
 const PUBLIC_MAX_FLAVORS = 3;
 
@@ -108,24 +177,35 @@ const productSearchText = (candidate?: Pizza | null) =>
       candidate?.category,
       candidate?.subcategory,
       candidate?.product_type,
-    ].filter(Boolean).join(" ")
+    ]
+      .filter(Boolean)
+      .join(" "),
   );
 
 export function getFlavorSubcategories(candidates: Pizza[]) {
-  return [...new Set(
-    candidates
-      .map((candidate) => candidate.subcategory?.trim())
-      .filter((subcategory): subcategory is string => !!subcategory),
-  )];
+  return [
+    ...new Set(
+      candidates
+        .map((candidate) => candidate.subcategory?.trim())
+        .filter((subcategory): subcategory is string => !!subcategory),
+    ),
+  ];
 }
 
-export function filterFlavorCandidates(candidates: Pizza[], query = "", subcategory = "") {
+export function filterFlavorCandidates(
+  candidates: Pizza[],
+  query = "",
+  subcategory = "",
+) {
   const normalizedQuery = normalizeProductText(query);
   const normalizedSubcategory = normalizeProductText(subcategory);
-  return candidates.filter((candidate) => (
-    (!normalizedQuery || productSearchText(candidate).includes(normalizedQuery))
-    && (!normalizedSubcategory || normalizeProductText(candidate.subcategory) === normalizedSubcategory)
-  ));
+  return candidates.filter(
+    (candidate) =>
+      (!normalizedQuery ||
+        productSearchText(candidate).includes(normalizedQuery)) &&
+      (!normalizedSubcategory ||
+        normalizeProductText(candidate.subcategory) === normalizedSubcategory),
+  );
 }
 
 const escapeRegExp = (value: string) =>
@@ -135,7 +215,10 @@ const hasWordHint = (text: string, hints: string[]) =>
   hints.some((hint) => {
     const normalizedHint = normalizeProductText(hint);
     if (!normalizedHint) return false;
-    return new RegExp(`(^|[^a-z0-9])${escapeRegExp(normalizedHint)}([^a-z0-9]|$)`, "i").test(text);
+    return new RegExp(
+      `(^|[^a-z0-9])${escapeRegExp(normalizedHint)}([^a-z0-9]|$)`,
+      "i",
+    ).test(text);
   });
 
 const isSweetPizzaCandidate = (candidate?: Pizza | null) => {
@@ -150,12 +233,20 @@ const productCategoryKeys = (candidate?: Pizza | null) =>
 const isFixedFlavorCombinationProduct = (candidate?: Pizza | null) =>
   productCategoryKeys(candidate).includes("combinacoes de sabores");
 
-const matchesFlavorCategoryFilters = (candidate: Pizza, categoryFilters: string[] = []) => {
-  const normalizedFilters = categoryFilters.map((value) => normalizeProductText(value)).filter(Boolean);
+const matchesFlavorCategoryFilters = (
+  candidate: Pizza,
+  categoryFilters: string[] = [],
+) => {
+  const normalizedFilters = categoryFilters
+    .map((value) => normalizeProductText(value))
+    .filter(Boolean);
   if (normalizedFilters.length === 0) return false;
   const keys = productCategoryKeys(candidate);
   return keys.some((key) =>
-    normalizedFilters.some((filter) => key === filter || key.includes(filter) || filter.includes(key))
+    normalizedFilters.some(
+      (filter) =>
+        key === filter || key.includes(filter) || filter.includes(key),
+    ),
   );
 };
 
@@ -163,12 +254,22 @@ const isDrinkLikeCandidate = (candidate?: Pizza | null) => {
   if (!candidate) return false;
   const productType = normalizeProductText(candidate.product_type);
   if (["drink", "bebida", "beverage"].includes(productType)) return true;
-  if (Array.isArray(candidate.drink_variants) && candidate.drink_variants.length > 0) return true;
+  if (
+    Array.isArray(candidate.drink_variants) &&
+    candidate.drink_variants.length > 0
+  )
+    return true;
   const searchableText = productSearchText(candidate);
-  return hasWordHint(searchableText, DRINK_PRODUCT_HINTS) || /\b\d+\s*(ml|l|litro|litros)\b/.test(searchableText);
+  return (
+    hasWordHint(searchableText, DRINK_PRODUCT_HINTS) ||
+    /\b\d+\s*(ml|l|litro|litros)\b/.test(searchableText)
+  );
 };
 
-const isPizzaFlavorCandidate = (candidate?: Pizza | null, options: { allowSweet?: boolean; categoryFilters?: string[] } = {}) => {
+const isPizzaFlavorCandidate = (
+  candidate?: Pizza | null,
+  options: { allowSweet?: boolean; categoryFilters?: string[] } = {},
+) => {
   if (!candidate || candidate.active === false) return false;
   if (isFixedFlavorCombinationProduct(candidate)) return false;
 
@@ -177,8 +278,14 @@ const isPizzaFlavorCandidate = (candidate?: Pizza | null, options: { allowSweet?
   const allowSweet = options.allowSweet ?? true;
   if (!allowSweet && isSweetPizzaCandidate(candidate)) return false;
 
-  if (matchesFlavorCategoryFilters(candidate, options.categoryFilters)) return true;
-  if ((options.categoryFilters ?? []).filter((value) => normalizeProductText(value)).length > 0) return false;
+  if (matchesFlavorCategoryFilters(candidate, options.categoryFilters))
+    return true;
+  if (
+    (options.categoryFilters ?? []).filter((value) =>
+      normalizeProductText(value),
+    ).length > 0
+  )
+    return false;
 
   const productType = normalizeProductText(candidate.product_type);
   if (productType) return productType === "pizza";
@@ -186,18 +293,44 @@ const isPizzaFlavorCandidate = (candidate?: Pizza | null, options: { allowSweet?
   return true;
 };
 
-function computeFlavorPrice(slots: (Pizza | null)[], division: number, rule: PricingRule): number {
+function computeFlavorPrice(
+  slots: (Pizza | null)[],
+  division: number,
+  rule: PricingRule,
+): number {
   const filled = slots.slice(0, division).filter((f): f is Pizza => f !== null);
   if (filled.length === 0) return 0;
   if (rule === "most_expensive") return Math.max(...filled.map((f) => f.price));
-  if (rule === "average") return filled.reduce((s, f) => s + f.price, 0) / filled.length;
+  if (rule === "average")
+    return filled.reduce((s, f) => s + f.price, 0) / filled.length;
   return filled.reduce((s, f) => s + f.price / division, 0);
 }
 
 // ─── SVG Pizza Diagram ────────────────────────────────────────────────────────
 
-function SvgIcon({ icon, x, y, size }: { icon: string | undefined; x: number; y: number; size: number }) {
-  if (!icon) return <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize={size}>?</text>;
+function SvgIcon({
+  icon,
+  x,
+  y,
+  size,
+}: {
+  icon: string | undefined;
+  x: number;
+  y: number;
+  size: number;
+}) {
+  if (!icon)
+    return (
+      <text
+        x={x}
+        y={y}
+        textAnchor="middle"
+        dominantBaseline="middle"
+        fontSize={size}
+      >
+        ?
+      </text>
+    );
   if (isAssetUrl(icon)) {
     return (
       <image
@@ -210,13 +343,31 @@ function SvgIcon({ icon, x, y, size }: { icon: string | undefined; x: number; y:
       />
     );
   }
-  return <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize={size}>{icon}</text>;
+  return (
+    <text
+      x={x}
+      y={y}
+      textAnchor="middle"
+      dominantBaseline="middle"
+      fontSize={size}
+    >
+      {icon}
+    </text>
+  );
 }
 
-function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (Pizza | null)[] }) {
+function PizzaDiagram({
+  division,
+  slots,
+}: {
+  division: FlavorDivision;
+  slots: (Pizza | null)[];
+}) {
   const diagramId = useId().replace(/:/g, "");
   const S = 176;
-  const cx = S / 2, cy = S / 2, r = S / 2 - 6;
+  const cx = S / 2,
+    cy = S / 2,
+    r = S / 2 - 6;
   const filled = ["#f97316", "#ea580c", "#c2410c"];
   const empty = ["#1e293b", "#334155", "#475569"];
   const borderColor = "#0f172a";
@@ -241,7 +392,9 @@ function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (P
     return (
       <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`}>
         <defs>
-          <clipPath id={`${diagramId}-full-flavor`}><circle cx={cx} cy={cy} r={r} /></clipPath>
+          <clipPath id={`${diagramId}-full-flavor`}>
+            <circle cx={cx} cy={cy} r={r} />
+          </clipPath>
         </defs>
         <circle cx={cx} cy={cy} r={r} fill={slots[0] ? filled[0] : empty[0]} />
         {hasImage && (
@@ -255,7 +408,14 @@ function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (P
             clipPath={`url(#${diagramId}-full-flavor)`}
           />
         )}
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke={borderColor} strokeWidth="4" />
+        <circle
+          cx={cx}
+          cy={cy}
+          r={r}
+          fill="none"
+          stroke={borderColor}
+          strokeWidth="4"
+        />
         {!hasImage && <SvgIcon icon={icon} x={cx} y={cy} size={60} />}
       </svg>
     );
@@ -281,7 +441,10 @@ function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (P
           const pos = iconAt(s.mid);
           return (
             <g key={i}>
-              <path d={sectorPath(s.start, s.end)} fill={slots[i] ? filled[i] : empty[i]} />
+              <path
+                d={sectorPath(s.start, s.end)}
+                fill={slots[i] ? filled[i] : empty[i]}
+              />
               {hasImage ? (
                 <image
                   href={resolveOptimizedAssetUrl(icon, 360)}
@@ -293,18 +456,41 @@ function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (P
                   clipPath={`url(#${diagramId}-half-flavor-${i})`}
                 />
               ) : (
-                <SvgIcon icon={icon} x={parseFloat(pos.x.toFixed(2))} y={parseFloat(pos.y.toFixed(2))} size={38} />
+                <SvgIcon
+                  icon={icon}
+                  x={parseFloat(pos.x.toFixed(2))}
+                  y={parseFloat(pos.y.toFixed(2))}
+                  size={38}
+                />
               )}
             </g>
           );
         })}
-        <line x1={cx} y1={cy - r} x2={cx} y2={cy + r} stroke={borderColor} strokeWidth="4" />
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke={borderColor} strokeWidth="4" />
+        <line
+          x1={cx}
+          y1={cy - r}
+          x2={cx}
+          y2={cy + r}
+          stroke={borderColor}
+          strokeWidth="4"
+        />
+        <circle
+          cx={cx}
+          cy={cy}
+          r={r}
+          fill="none"
+          stroke={borderColor}
+          strokeWidth="4"
+        />
       </svg>
     );
   }
 
-  const sectors = [{ start: -90, end: 30 }, { start: 30, end: 150 }, { start: 150, end: 270 }];
+  const sectors = [
+    { start: -90, end: 30 },
+    { start: 30, end: 150 },
+    { start: 150, end: 270 },
+  ];
   const divLines = [-90, 30, 150];
 
   return (
@@ -323,7 +509,10 @@ function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (P
         const pos = iconAt(mid);
         return (
           <g key={i}>
-            <path d={sectorPath(s.start, s.end)} fill={slots[i] ? filled[i] : empty[i]} />
+            <path
+              d={sectorPath(s.start, s.end)}
+              fill={slots[i] ? filled[i] : empty[i]}
+            />
             {hasImage ? (
               <image
                 href={resolveOptimizedAssetUrl(icon, 360)}
@@ -335,15 +524,35 @@ function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (P
                 clipPath={`url(#${diagramId}-third-flavor-${i})`}
               />
             ) : (
-              <SvgIcon icon={icon} x={parseFloat(pos.x.toFixed(2))} y={parseFloat(pos.y.toFixed(2))} size={30} />
+              <SvgIcon
+                icon={icon}
+                x={parseFloat(pos.x.toFixed(2))}
+                y={parseFloat(pos.y.toFixed(2))}
+                size={30}
+              />
             )}
           </g>
         );
       })}
       {divLines.map((deg, i) => (
-        <line key={i} x1={cx} y1={cy} x2={cx + r * Math.cos(toRad(deg))} y2={cy + r * Math.sin(toRad(deg))} stroke={borderColor} strokeWidth="4" />
+        <line
+          key={i}
+          x1={cx}
+          y1={cy}
+          x2={cx + r * Math.cos(toRad(deg))}
+          y2={cy + r * Math.sin(toRad(deg))}
+          stroke={borderColor}
+          strokeWidth="4"
+        />
       ))}
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke={borderColor} strokeWidth="4" />
+      <circle
+        cx={cx}
+        cy={cy}
+        r={r}
+        fill="none"
+        stroke={borderColor}
+        strokeWidth="4"
+      />
     </svg>
   );
 }
@@ -357,14 +566,37 @@ export interface ProductConfiguratorProps {
   onBack?: () => void;
   onAdd?: ReturnType<typeof useApp>["addToCart"];
   flavorConfig?: MultiFlavorsConfig;
+  restrictions?: {
+    size_ids?: string[];
+    crust_ids?: string[];
+    border_ids?: string[];
+    drink_ids?: string[];
+    option_ids?: string[];
+    flavor_count?: number;
+  };
 }
 
-export default function Product({ productId, catalog, embedded = false, onBack, onAdd, flavorConfig }: ProductConfiguratorProps = {}) {
+export default function Product({
+  productId,
+  catalog,
+  embedded = false,
+  onBack,
+  onAdd,
+  flavorConfig,
+  restrictions,
+}: ProductConfiguratorProps = {}) {
   const { id: routeId } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const id = productId ?? routeId;
   const navigate = useNavigate();
-  const { products: storeProducts, addToCart: addStoreItem, multiFlavorsConfig: storeFlavorConfig, siteContent, loading: appLoading, customer } = useApp();
+  const {
+    products: storeProducts,
+    addToCart: addStoreItem,
+    multiFlavorsConfig: storeFlavorConfig,
+    siteContent,
+    loading: appLoading,
+    customer,
+  } = useApp();
   const multiFlavorsConfig = flavorConfig ?? storeFlavorConfig;
   const products = catalog ?? storeProducts;
   const addToCart = onAdd ?? addStoreItem;
@@ -374,21 +606,34 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
 
   const [optionGroups, setOptionGroups] = useState<ApiProductOptionGroup[]>([]);
   const [optionGroupsLoading, setOptionGroupsLoading] = useState(false);
-  const [selectedOptionState, setSelectedOptionState] = useState<Record<string, { selected: Record<string, number>; text: string }>>({});
+  const [selectedOptionState, setSelectedOptionState] = useState<
+    Record<string, { selected: Record<string, number>; text: string }>
+  >({});
 
   // Product type flags
   const productType = normalizeProductText(product?.product_type);
   const isDrink = isDrinkLikeCandidate(product);
   const categoryCapabilities = getProductCategoryCapabilities(product);
-  const showProductOptions = categoryCapabilities?.enable_product_options !== false;
-  const hasExplicitOptionGroups = showProductOptions && (optionGroups.length > 0 || Boolean(product?.option_groups?.length));
-  const isPizza = !hasExplicitOptionGroups && !isDrink && (!productType || productType === "pizza");
-  const isFixedFlavorCombination = isPizza && isFixedFlavorCombinationProduct(product);
+  const showProductOptions =
+    categoryCapabilities?.enable_product_options !== false;
+  const hasExplicitOptionGroups =
+    showProductOptions &&
+    (optionGroups.length > 0 || Boolean(product?.option_groups?.length));
+  const isPizza =
+    !hasExplicitOptionGroups &&
+    !isDrink &&
+    (!productType || productType === "pizza");
+  const isFixedFlavorCombination =
+    isPizza && isFixedFlavorCombinationProduct(product);
 
   const [quantity, setQuantity] = useState(1);
   const [notes, setNotes] = useState("");
   const [division, setDivision] = useState<FlavorDivision>(1);
-  const [flavorSlots, setFlavorSlots] = useState<(Pizza | null)[]>([product ?? null, null, null]);
+  const [flavorSlots, setFlavorSlots] = useState<(Pizza | null)[]>([
+    product ?? null,
+    null,
+    null,
+  ]);
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
   const [flavorSearch, setFlavorSearch] = useState("");
   const [flavorSubcategory, setFlavorSubcategory] = useState("");
@@ -396,19 +641,26 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
 
   // Dynamic sizes from backend
   const [productSizes, setProductSizes] = useState<ApiProductSize[]>([]);
-  const [selectedSizeObj, setSelectedSizeObj] = useState<ApiProductSize | null>(null);
-  const [selectedSizeFallback, setSelectedSizeFallback] = useState("Pizza Grande");
+  const [selectedSizeObj, setSelectedSizeObj] = useState<ApiProductSize | null>(
+    null,
+  );
+  const [selectedSizeFallback, setSelectedSizeFallback] =
+    useState("Pizza Grande");
 
   // Crust types (pizza only)
   const [productCrusts, setProductCrusts] = useState<ApiProductCrustType[]>([]);
-  const [selectedCrust, setSelectedCrust] = useState<ApiProductCrustType | null>(null);
-  const [selectedBorder, setSelectedBorder] = useState<ApiProductCrustType | null>(null);
+  const [selectedCrust, setSelectedCrust] =
+    useState<ApiProductCrustType | null>(null);
+  const [selectedBorder, setSelectedBorder] =
+    useState<ApiProductCrustType | null>(null);
   const [selectedDrinkVariantId, setSelectedDrinkVariantId] = useState("");
   const [optionsLoading, setOptionsLoading] = useState(true);
   const [optionsError, setOptionsError] = useState("");
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState("");
-  const [priceQuote, setPriceQuote] = useState<ApiProductPriceQuote | null>(null);
+  const [priceQuote, setPriceQuote] = useState<ApiProductPriceQuote | null>(
+    null,
+  );
 
   const [imageZoomOpen, setImageZoomOpen] = useState(false);
   const [imageZoomScale, setImageZoomScale] = useState(1);
@@ -417,14 +669,16 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
   useEffect(() => {
     if (!product || embedded) return;
     const td = getTrackingData();
-    customerEventsApi.register({
-      event_type: "product_viewed",
-      event_name: `Visualizou ${product.name}`,
-      product_id: product.id,
-      customer_id: customer?.id ?? null,
-      session_id: td.session_id,
-      page_url: window.location.href,
-    }).catch(() => {});
+    customerEventsApi
+      .register({
+        event_type: "product_viewed",
+        event_name: `Visualizou ${product.name}`,
+        product_id: product.id,
+        customer_id: customer?.id ?? null,
+        session_id: td.session_id,
+        page_url: window.location.href,
+      })
+      .catch(() => {});
     trackEvent("product_config_view", undefined, { product_id: product.id });
     trackEvent("product_viewed", undefined, { product_id: product.id });
     firePixelEvent("ViewContent", {
@@ -445,13 +699,27 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     setCartError(false);
     setSelectedCrust(null);
     setSelectedBorder(null);
-    setSelectedDrinkVariantId((product.drink_variants ?? []).find((variant) => variant.active)?.id ?? "");
+    setSelectedDrinkVariantId(
+      (product.drink_variants ?? []).find(
+        (variant) =>
+          variant.active &&
+          (!restrictions?.drink_ids?.length ||
+            restrictions.drink_ids.includes(variant.id)),
+      )?.id ?? "",
+    );
     setImageZoomOpen(false);
     setImageZoomScale(1);
     setImageZoomPosition({ x: 50, y: 50 });
-    setOptionGroups(showProductOptions ? (product.option_groups ?? []).filter((group) => group.active) : []);
+    setOptionGroups(
+      showProductOptions
+        ? restrictedOptionGroups(
+            (product.option_groups ?? []).filter((group) => group.active),
+            restrictions?.option_ids,
+          )
+        : [],
+    );
     setSelectedOptionState({});
-  }, [product?.id, showProductOptions]);
+  }, [product?.id, showProductOptions, restrictions]);
 
   useEffect(() => {
     if (!product) return;
@@ -462,15 +730,35 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     }
     let cancelled = false;
     setOptionGroupsLoading(true);
-    productsApi.optionGroups.list(product.id, true).then((groups) => {
-      if (!cancelled) setOptionGroups(groups.filter((group) => group.active));
-    }).catch(() => {
-      if (!cancelled) setOptionGroups(showProductOptions ? (product.option_groups ?? []).filter((group) => group.active) : []);
-    }).finally(() => {
-      if (!cancelled) setOptionGroupsLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, [product?.id, showProductOptions]);
+    productsApi.optionGroups
+      .list(product.id, true)
+      .then((groups) => {
+        if (!cancelled)
+          setOptionGroups(
+            restrictedOptionGroups(
+              groups.filter((group) => group.active),
+              restrictions?.option_ids,
+            ),
+          );
+      })
+      .catch(() => {
+        if (!cancelled)
+          setOptionGroups(
+            showProductOptions
+              ? restrictedOptionGroups(
+                  (product.option_groups ?? []).filter((group) => group.active),
+                  restrictions?.option_ids,
+                )
+              : [],
+          );
+      })
+      .finally(() => {
+        if (!cancelled) setOptionGroupsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [product?.id, showProductOptions, restrictions?.option_ids]);
 
   useEffect(() => {
     if (!product) {
@@ -487,73 +775,199 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     setOptionsLoading(true);
     setOptionsError("");
     const showSizeOptions = categoryCapabilities?.enable_sizes ?? true;
-    const showCrustOptions = categoryCapabilities?.enable_dough ?? (isPizza && product.show_crust_options !== false);
-    const showBorderOptions = categoryCapabilities?.enable_border ?? (isPizza && product.show_crust_options !== false);
+    const showCrustOptions =
+      categoryCapabilities?.enable_dough ??
+      (isPizza && product.show_crust_options !== false);
+    const showBorderOptions =
+      categoryCapabilities?.enable_border ??
+      (isPizza && product.show_crust_options !== false);
     setSelectedSizeFallback(showSizeOptions && isPizza ? "Pizza Grande" : "");
-    const sizesRequest = hasExplicitOptionGroups || !showSizeOptions ? Promise.resolve() : sizesApi.list(product.id).then((sizes) => {
-        if (cancelled) return;
-        const activeSizes = sizes.filter((s) => s.active && (!isPizza || isAllowedPizzaSize(s.label)));
-        setProductSizes(activeSizes);
-        if (activeSizes.length > 0) {
-          const def = activeSizes.find((s) => s.is_default) ?? activeSizes[0];
-          setSelectedSizeObj(def);
-        } else {
-          setSelectedSizeObj(null);
-          setSelectedSizeFallback(showSizeOptions && isPizza ? "Pizza Grande" : "");
-        }
-      }).catch(() => {
-        if (!cancelled) setOptionsError("Nao foi possivel carregar as opcoes. Recarregue para tentar novamente.");
-      });
+    const sizesRequest =
+      hasExplicitOptionGroups || !showSizeOptions
+        ? Promise.resolve()
+        : sizesApi
+            .list(product.id)
+            .then((sizes) => {
+              if (cancelled) return;
+              const activeSizes = sizes.filter(
+                (s) =>
+                  s.active &&
+                  (!isPizza || isAllowedPizzaSize(s.label)) &&
+                  (!restrictions?.size_ids?.length ||
+                    restrictions.size_ids.includes(s.id)),
+              );
+              setProductSizes(activeSizes);
+              if (activeSizes.length > 0) {
+                const def =
+                  activeSizes.find((s) => s.is_default) ?? activeSizes[0];
+                setSelectedSizeObj(def);
+              } else {
+                setSelectedSizeObj(null);
+                setSelectedSizeFallback(
+                  showSizeOptions && isPizza ? "Pizza Grande" : "",
+                );
+              }
+            })
+            .catch(() => {
+              if (!cancelled)
+                setOptionsError(
+                  "Nao foi possivel carregar as opcoes. Recarregue para tentar novamente.",
+                );
+            });
 
     // Load crust types for pizza
-    const crustRequest = (showCrustOptions || showBorderOptions) ? crustApi.list(product.id).then((crusts) => {
-        if (cancelled) return;
-        const activeCrusts = crusts.filter((c) => c.active);
-        setProductCrusts(activeCrusts);
-        setSelectedCrust(showCrustOptions ? activeCrusts.find((crust) => crust.option_kind === "dough") ?? null : null);
-        setSelectedBorder(null);
-      }).catch(() => { if (!cancelled) setOptionsError("Nao foi possivel carregar as massas e bordas."); }) : Promise.resolve();
-    Promise.all([sizesRequest, crustRequest]).finally(() => { if (!cancelled) setOptionsLoading(false); });
-    return () => { cancelled = true; };
-  }, [product?.id, isPizza, isDrink, hasExplicitOptionGroups, categoryCapabilities?.enable_sizes, categoryCapabilities?.enable_dough, categoryCapabilities?.enable_border]);
+    const crustRequest =
+      showCrustOptions || showBorderOptions
+        ? crustApi
+            .list(product.id)
+            .then((crusts) => {
+              if (cancelled) return;
+              const activeCrusts = crusts.filter(
+                (c) =>
+                  c.active &&
+                  (c.option_kind === "dough"
+                    ? !restrictions?.crust_ids?.length ||
+                      restrictions.crust_ids.includes(c.id)
+                    : !restrictions?.border_ids?.length ||
+                      restrictions.border_ids.includes(c.id)),
+              );
+              setProductCrusts(activeCrusts);
+              setSelectedCrust(
+                showCrustOptions
+                  ? (activeCrusts.find(
+                      (crust) => crust.option_kind === "dough",
+                    ) ?? null)
+                  : null,
+              );
+              setSelectedBorder(null);
+            })
+            .catch(() => {
+              if (!cancelled)
+                setOptionsError(
+                  "Nao foi possivel carregar as massas e bordas.",
+                );
+            })
+        : Promise.resolve();
+    Promise.all([sizesRequest, crustRequest]).finally(() => {
+      if (!cancelled) setOptionsLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    product?.id,
+    isPizza,
+    isDrink,
+    hasExplicitOptionGroups,
+    categoryCapabilities?.enable_sizes,
+    categoryCapabilities?.enable_dough,
+    categoryCapabilities?.enable_border,
+    restrictions,
+  ]);
 
-  const selectedSize = selectedSizeObj ? selectedSizeObj.label : selectedSizeFallback;
+  const selectedSize = selectedSizeObj
+    ? selectedSizeObj.label
+    : selectedSizeFallback;
   const isPizzaBrotoSelected = isPizza && isPizzaBroto(selectedSize);
   const productPrice = product?.delivery_price ?? product?.price ?? 0;
-  const effectiveDivision: FlavorDivision = isFixedFlavorCombination ? 1 : division;
+  const effectiveDivision: FlavorDivision = isFixedFlavorCombination
+    ? 1
+    : division;
   const showSizeOptions = categoryCapabilities?.enable_sizes ?? true;
-  const showCrustOptions = categoryCapabilities?.enable_dough ?? (isPizza && product?.show_crust_options !== false);
-  const showBorderOptions = categoryCapabilities?.enable_border ?? (isPizza && product?.show_crust_options !== false);
+  const showCrustOptions =
+    categoryCapabilities?.enable_dough ??
+    (isPizza && product?.show_crust_options !== false);
+  const showBorderOptions =
+    categoryCapabilities?.enable_border ??
+    (isPizza && product?.show_crust_options !== false);
   const showPromotions = categoryCapabilities?.enable_promotions !== false;
 
   // O recurso é compartilhado, mas o tipo persistido separa massas e bordas.
-  const regularCrusts = productCrusts.filter((crust) => crust.option_kind === "dough");
-  const borderCrusts = productCrusts.filter((crust) => crust.option_kind === "border");
-  const borderAvailable = showBorderOptions && borderCrusts.length > 0 && !isNapolitanaCrust(selectedCrust?.name);
+  const regularCrusts = productCrusts.filter(
+    (crust) => crust.option_kind === "dough",
+  );
+  const borderCrusts = productCrusts.filter(
+    (crust) => crust.option_kind === "border",
+  );
+  const borderAvailable =
+    showBorderOptions &&
+    borderCrusts.length > 0 &&
+    !isNapolitanaCrust(selectedCrust?.name);
 
-  const selectedOptionSelections = useMemo<CartItemOptionSelection[]>(() => optionGroups.flatMap((group) => {
-    const state = selectedOptionState[group.id] ?? { selected: {}, text: "" };
-    if (group.selection_type === "text") {
-      return state.text.trim() ? [{ groupId: group.id, groupName: group.name, label: state.text.trim(), priceAddition: 0 }] : [];
-    }
-    return Object.entries(state.selected).filter(([, quantity]) => quantity > 0).flatMap(([optionId, quantity]) => {
-      const option = group.options.find((candidate) => candidate.id === optionId);
-      return option ? [{ groupId: group.id, groupName: group.name, optionId: option.id, label: option.name, quantity: group.selection_type === "quantity" ? quantity : 1, priceAddition: option.price_addition * (group.selection_type === "quantity" ? quantity : 1) }] : [];
-    });
-  }), [optionGroups, selectedOptionState]);
+  const selectedOptionSelections = useMemo<CartItemOptionSelection[]>(
+    () =>
+      optionGroups.flatMap((group) => {
+        const state = selectedOptionState[group.id] ?? {
+          selected: {},
+          text: "",
+        };
+        if (group.selection_type === "text") {
+          return state.text.trim()
+            ? [
+                {
+                  groupId: group.id,
+                  groupName: group.name,
+                  label: state.text.trim(),
+                  priceAddition: 0,
+                },
+              ]
+            : [];
+        }
+        return Object.entries(state.selected)
+          .filter(([, quantity]) => quantity > 0)
+          .flatMap(([optionId, quantity]) => {
+            const option = group.options.find(
+              (candidate) => candidate.id === optionId,
+            );
+            return option
+              ? [
+                  {
+                    groupId: group.id,
+                    groupName: group.name,
+                    optionId: option.id,
+                    label: option.name,
+                    quantity:
+                      group.selection_type === "quantity" ? quantity : 1,
+                    priceAddition:
+                      option.price_addition *
+                      (group.selection_type === "quantity" ? quantity : 1),
+                  },
+                ]
+              : [];
+          });
+      }),
+    [optionGroups, selectedOptionState],
+  );
 
-  const optionPriceAddition = selectedOptionSelections.reduce((sum, selection) => sum + selection.priceAddition, 0);
+  const optionPriceAddition = selectedOptionSelections.reduce(
+    (sum, selection) => sum + selection.priceAddition,
+    0,
+  );
   const genericOptionsValid = optionGroups.every((group) => {
     const state = selectedOptionState[group.id] ?? { selected: {}, text: "" };
-    if (group.selection_type === "text") return !group.required || state.text.trim().length > 0;
-    const count = group.selection_type === "quantity"
-      ? Object.values(state.selected).reduce((sum, quantity) => sum + quantity, 0)
-      : Object.keys(state.selected).filter((optionId) => state.selected[optionId] > 0).length;
+    if (group.selection_type === "text")
+      return !group.required || state.text.trim().length > 0;
+    const count =
+      group.selection_type === "quantity"
+        ? Object.values(state.selected).reduce(
+            (sum, quantity) => sum + quantity,
+            0,
+          )
+        : Object.keys(state.selected).filter(
+            (optionId) => state.selected[optionId] > 0,
+          ).length;
     const minimum = Math.max(group.required ? 1 : 0, group.min_selections || 0);
-    return count >= minimum && (!group.max_selections || count <= group.max_selections);
+    return (
+      count >= minimum &&
+      (!group.max_selections || count <= group.max_selections)
+    );
   });
 
-  const setOptionSelection = (group: ApiProductOptionGroup, optionId: string, quantity: number) => {
+  const setOptionSelection = (
+    group: ApiProductOptionGroup,
+    optionId: string,
+    quantity: number,
+  ) => {
     setSelectedOptionState((current) => {
       const previous = current[group.id] ?? { selected: {}, text: "" };
       const selected = { ...previous.selected };
@@ -579,11 +993,14 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     setFlavorSlots((prev) =>
       prev[0]?.id === product.id && prev[1] === null && prev[2] === null
         ? prev
-        : [product, null, null]
+        : [product, null, null],
     );
   }, [product?.id, isFixedFlavorCombination, division]);
 
-  const selectedFlavorIdsKey = flavorSlots.slice(0, effectiveDivision).map((flavor) => flavor?.id ?? "").join("|");
+  const selectedFlavorIdsKey = flavorSlots
+    .slice(0, effectiveDivision)
+    .map((flavor) => flavor?.id ?? "")
+    .join("|");
 
   // Resetar borda se napolitana for selecionada
   useEffect(() => {
@@ -591,8 +1008,13 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
   }, [selectedCrust?.id]);
 
   useEffect(() => {
-    if (!isNapolitanaCrustBlocked(selectedCrust?.name, effectiveDivision)) return;
-    setSelectedCrust(regularCrusts.find((crust) => !isNapolitanaCrust(crust.name)) ?? regularCrusts[0] ?? null);
+    if (!isNapolitanaCrustBlocked(selectedCrust?.name, effectiveDivision))
+      return;
+    setSelectedCrust(
+      regularCrusts.find((crust) => !isNapolitanaCrust(crust.name)) ??
+        regularCrusts[0] ??
+        null,
+    );
     setSelectedBorder(null);
   }, [effectiveDivision, productCrusts, selectedCrust?.id]);
 
@@ -608,31 +1030,14 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     setPriceQuote(null);
     if (hasExplicitOptionGroups) {
       const basePrice = product.delivery_price ?? product.price ?? 0;
-      setPriceQuote({ standard_price: basePrice + optionPriceAddition, final_price: basePrice + optionPriceAddition, promotion_applied: false, promotion_id: null, promotion_name: null, discount_amount: 0, discount_type: null, free_shipping: false, gift_enabled: false, gift_product_id: null, gift_quantity: 1, gift_name: null, gift_icon: null, blocks_other_coupons: false, promotion_blocked: false, promotion_block_reason: null });
-      setQuoteLoading(false);
-      return;
-    }
-    const selectedFlavorIds = flavorSlots
-      .slice(0, division)
-      .map((flavor) => flavor?.id)
-      .filter((id): id is string => Boolean(id));
-    if (selectedFlavorIds.length !== effectiveDivision) { setQuoteLoading(false); return; }
-    productPromotionsApi.quote(product.id, {
-      size_id: selectedSizeObj?.id ?? null,
-      crust_id: showCrustOptions ? selectedCrust?.id ?? null : null,
-      border_id: showBorderOptions ? selectedBorder?.id ?? null : null,
-      drink_variant_id: selectedDrinkVariantId || null,
-      channel: "delivery",
-      flavor_count: isDrink ? 1 : effectiveDivision,
-      flavor_ids: selectedFlavorIds,
-    }).then((quote) => {
-      if (!cancelled) setPriceQuote(showPromotions ? quote : {
-        ...quote,
-        final_price: quote.standard_price,
+      setPriceQuote({
+        standard_price: basePrice + optionPriceAddition,
+        final_price: basePrice + optionPriceAddition,
         promotion_applied: false,
         promotion_id: null,
         promotion_name: null,
         discount_amount: 0,
+        discount_type: null,
         free_shipping: false,
         gift_enabled: false,
         gift_product_id: null,
@@ -643,24 +1048,94 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
         promotion_blocked: false,
         promotion_block_reason: null,
       });
-    }).catch(() => {
-      if (!cancelled) { setPriceQuote(null); setQuoteError("Nao foi possivel confirmar o preco. Tente novamente."); }
-    }).finally(() => {
-      if (!cancelled) setQuoteLoading(false);
-    });
+      setQuoteLoading(false);
+      return;
+    }
+    const selectedFlavorIds = flavorSlots
+      .slice(0, division)
+      .map((flavor) => flavor?.id)
+      .filter((id): id is string => Boolean(id));
+    if (selectedFlavorIds.length !== effectiveDivision) {
+      setQuoteLoading(false);
+      return;
+    }
+    productPromotionsApi
+      .quote(product.id, {
+        size_id: selectedSizeObj?.id ?? null,
+        crust_id: showCrustOptions ? (selectedCrust?.id ?? null) : null,
+        border_id: showBorderOptions ? (selectedBorder?.id ?? null) : null,
+        drink_variant_id: selectedDrinkVariantId || null,
+        channel: "delivery",
+        flavor_count: isDrink ? 1 : effectiveDivision,
+        flavor_ids: selectedFlavorIds,
+      })
+      .then((quote) => {
+        if (!cancelled)
+          setPriceQuote(
+            showPromotions
+              ? quote
+              : {
+                  ...quote,
+                  final_price: quote.standard_price,
+                  promotion_applied: false,
+                  promotion_id: null,
+                  promotion_name: null,
+                  discount_amount: 0,
+                  free_shipping: false,
+                  gift_enabled: false,
+                  gift_product_id: null,
+                  gift_quantity: 1,
+                  gift_name: null,
+                  gift_icon: null,
+                  blocks_other_coupons: false,
+                  promotion_blocked: false,
+                  promotion_block_reason: null,
+                },
+          );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPriceQuote(null);
+          setQuoteError("Nao foi possivel confirmar o preco. Tente novamente.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setQuoteLoading(false);
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [product?.id, isPizza, isDrink, hasExplicitOptionGroups, optionPriceAddition, optionGroupsLoading, selectedSizeObj?.id, selectedCrust?.id, selectedBorder?.id, selectedDrinkVariantId, effectiveDivision, selectedFlavorIdsKey, optionsLoading, optionsError, showCrustOptions, showBorderOptions, showPromotions]);
+  }, [
+    product?.id,
+    isPizza,
+    isDrink,
+    hasExplicitOptionGroups,
+    optionPriceAddition,
+    optionGroupsLoading,
+    selectedSizeObj?.id,
+    selectedCrust?.id,
+    selectedBorder?.id,
+    selectedDrinkVariantId,
+    effectiveDivision,
+    selectedFlavorIdsKey,
+    optionsLoading,
+    optionsError,
+    showCrustOptions,
+    showBorderOptions,
+    showPromotions,
+  ]);
 
   // ── Computed values ──────────────────────────────────────────────────────────
 
   const activeFlavors = flavorSlots.slice(0, effectiveDivision);
-  const allFilled = isFixedFlavorCombination || activeFlavors.every((f) => f !== null);
+  const allFilled =
+    isFixedFlavorCombination || activeFlavors.every((f) => f !== null);
   const effectivePricingRule: PricingRule = multiFlavorsConfig.pricingRule;
   const flavorCategoryFilters = multiFlavorsConfig.flavorCategoryFilters ?? [];
-  const selectedSizeLookup = normalizeProductText(selectedSizeObj?.label ?? selectedSize);
+  const selectedSizeLookup = normalizeProductText(
+    selectedSizeObj?.label ?? selectedSize,
+  );
 
   const getFlavorDisplayPrice = (flavor?: Pizza | null) => {
     if (!flavor) return 0;
@@ -668,10 +1143,13 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
 
     if (selectedSizeLookup) {
       const matchingSize = flavor.sizes?.find(
-        (size) => size.active && normalizeProductText(size.label) === selectedSizeLookup
+        (size) =>
+          size.active &&
+          normalizeProductText(size.label) === selectedSizeLookup,
       );
       if (matchingSize) return matchingSize.price;
-      if (flavor.id === product?.id && selectedSizeObj) return selectedSizeObj.price;
+      if (flavor.id === product?.id && selectedSizeObj)
+        return selectedSizeObj.price;
     }
 
     return flavor.delivery_price ?? flavor.price;
@@ -684,19 +1162,41 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     }
 
     const slotsWithDisplayPrice = activeFlavors.map((f) =>
-      f ? { ...f, price: getFlavorDisplayPrice(f) } : null
+      f ? { ...f, price: getFlavorDisplayPrice(f) } : null,
     );
-    return computeFlavorPrice(slotsWithDisplayPrice as (Pizza | null)[], effectiveDivision, effectivePricingRule);
-  }, [activeFlavors, effectiveDivision, effectivePricingRule, selectedSizeLookup, selectedSizeObj, isDrink, productPrice, product?.id]);
+    return computeFlavorPrice(
+      slotsWithDisplayPrice as (Pizza | null)[],
+      effectiveDivision,
+      effectivePricingRule,
+    );
+  }, [
+    activeFlavors,
+    effectiveDivision,
+    effectivePricingRule,
+    selectedSizeLookup,
+    selectedSizeObj,
+    isDrink,
+    productPrice,
+    product?.id,
+  ]);
 
   const variantPriceAddition = useMemo(() => {
-    if (showCrustOptions && selectedCrust) return normalizeCrustPriceAddition(selectedCrust.price_addition, productPrice);
+    if (showCrustOptions && selectedCrust)
+      return normalizeCrustPriceAddition(
+        selectedCrust.price_addition,
+        productPrice,
+      );
     return 0;
   }, [showCrustOptions, selectedCrust, productPrice]);
 
-  const borderAddition = showBorderOptions && selectedBorder ? (selectedBorder.price_addition ?? 0) : 0;
+  const borderAddition =
+    showBorderOptions && selectedBorder
+      ? (selectedBorder.price_addition ?? 0)
+      : 0;
   const localPricePerUnit = flavorPrice + variantPriceAddition;
-  const pricePerUnit = priceQuote ? priceQuote.final_price : localPricePerUnit + borderAddition;
+  const pricePerUnit = priceQuote
+    ? priceQuote.final_price
+    : localPricePerUnit + borderAddition;
   const totalPrice = pricePerUnit * quantity;
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -706,7 +1206,11 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     if (d > PUBLIC_MAX_FLAVORS) return;
     if (isPizzaBrotoSelected && d > 1) return;
     if (isNapolitanaCrustBlocked(selectedCrust?.name, d)) {
-      setSelectedCrust(regularCrusts.find((crust) => !isNapolitanaCrust(crust.name)) ?? regularCrusts[0] ?? null);
+      setSelectedCrust(
+        regularCrusts.find((crust) => !isNapolitanaCrust(crust.name)) ??
+          regularCrusts[0] ??
+          null,
+      );
       setSelectedBorder(null);
     }
     setDivision(d);
@@ -716,15 +1220,26 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     setCartError(false);
     setFlavorSlots((prev) => {
       const next = [...prev];
-      if (d === 1) { next[1] = null; next[2] = null; }
-      if (d === 2) { next[2] = null; }
+      if (d === 1) {
+        next[1] = null;
+        next[2] = null;
+      }
+      if (d === 2) {
+        next[2] = null;
+      }
       return next;
     });
   };
 
   const handleSelectFlavor = (slotIndex: number, p: Pizza) => {
     if (isFixedFlavorCombination) return;
-    if (!isPizzaFlavorCandidate(p, { allowSweet: division === 1, categoryFilters: flavorCategoryFilters })) return;
+    if (
+      !isPizzaFlavorCandidate(p, {
+        allowSweet: division === 1,
+        categoryFilters: flavorCategoryFilters,
+      })
+    )
+      return;
 
     setFlavorSlots((prev) => {
       const next = [...prev];
@@ -747,8 +1262,14 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
 
   const updateImageZoomPosition = (event: PointerEvent<HTMLElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const x = Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100));
-    const y = Math.min(100, Math.max(0, ((event.clientY - rect.top) / rect.height) * 100));
+    const x = Math.min(
+      100,
+      Math.max(0, ((event.clientX - rect.left) / rect.width) * 100),
+    );
+    const y = Math.min(
+      100,
+      Math.max(0, ((event.clientY - rect.top) / rect.height) * 100),
+    );
     setImageZoomPosition({ x, y });
   };
 
@@ -765,7 +1286,14 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
 
   const handleAddToCart = () => {
     if (!product) return;
-    if (optionsLoading || optionsError || quoteLoading || quoteError || !priceQuote) return;
+    if (
+      optionsLoading ||
+      optionsError ||
+      quoteLoading ||
+      quoteError ||
+      !priceQuote
+    )
+      return;
     if (product.inventory_available === false) return;
     if (!isFixedFlavorCombination && isPizzaBrotoSelected && division > 1) {
       setDivision(1);
@@ -774,7 +1302,8 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
       setFlavorSlots((prev) => [prev[0] ?? product, null, null]);
       return;
     }
-    if (isNapolitanaCrustBlocked(selectedCrust?.name, effectiveDivision)) return;
+    if (isNapolitanaCrustBlocked(selectedCrust?.name, effectiveDivision))
+      return;
     if (isPizza && !allFilled) {
       setCartError(true);
       return;
@@ -783,10 +1312,24 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
 
     let flavors: PizzaFlavor[];
     if (isFixedFlavorCombination) {
-      flavors = [{ productId: product.id, name: product.name, price: getFlavorDisplayPrice(product), icon: product.icon }];
+      flavors = [
+        {
+          productId: product.id,
+          name: product.name,
+          price: getFlavorDisplayPrice(product),
+          icon: product.icon,
+        },
+      ];
     } else if (isDrink) {
       // For drinks, the "flavor" is just the product itself at the computed price
-      flavors = [{ productId: product.id, name: product.name, price: flavorPrice, icon: product.icon }];
+      flavors = [
+        {
+          productId: product.id,
+          name: product.name,
+          price: flavorPrice,
+          icon: product.icon,
+        },
+      ];
     } else {
       // Use the size-adjusted price so backend validation passes with size-based pricing
       flavors = (activeFlavors as Pizza[]).map((p) => ({
@@ -797,14 +1340,21 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
       }));
     }
 
-    const crustAddition = showCrustOptions && selectedCrust ? normalizeCrustPriceAddition(selectedCrust.price_addition, productPrice) : 0;
-    const crustVariation: CartItemVariation | null = showCrustOptions && selectedCrust
-      ? {
-          id: selectedCrust.id,
-          name: selectedCrust.name,
-          priceAddition: crustAddition,
-        }
-      : null;
+    const crustAddition =
+      showCrustOptions && selectedCrust
+        ? normalizeCrustPriceAddition(
+            selectedCrust.price_addition,
+            productPrice,
+          )
+        : 0;
+    const crustVariation: CartItemVariation | null =
+      showCrustOptions && selectedCrust
+        ? {
+            id: selectedCrust.id,
+            name: selectedCrust.name,
+            priceAddition: crustAddition,
+          }
+        : null;
 
     addToCart(
       product,
@@ -816,57 +1366,132 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
       pricePerUnit,
       notes || undefined,
       crustVariation,
-      selectedDrinkVariantId ? { id: selectedDrinkVariantId, name: product.drink_variants?.find((variant) => variant.id === selectedDrinkVariantId)?.name ?? "", priceAddition: product.drink_variants?.find((variant) => variant.id === selectedDrinkVariantId)?.price_addition ?? 0 } : null,
+      selectedDrinkVariantId
+        ? {
+            id: selectedDrinkVariantId,
+            name:
+              product.drink_variants?.find(
+                (variant) => variant.id === selectedDrinkVariantId,
+              )?.name ?? "",
+            priceAddition:
+              product.drink_variants?.find(
+                (variant) => variant.id === selectedDrinkVariantId,
+              )?.price_addition ?? 0,
+          }
+        : null,
       selectedSizeObj?.id,
-      showPromotions && priceQuote?.promotion_applied ? {
-        applied: true,
-        id: priceQuote.promotion_id,
-        name: priceQuote.promotion_name,
-        discount: priceQuote.discount_amount,
-        freeShipping: priceQuote.free_shipping,
-        giftEnabled: priceQuote.gift_enabled,
-        giftProductId: priceQuote.gift_product_id,
-        giftQuantity: priceQuote.gift_quantity,
-        giftName: priceQuote.gift_name,
-        giftIcon: priceQuote.gift_icon,
-        blocksOtherCoupons: priceQuote.blocks_other_coupons,
-      } : undefined,
-      showBorderOptions && selectedBorder ? { id: selectedBorder.id, name: selectedBorder.name, priceAddition: borderAddition } : null,
+      showPromotions && priceQuote?.promotion_applied
+        ? {
+            applied: true,
+            id: priceQuote.promotion_id,
+            name: priceQuote.promotion_name,
+            discount: priceQuote.discount_amount,
+            freeShipping: priceQuote.free_shipping,
+            giftEnabled: priceQuote.gift_enabled,
+            giftProductId: priceQuote.gift_product_id,
+            giftQuantity: priceQuote.gift_quantity,
+            giftName: priceQuote.gift_name,
+            giftIcon: priceQuote.gift_icon,
+            blocksOtherCoupons: priceQuote.blocks_other_coupons,
+          }
+        : undefined,
+      showBorderOptions && selectedBorder
+        ? {
+            id: selectedBorder.id,
+            name: selectedBorder.name,
+            priceAddition: borderAddition,
+          }
+        : null,
       showProductOptions ? selectedOptionSelections : [],
       undefined,
-      searchParams.get("strategic_offer_id") ? {
-        offerId: searchParams.get("strategic_offer_id")!,
-        campaignId: searchParams.get("strategic_campaign_id"),
-        campaignSlug: searchParams.get("strategic_campaign_slug"),
-      } : undefined,
+      searchParams.get("strategic_offer_id")
+        ? {
+            offerId: searchParams.get("strategic_offer_id")!,
+            campaignId: searchParams.get("strategic_campaign_id"),
+            campaignSlug: searchParams.get("strategic_campaign_slug"),
+            group:
+              searchParams.get("strategic_campaign_version") &&
+              searchParams.get("strategic_composition_revision")
+                ? {
+                    instanceId: `strategic-${searchParams.get("strategic_offer_id")}-${crypto.randomUUID()}`,
+                    name: product.name,
+                    campaignVersion: Number(
+                      searchParams.get("strategic_campaign_version"),
+                    ),
+                    compositionRevision: Number(
+                      searchParams.get("strategic_composition_revision"),
+                    ),
+                    referenceType: "product",
+                    stepKey: "product:1",
+                    sourceSubcategoryId: product.subcategory_id,
+                    quantity: 1,
+                  }
+                : undefined,
+          }
+        : undefined,
     );
     if (!embedded) {
-      trackEvent("add_to_cart", totalPrice, { product_id: product.id, quantity, selected_size: selectedSize });
+      trackEvent("add_to_cart", totalPrice, {
+        product_id: product.id,
+        quantity,
+        selected_size: selectedSize,
+      });
       navigate("/cart");
     }
   };
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
-  const divisionOptions = DIVISION_OPTIONS.filter(
-    (opt) => opt.value <= Math.min(PUBLIC_MAX_FLAVORS, multiFlavorsConfig.maxFlavors ?? PUBLIC_MAX_FLAVORS)
+  const divisionOptions = DIVISION_OPTIONS.filter((opt) =>
+    restrictions?.flavor_count
+      ? opt.value === restrictions.flavor_count
+      : opt.value <=
+        Math.min(
+          PUBLIC_MAX_FLAVORS,
+          multiFlavorsConfig.maxFlavors ?? PUBLIC_MAX_FLAVORS,
+        ),
   );
 
   const availableForSlot = (slotIndex: number) =>
     products.filter((p) => {
       if (slotIndex === 0) return p.id === product?.id;
-      return p.inventory_available !== false && isPizzaFlavorCandidate(p, { allowSweet: division === 1, categoryFilters: flavorCategoryFilters }) && !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id);
+      return (
+        p.inventory_available !== false &&
+        isPizzaFlavorCandidate(p, {
+          allowSweet: division === 1,
+          categoryFilters: flavorCategoryFilters,
+        }) &&
+        !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id)
+      );
     });
 
-  const productInventoryAvailable = !!product && product.inventory_available !== false;
-  const canAddToCart = productInventoryAvailable && !optionGroupsLoading && !optionsLoading && !optionsError && !quoteLoading && !quoteError && !!priceQuote && (hasExplicitOptionGroups ? genericOptionsValid : (isDrink ? true : (allFilled && (!showCrustOptions || regularCrusts.length === 0 || selectedCrust !== null))));
+  const productInventoryAvailable =
+    !!product && product.inventory_available !== false;
+  const canAddToCart =
+    productInventoryAvailable &&
+    !optionGroupsLoading &&
+    !optionsLoading &&
+    !optionsError &&
+    !quoteLoading &&
+    !quoteError &&
+    !!priceQuote &&
+    (hasExplicitOptionGroups
+      ? genericOptionsValid
+      : isDrink
+        ? true
+        : allFilled &&
+          (!showCrustOptions ||
+            regularCrusts.length === 0 ||
+            selectedCrust !== null));
 
   if (appLoading && !product) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-center">
           <Loader2 size={34} className="animate-spin text-gold" />
-          <p className="text-cream text-base font-semibold">Carregando produto...</p>
+          <p className="text-cream text-base font-semibold">
+            Carregando produto...
+          </p>
         </div>
       </div>
     );
@@ -877,30 +1502,51 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
       <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 flex items-center justify-center px-6">
         <div className="text-center">
           <p className="text-cream text-xl font-bold">Produto não encontrado</p>
-          <p className="text-stone text-sm mt-2">O item pode estar indisponível ou o cardápio ainda não foi atualizado.</p>
-          <Link to="/" className="text-gold hover:text-gold-light mt-4 block font-semibold">Voltar ao início</Link>
+          <p className="text-stone text-sm mt-2">
+            O item pode estar indisponível ou o cardápio ainda não foi
+            atualizado.
+          </p>
+          <Link
+            to="/"
+            className="text-gold hover:text-gold-light mt-4 block font-semibold"
+          >
+            Voltar ao início
+          </Link>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`${embedded ? "min-h-0" : "min-h-screen"} bg-gradient-to-br from-surface-01 to-surface-00`}>
-
+    <div
+      className={`${embedded ? "min-h-0" : "min-h-screen"} bg-gradient-to-br from-surface-01 to-surface-00`}
+    >
       {/* Header */}
       <div className="bg-brand-dark px-4 py-3 flex min-w-0 justify-between items-center sticky top-0 z-30">
-        <button type="button" onClick={() => embedded ? onBack?.() : navigate(-1)} aria-label={embedded ? "Voltar ao catálogo" : "Voltar"} className="translate-y-4 text-parchment hover:text-cream transition-colors lg:translate-y-2">
+        <button
+          type="button"
+          onClick={() => (embedded ? onBack?.() : navigate(-1))}
+          aria-label={embedded ? "Voltar ao catálogo" : "Voltar"}
+          className="translate-y-4 text-parchment hover:text-cream transition-colors lg:translate-y-2"
+        >
           <ChevronLeft size={24} />
         </button>
-        {embedded ? <strong className="text-cream">Configurar produto</strong> : <button onClick={() => navigate("/")} aria-label="Ir para a home da loja" className="translate-y-4 lg:translate-y-2">
-          <MoschettieriLogo className="text-cream text-base scale-[1.31] origin-center" />
-        </button>}
+        {embedded ? (
+          <strong className="text-cream">Configurar produto</strong>
+        ) : (
+          <button
+            onClick={() => navigate("/")}
+            aria-label="Ir para a home da loja"
+            className="translate-y-4 lg:translate-y-2"
+          >
+            <MoschettieriLogo className="text-cream text-base scale-[1.31] origin-center" />
+          </button>
+        )}
         <div className="w-6"></div>
       </div>
 
       {/* Content */}
       <div className="px-4 pt-6 pb-36 flex flex-col [&>*]:order-10">
-
         {/* ── Hero Product Image ───────────────────────────────────────────── */}
         <div className="flex flex-col items-center mb-6 order-0">
           <button
@@ -911,37 +1557,47 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
           >
             <CategorySeal product={product} className="left-2 top-3" />
             <span className="absolute inset-0 z-0 rounded-full overflow-visible flex items-center justify-center">
-              {isAssetUrl(product.icon)
-                ? (
-                  <img
-                    src={resolveOptimizedAssetUrl(product.icon, 416)}
-                    alt={product.name}
-                    className="w-full h-full object-contain product-image-pulse-spin"
-                    width={208}
-                    height={208}
-                    loading="eager"
-                    decoding="async"
-                    fetchPriority="high"
-                  />
-                )
-                : (
-                  <span>{product.icon || "🍕"}</span>
-                )}
+              {isAssetUrl(product.icon) ? (
+                <img
+                  src={resolveOptimizedAssetUrl(product.icon, 416)}
+                  alt={product.name}
+                  className="w-full h-full object-contain product-image-pulse-spin"
+                  width={208}
+                  height={208}
+                  loading="eager"
+                  decoding="async"
+                  fetchPriority="high"
+                />
+              ) : (
+                <span>{product.icon || "🍕"}</span>
+              )}
             </span>
             <span className="absolute bottom-4 right-4 z-30 h-9 w-9 rounded-full bg-surface-00/95 border border-surface-03 flex items-center justify-center text-gold shadow-lg">
               <ZoomIn size={17} />
             </span>
             <BestSellerSeal show={(product as any).show_best_seller_badge} />
           </button>
-          <h1 className="text-cream text-2xl font-bold mt-4 text-center">{product.name}</h1>
+          <h1 className="text-cream text-2xl font-bold mt-4 text-center">
+            {product.name}
+          </h1>
           <div className="flex min-w-0 w-full flex-wrap items-start gap-4 mt-4">
-            <p className="min-w-0 flex-1 break-words text-stone text-sm leading-relaxed">{product.description}</p>
+            <p className="min-w-0 flex-1 break-words text-stone text-sm leading-relaxed">
+              {product.description}
+            </p>
             <div className="flex items-center gap-3 bg-surface-02 rounded-full px-4 py-2 flex-shrink-0 border border-surface-03">
-              <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="text-parchment hover:text-cream transition-colors">
+              <button
+                onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                className="text-parchment hover:text-cream transition-colors"
+              >
                 <Minus size={16} />
               </button>
-              <span className="text-cream font-bold w-5 text-center">{quantity}</span>
-              <button onClick={() => setQuantity(quantity + 1)} className="text-gold hover:text-gold-light transition-colors">
+              <span className="text-cream font-bold w-5 text-center">
+                {quantity}
+              </span>
+              <button
+                onClick={() => setQuantity(quantity + 1)}
+                className="text-gold hover:text-gold-light transition-colors"
+              >
                 <Plus size={16} />
               </button>
             </div>
@@ -954,8 +1610,14 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
             <h3 className="text-cream font-bold mb-3">Tipo de Massa</h3>
             <div className="flex gap-2 flex-wrap">
               {regularCrusts.map((crust) => {
-                const effectiveAddition = normalizeCrustPriceAddition(crust.price_addition, product.price);
-                const blockedByFlavorDivision = isNapolitanaCrustBlocked(crust.name, division);
+                const effectiveAddition = normalizeCrustPriceAddition(
+                  crust.price_addition,
+                  product.price,
+                );
+                const blockedByFlavorDivision = isNapolitanaCrustBlocked(
+                  crust.name,
+                  division,
+                );
                 return (
                   <button
                     key={crust.id}
@@ -971,89 +1633,282 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                         ? "bg-gold text-cream shadow-lg shadow-gold/30"
                         : blockedByFlavorDivision
                           ? "bg-surface-02/70 text-stone/60 border border-surface-03 cursor-not-allowed"
-                        : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
+                          : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
                     }`}
                   >
-                    <span className="block font-black text-xs">{crust.name}</span>
-                    <span className={`block text-[10px] mt-0.5 ${selectedCrust?.id === crust.id ? "text-cream/80" : effectiveAddition > 0 ? "text-gold-light" : "opacity-70"}`}>
+                    <span className="block font-black text-xs">
+                      {crust.name}
+                    </span>
+                    <span
+                      className={`block text-[10px] mt-0.5 ${selectedCrust?.id === crust.id ? "text-cream/80" : effectiveAddition > 0 ? "text-gold-light" : "opacity-70"}`}
+                    >
                       {formatCrustAddition(effectiveAddition)}
                     </span>
                   </button>
                 );
               })}
             </div>
-            {!isFixedFlavorCombination && effectiveDivision > 1 && regularCrusts.some((crust) => isNapolitanaCrust(crust.name)) && (
-              <p className="text-stone/80 text-xs mt-2">Massa Napolitana indisponivel para pizzas com 2 ou 3 sabores.</p>
-            )}
+            {!isFixedFlavorCombination &&
+              effectiveDivision > 1 &&
+              regularCrusts.some((crust) => isNapolitanaCrust(crust.name)) && (
+                <p className="text-stone/80 text-xs mt-2">
+                  Massa Napolitana indisponivel para pizzas com 2 ou 3 sabores.
+                </p>
+              )}
             {selectedCrust && (
-              <p className="text-amber-400 text-xs mt-2">Massa {selectedCrust.name} selecionada - {formatCrustAddition(variantPriceAddition)}</p>
+              <p className="text-amber-400 text-xs mt-2">
+                Massa {selectedCrust.name} selecionada -{" "}
+                {formatCrustAddition(variantPriceAddition)}
+              </p>
             )}
           </div>
         )}
 
         {/* ── Size Selector ───────────────────────────────────────────────── */}
-        {(optionsLoading || optionsError || quoteError) && <div role="status" className="mb-4 rounded-xl bg-surface-02 p-4 text-sm text-amber-300">{optionsError || quoteError || "Carregando opcoes..."}{(optionsError || quoteError) && <button className="ml-3 underline" onClick={() => window.location.reload()}>Tentar novamente</button>}</div>}
-         {hasExplicitOptionGroups && (
-           <div className="order-2 space-y-5">
-             {optionGroups.map((group) => {
-               const state = selectedOptionState[group.id] ?? { selected: {}, text: "" };
-               const selectedCount = group.selection_type === "quantity" ? Object.values(state.selected).reduce((sum, quantity) => sum + quantity, 0) : Object.keys(state.selected).length;
-               return (
-                 <section key={group.id} className="rounded-2xl border border-surface-03 bg-surface-02/60 p-4">
-                   <div className="mb-3 flex items-start justify-between gap-3"><div><h3 className="font-bold text-cream">{group.name}{group.required ? " *" : ""}</h3><p className="text-xs text-stone">{group.selection_type === "single" ? "Escolha uma opcao" : group.selection_type === "multiple" ? "Escolha uma ou mais opcoes" : group.selection_type === "quantity" ? "Informe a quantidade" : "Digite uma observacao"}{group.max_selections ? ` · maximo ${group.max_selections}` : ""}</p></div>{group.selection_type !== "text" && <span className="text-xs text-stone">{selectedCount} selecionada(s)</span>}</div>
-                   {group.selection_type === "text" ? (
-                     <textarea value={state.text} onChange={(event) => setSelectedOptionState((current) => ({ ...current, [group.id]: { ...state, text: event.target.value } }))} rows={2} maxLength={300} className="w-full rounded-xl border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream outline-none focus:border-gold" placeholder="Digite aqui" />
-                   ) : (
-                   <div className="space-y-2">{group.options.filter((option) => option.active).map((option) => { const currentQuantity = state.selected[option.id] ?? 0; const checked = currentQuantity > 0; return <div key={option.id} className="flex items-center gap-3 rounded-xl border border-surface-03 bg-surface-01 px-3 py-2">{group.selection_type === "quantity" ? <input type="number" min={0} max={group.max_selections || undefined} value={currentQuantity} onChange={(event) => setOptionSelection(group, option.id, Math.max(0, Number(event.target.value) || 0))} className="w-16 rounded-lg bg-surface-02 px-2 py-1 text-center text-sm text-cream" /> : <input type={group.selection_type === "single" ? "radio" : "checkbox"} name={`product-option-${group.id}`} checked={checked} onChange={() => { if (group.selection_type === "single") setSelectedOptionState((current) => ({ ...current, [group.id]: { ...state, selected: { [option.id]: 1 } } })); else setOptionSelection(group, option.id, checked ? 0 : 1); }} className="accent-gold" />}<span className="flex-1 text-sm text-parchment">{option.name}</span><span className="text-xs text-gold-light">{option.price_addition > 0 ? `+ R$ ${option.price_addition.toFixed(2)}` : ""}</span></div>; })}</div>
-                   )}
-                   {group.required && !genericOptionsValid && ((group.selection_type === "text" && !state.text.trim()) || (group.selection_type !== "text" && selectedCount < Math.max(1, group.min_selections || 0))) && <p className="mt-2 text-xs text-amber-300">Escolha uma opcao para continuar.</p>}
-                 </section>
-               );
-             })}
-           </div>
-         )}
-         {isDrink && (product.drink_variants ?? []).some((variant) => variant.active) && <label className="mb-6 block text-cream">Variante<select className="mt-2 block w-full rounded-xl bg-surface-02 p-3" value={selectedDrinkVariantId} onChange={(event) => setSelectedDrinkVariantId(event.target.value)}>{(product.drink_variants ?? []).filter((variant) => variant.active).map((variant) => <option key={variant.id} value={variant.id}>{variant.name}{variant.price_addition > 0 ? ` (+ R$ ${variant.price_addition.toFixed(2)})` : ""}</option>)}</select></label>}
-         {!hasExplicitOptionGroups && showSizeOptions && (isPizza || productSizes.length > 0) && (
-        <div className="mb-6 order-1">
-          <h3 className="text-cream font-bold mb-3">
-            {p.sizeLabel}
-          </h3>
-          <div className="flex gap-2 flex-wrap">
-            {productSizes.length > 0 ? (
-              productSizes.map((size) => (
-                <button
-                  key={size.id}
-                  onClick={() => setSelectedSizeObj(size)}
-                  className={`flex-1 min-w-[60px] py-3 rounded-xl text-sm font-bold transition-all ${
-                    selectedSizeObj?.id === size.id
-                      ? "bg-gold text-cream shadow-lg shadow-gold/30"
-                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
-                  }`}
-                >
-                  <span className="block font-black">{pizzaSizeLabel(size.label)}</span>
-                  <span className="block text-xs text-white font-normal">{pizzaSizeDescription(size.label, size.description)}</span>
-                  <span className="block text-xs text-white mt-0.5">R${size.price.toFixed(2)}</span>
-                </button>
-              ))
-            ) : isPizza ? (
-              PIZZA_SIZE_LABELS.map((size) => (
-                <button
-                  key={size}
-                  onClick={() => setSelectedSizeFallback(size)}
-                  className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${
-                    selectedSizeFallback === size
-                      ? "bg-gold text-cream shadow-lg shadow-gold/30"
-                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
-                  }`}
-                >
-                  <span className="block font-black">{size}</span>
-                  <span className="block text-xs text-white font-normal">{pizzaSizeDescription(size)}</span>
-                </button>
-              ))
-            ) : null}
+        {(optionsLoading || optionsError || quoteError) && (
+          <div
+            role="status"
+            className="mb-4 rounded-xl bg-surface-02 p-4 text-sm text-amber-300"
+          >
+            {optionsError || quoteError || "Carregando opcoes..."}
+            {(optionsError || quoteError) && (
+              <button
+                className="ml-3 underline"
+                onClick={() => window.location.reload()}
+              >
+                Tentar novamente
+              </button>
+            )}
           </div>
-        </div>
         )}
+        {hasExplicitOptionGroups && (
+          <div className="order-2 space-y-5">
+            {optionGroups.map((group) => {
+              const state = selectedOptionState[group.id] ?? {
+                selected: {},
+                text: "",
+              };
+              const selectedCount =
+                group.selection_type === "quantity"
+                  ? Object.values(state.selected).reduce(
+                      (sum, quantity) => sum + quantity,
+                      0,
+                    )
+                  : Object.keys(state.selected).length;
+              return (
+                <section
+                  key={group.id}
+                  className="rounded-2xl border border-surface-03 bg-surface-02/60 p-4"
+                >
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-bold text-cream">
+                        {group.name}
+                        {group.required ? " *" : ""}
+                      </h3>
+                      <p className="text-xs text-stone">
+                        {group.selection_type === "single"
+                          ? "Escolha uma opcao"
+                          : group.selection_type === "multiple"
+                            ? "Escolha uma ou mais opcoes"
+                            : group.selection_type === "quantity"
+                              ? "Informe a quantidade"
+                              : "Digite uma observacao"}
+                        {group.max_selections
+                          ? ` · maximo ${group.max_selections}`
+                          : ""}
+                      </p>
+                    </div>
+                    {group.selection_type !== "text" && (
+                      <span className="text-xs text-stone">
+                        {selectedCount} selecionada(s)
+                      </span>
+                    )}
+                  </div>
+                  {group.selection_type === "text" ? (
+                    <textarea
+                      value={state.text}
+                      onChange={(event) =>
+                        setSelectedOptionState((current) => ({
+                          ...current,
+                          [group.id]: { ...state, text: event.target.value },
+                        }))
+                      }
+                      rows={2}
+                      maxLength={300}
+                      className="w-full rounded-xl border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream outline-none focus:border-gold"
+                      placeholder="Digite aqui"
+                    />
+                  ) : (
+                    <div className="space-y-2">
+                      {group.options
+                        .filter((option) => option.active)
+                        .map((option) => {
+                          const currentQuantity =
+                            state.selected[option.id] ?? 0;
+                          const checked = currentQuantity > 0;
+                          return (
+                            <div
+                              key={option.id}
+                              className="flex items-center gap-3 rounded-xl border border-surface-03 bg-surface-01 px-3 py-2"
+                            >
+                              {group.selection_type === "quantity" ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={group.max_selections || undefined}
+                                  value={currentQuantity}
+                                  onChange={(event) =>
+                                    setOptionSelection(
+                                      group,
+                                      option.id,
+                                      Math.max(
+                                        0,
+                                        Number(event.target.value) || 0,
+                                      ),
+                                    )
+                                  }
+                                  className="w-16 rounded-lg bg-surface-02 px-2 py-1 text-center text-sm text-cream"
+                                />
+                              ) : (
+                                <input
+                                  type={
+                                    group.selection_type === "single"
+                                      ? "radio"
+                                      : "checkbox"
+                                  }
+                                  name={`product-option-${group.id}`}
+                                  checked={checked}
+                                  onChange={() => {
+                                    if (group.selection_type === "single")
+                                      setSelectedOptionState((current) => ({
+                                        ...current,
+                                        [group.id]: {
+                                          ...state,
+                                          selected: { [option.id]: 1 },
+                                        },
+                                      }));
+                                    else
+                                      setOptionSelection(
+                                        group,
+                                        option.id,
+                                        checked ? 0 : 1,
+                                      );
+                                  }}
+                                  className="accent-gold"
+                                />
+                              )}
+                              <span className="flex-1 text-sm text-parchment">
+                                {option.name}
+                              </span>
+                              <span className="text-xs text-gold-light">
+                                {option.price_addition > 0
+                                  ? `+ R$ ${option.price_addition.toFixed(2)}`
+                                  : ""}
+                              </span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                  {group.required &&
+                    !genericOptionsValid &&
+                    ((group.selection_type === "text" && !state.text.trim()) ||
+                      (group.selection_type !== "text" &&
+                        selectedCount <
+                          Math.max(1, group.min_selections || 0))) && (
+                      <p className="mt-2 text-xs text-amber-300">
+                        Escolha uma opcao para continuar.
+                      </p>
+                    )}
+                </section>
+              );
+            })}
+          </div>
+        )}
+        {isDrink &&
+          (product.drink_variants ?? []).some(
+            (variant) =>
+              variant.active &&
+              (!restrictions?.drink_ids?.length ||
+                restrictions.drink_ids.includes(variant.id)),
+          ) && (
+            <label className="mb-6 block text-cream">
+              Variante
+              <select
+                className="mt-2 block w-full rounded-xl bg-surface-02 p-3"
+                value={selectedDrinkVariantId}
+                onChange={(event) =>
+                  setSelectedDrinkVariantId(event.target.value)
+                }
+              >
+                {(product.drink_variants ?? [])
+                  .filter(
+                    (variant) =>
+                      variant.active &&
+                      (!restrictions?.drink_ids?.length ||
+                        restrictions.drink_ids.includes(variant.id)),
+                  )
+                  .map((variant) => (
+                    <option key={variant.id} value={variant.id}>
+                      {variant.name}
+                      {variant.price_addition > 0
+                        ? ` (+ R$ ${variant.price_addition.toFixed(2)})`
+                        : ""}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
+        {!hasExplicitOptionGroups &&
+          showSizeOptions &&
+          (isPizza || productSizes.length > 0) && (
+            <div className="mb-6 order-1">
+              <h3 className="text-cream font-bold mb-3">{p.sizeLabel}</h3>
+              <div className="flex gap-2 flex-wrap">
+                {productSizes.length > 0
+                  ? productSizes.map((size) => (
+                      <button
+                        key={size.id}
+                        onClick={() => setSelectedSizeObj(size)}
+                        className={`flex-1 min-w-[60px] py-3 rounded-xl text-sm font-bold transition-all ${
+                          selectedSizeObj?.id === size.id
+                            ? "bg-gold text-cream shadow-lg shadow-gold/30"
+                            : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
+                        }`}
+                      >
+                        <span className="block font-black">
+                          {pizzaSizeLabel(size.label)}
+                        </span>
+                        <span className="block text-xs text-white font-normal">
+                          {pizzaSizeDescription(size.label, size.description)}
+                        </span>
+                        <span className="block text-xs text-white mt-0.5">
+                          R${size.price.toFixed(2)}
+                        </span>
+                      </button>
+                    ))
+                  : isPizza
+                    ? PIZZA_SIZE_LABELS.map((size) => (
+                        <button
+                          key={size}
+                          onClick={() => setSelectedSizeFallback(size)}
+                          className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${
+                            selectedSizeFallback === size
+                              ? "bg-gold text-cream shadow-lg shadow-gold/30"
+                              : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
+                          }`}
+                        >
+                          <span className="block font-black">{size}</span>
+                          <span className="block text-xs text-white font-normal">
+                            {pizzaSizeDescription(size)}
+                          </span>
+                        </button>
+                      ))
+                    : null}
+              </div>
+            </div>
+          )}
 
         {/* ── Pizza: Division Selector ─────────────────────────────────────── */}
         {isPizza && !isFixedFlavorCombination && (
@@ -1077,13 +1932,19 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                   >
                     <span className="block text-base mb-0.5">{emoji}</span>
                     {label}
-                    {blockedBySize && <span className="block text-[10px] font-normal mt-1">Somente Grande</span>}
+                    {blockedBySize && (
+                      <span className="block text-[10px] font-normal mt-1">
+                        Somente Grande
+                      </span>
+                    )}
                   </button>
                 );
               })}
             </div>
             {isPizzaBrotoSelected && (
-              <p className="text-stone/80 text-xs mt-2">Pizza Individual permite apenas 1 sabor.</p>
+              <p className="text-stone/80 text-xs mt-2">
+                Pizza Individual permite apenas 1 sabor.
+              </p>
             )}
           </div>
         )}
@@ -1096,13 +1957,22 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
               <select
                 aria-label="Selecionar borda"
                 value={selectedBorder?.id ?? ""}
-                onChange={(event) => setSelectedBorder(borderCrusts.find((border) => border.id === event.target.value) ?? null)}
+                onChange={(event) =>
+                  setSelectedBorder(
+                    borderCrusts.find(
+                      (border) => border.id === event.target.value,
+                    ) ?? null,
+                  )
+                }
                 className="w-full rounded-xl bg-surface-02 border border-surface-03 px-4 py-3 text-cream font-semibold"
               >
                 <option value="">Sem borda</option>
                 {borderCrusts.map((border) => (
                   <option key={border.id} value={border.id}>
-                    {border.name}{border.price_addition > 0 ? ` (+ R$ ${border.price_addition.toFixed(2)})` : ""}
+                    {border.name}
+                    {border.price_addition > 0
+                      ? ` (+ R$ ${border.price_addition.toFixed(2)})`
+                      : ""}
                   </option>
                 ))}
               </select>
@@ -1118,7 +1988,9 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
           <div className="mb-6">
             <div className="flex min-w-0 flex-wrap items-start justify-between gap-2 mb-3">
               <h3 className="min-w-0 break-words text-cream font-bold">
-                {division === 1 ? "Sabor da Pizza" : `Escolha os ${division} Sabores`}
+                {division === 1
+                  ? "Sabor da Pizza"
+                  : `Escolha os ${division} Sabores`}
               </h3>
               {cartError && (
                 <span className="flex items-center gap-1 text-red-400 text-xs">
@@ -1132,7 +2004,10 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
               {Array.from({ length: division }, (_, i) => {
                 const flavor = flavorSlots[i];
                 const isOpen = activeSlot === i;
-                const slotLabel = division === 1 ? "Sabor único" : `Sabor ${i + 1} de ${division}`;
+                const slotLabel =
+                  division === 1
+                    ? "Sabor único"
+                    : `Sabor ${i + 1} de ${division}`;
 
                 return (
                   <div key={i}>
@@ -1142,34 +2017,40 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                         isOpen
                           ? "bg-surface-02 border-gold"
                           : flavor
-                          ? "bg-surface-02 border-green-500/40"
-                          : cartError
-                          ? "bg-surface-02 border-red-500/60"
-                          : "bg-surface-02 border-surface-03 hover:border-brand-mid"
+                            ? "bg-surface-02 border-green-500/40"
+                            : cartError
+                              ? "bg-surface-02 border-red-500/60"
+                              : "bg-surface-02 border-surface-03 hover:border-brand-mid"
                       }`}
                     >
                       <div className="w-12 h-12 rounded-full bg-surface-03 flex items-center justify-center text-2xl flex-shrink-0 overflow-hidden">
-                        {isAssetUrl(flavor?.icon)
-                          ? (
-                            <img
-                              src={resolveOptimizedAssetUrl(flavor?.icon, 96)}
-                              alt=""
-                              className="w-full h-full object-cover"
-                              width={48}
-                              height={48}
-                              loading="lazy"
-                              decoding="async"
-                              fetchPriority="low"
-                            />
-                          )
-                          : <span>{flavor?.icon ?? "?"}</span>}
+                        {isAssetUrl(flavor?.icon) ? (
+                          <img
+                            src={resolveOptimizedAssetUrl(flavor?.icon, 96)}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            width={48}
+                            height={48}
+                            loading="lazy"
+                            decoding="async"
+                            fetchPriority="low"
+                          />
+                        ) : (
+                          <span>{flavor?.icon ?? "?"}</span>
+                        )}
                       </div>
                       <div className="min-w-0 flex-1 text-left">
                         <p className="text-stone text-xs">{slotLabel}</p>
-                        <p className={`text-sm font-semibold ${flavor ? "text-cream" : "text-stone/70"}`}>
+                        <p
+                          className={`text-sm font-semibold ${flavor ? "text-cream" : "text-stone/70"}`}
+                        >
                           {flavor?.name ?? "Toque para escolher o sabor"}
                         </p>
-                        {flavor && <p className="text-gold-light text-xs">R$ {getFlavorDisplayPrice(flavor).toFixed(2)}</p>}
+                        {flavor && (
+                          <p className="text-gold-light text-xs">
+                            R$ {getFlavorDisplayPrice(flavor).toFixed(2)}
+                          </p>
+                        )}
                       </div>
                       <div className="flex-shrink-0">
                         {flavor ? (
@@ -1178,20 +2059,29 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                             {isOpen ? "Trocar" : "Ok"}
                           </span>
                         ) : (
-                          <span className="text-xs text-gold-light bg-gold/10 border border-gold/30 px-2 py-1 rounded-full">Escolher</span>
+                          <span className="text-xs text-gold-light bg-gold/10 border border-gold/30 px-2 py-1 rounded-full">
+                            Escolher
+                          </span>
                         )}
                       </div>
                     </button>
 
                     {isOpen && (
                       <div className="mt-2 bg-brand-dark rounded-xl p-3 border border-gold/30 animate-in slide-in-from-top-1">
-                        <p className="text-stone text-xs mb-3">Selecione o sabor {i + 1}:</p>
+                        <p className="text-stone text-xs mb-3">
+                          Selecione o sabor {i + 1}:
+                        </p>
                         <label className="relative mb-3 block">
-                          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone" />
+                          <Search
+                            size={16}
+                            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone"
+                          />
                           <input
                             type="search"
                             value={flavorSearch}
-                            onChange={(event) => setFlavorSearch(event.target.value)}
+                            onChange={(event) =>
+                              setFlavorSearch(event.target.value)
+                            }
                             placeholder="Pesquisar sabor"
                             aria-label={`Pesquisar sabor ${i + 1}`}
                             className="w-full rounded-lg border border-surface-03 bg-surface-02 py-2.5 pl-9 pr-3 text-sm text-cream outline-none placeholder:text-stone/70 focus:border-gold"
@@ -1199,12 +2089,20 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                         </label>
                         {(() => {
                           const slotCandidates = availableForSlot(i);
-                          const subcategories = getFlavorSubcategories(slotCandidates);
-                          const visibleCandidates = filterFlavorCandidates(slotCandidates, flavorSearch, flavorSubcategory);
+                          const subcategories =
+                            getFlavorSubcategories(slotCandidates);
+                          const visibleCandidates = filterFlavorCandidates(
+                            slotCandidates,
+                            flavorSearch,
+                            flavorSubcategory,
+                          );
                           return (
                             <>
                               {subcategories.length > 0 && (
-                                <div className="mb-3 flex gap-2 overflow-x-auto pb-1" aria-label="Subcategorias de sabores">
+                                <div
+                                  className="mb-3 flex gap-2 overflow-x-auto pb-1"
+                                  aria-label="Subcategorias de sabores"
+                                >
                                   <button
                                     type="button"
                                     onClick={() => setFlavorSubcategory("")}
@@ -1216,7 +2114,9 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                                     <button
                                       type="button"
                                       key={subcategory}
-                                      onClick={() => setFlavorSubcategory(subcategory)}
+                                      onClick={() =>
+                                        setFlavorSubcategory(subcategory)
+                                      }
                                       className={`min-h-9 shrink-0 rounded-full border px-3 text-xs font-bold transition-colors ${normalizeProductText(flavorSubcategory) === normalizeProductText(subcategory) ? "border-gold bg-gold text-black" : "border-surface-03 bg-surface-02 text-stone hover:border-gold/50 hover:text-cream"}`}
                                     >
                                       {subcategory}
@@ -1226,35 +2126,45 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                               )}
                               <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                                 {visibleCandidates.map((p) => {
-                                  const isSelected = flavorSlots[i]?.id === p.id;
+                                  const isSelected =
+                                    flavorSlots[i]?.id === p.id;
                                   const displayPrice = getFlavorDisplayPrice(p);
                                   return (
                                     <button
                                       key={p.id}
                                       onClick={() => handleSelectFlavor(i, p)}
                                       className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all active:scale-[0.99] ${
-                                        isSelected ? "bg-gold/20 border-gold shadow-sm" : "bg-surface-02 border-surface-03 hover:border-gold/40"
+                                        isSelected
+                                          ? "bg-gold/20 border-gold shadow-sm"
+                                          : "bg-surface-02 border-surface-03 hover:border-gold/40"
                                       }`}
                                     >
                                       <div className="w-12 h-12 flex-shrink-0 flex items-center justify-center text-2xl overflow-hidden rounded-lg bg-surface-03">
-                                        {isAssetUrl(p.icon)
-                                          ? (
-                                            <img
-                                              src={resolveOptimizedAssetUrl(p.icon, 96)}
-                                              alt=""
-                                              className="w-full h-full object-cover"
-                                              width={48}
-                                              height={48}
-                                              loading="lazy"
-                                              decoding="async"
-                                              fetchPriority="low"
-                                            />
-                                          )
-                                          : <span>{p.icon || "🍕"}</span>}
+                                        {isAssetUrl(p.icon) ? (
+                                          <img
+                                            src={resolveOptimizedAssetUrl(
+                                              p.icon,
+                                              96,
+                                            )}
+                                            alt=""
+                                            className="w-full h-full object-cover"
+                                            width={48}
+                                            height={48}
+                                            loading="lazy"
+                                            decoding="async"
+                                            fetchPriority="low"
+                                          />
+                                        ) : (
+                                          <span>{p.icon || "🍕"}</span>
+                                        )}
                                       </div>
                                       <div className="min-w-0 flex-1">
-                                        <p className="text-cream text-sm font-semibold leading-tight break-words">{p.name}</p>
-                                        <p className="text-gold-light text-xs mt-1">R$ {displayPrice.toFixed(2)}</p>
+                                        <p className="text-cream text-sm font-semibold leading-tight break-words">
+                                          {p.name}
+                                        </p>
+                                        <p className="text-gold-light text-xs mt-1">
+                                          R$ {displayPrice.toFixed(2)}
+                                        </p>
                                       </div>
                                       {isSelected && (
                                         <span className="flex-shrink-0 text-[10px] bg-gold text-cream px-2 py-1 rounded-full">
@@ -1284,35 +2194,45 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
               <div className="mt-3 p-3 rounded-xl bg-surface-02/60 border border-surface-03">
                 <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
                   <span className="min-w-0 break-words text-stone">
-                    {allFilled ? `${effectiveDivision === 2 ? "Meio a Meio" : "3 Sabores"}` : "Preço parcial"}
+                    {allFilled
+                      ? `${effectiveDivision === 2 ? "Meio a Meio" : "3 Sabores"}`
+                      : "Preço parcial"}
                   </span>
-                  <span className="text-gold-light font-bold">R$ {flavorPrice.toFixed(2)}</span>
+                  <span className="text-gold-light font-bold">
+                    R$ {flavorPrice.toFixed(2)}
+                  </span>
                 </div>
                 <div className="flex gap-1 mt-2 flex-wrap">
                   {activeFlavors.map((f, i) =>
                     f ? (
-                      <span key={i} className="inline-flex items-center gap-1 text-xs bg-surface-03 text-parchment px-2 py-0.5 rounded-full">
-                        {isAssetUrl(f.icon)
-                          ? (
-                            <img
-                              src={resolveOptimizedAssetUrl(f.icon, 64)}
-                              alt=""
-                              className="w-4 h-4 rounded-full object-cover flex-shrink-0"
-                              width={16}
-                              height={16}
-                              loading="lazy"
-                              decoding="async"
-                              fetchPriority="low"
-                            />
-                          )
-                          : <span>{f.icon}</span>}
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1 text-xs bg-surface-03 text-parchment px-2 py-0.5 rounded-full"
+                      >
+                        {isAssetUrl(f.icon) ? (
+                          <img
+                            src={resolveOptimizedAssetUrl(f.icon, 64)}
+                            alt=""
+                            className="w-4 h-4 rounded-full object-cover flex-shrink-0"
+                            width={16}
+                            height={16}
+                            loading="lazy"
+                            decoding="async"
+                            fetchPriority="low"
+                          />
+                        ) : (
+                          <span>{f.icon}</span>
+                        )}
                         {f.name} — R${getFlavorDisplayPrice(f).toFixed(2)}
                       </span>
                     ) : (
-                      <span key={i} className="text-xs bg-surface-03/50 text-stone/70 px-2 py-0.5 rounded-full border border-dashed border-brand-mid">
+                      <span
+                        key={i}
+                        className="text-xs bg-surface-03/50 text-stone/70 px-2 py-0.5 rounded-full border border-dashed border-brand-mid"
+                      >
                         Sabor {i + 1} — ?
                       </span>
-                    )
+                    ),
                   )}
                 </div>
               </div>
@@ -1322,24 +2242,29 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
 
         {/* ── Observações ─────────────────────────────────────────────────── */}
         {!isDrink && (
-        <div className="mb-6">
-          <h3 className="text-cream font-bold mb-3">Observações</h3>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Ex: sem cebola, ponto da massa, alergias..."
-            rows={3}
-            className="w-full bg-surface-02 border border-surface-03 focus:border-gold rounded-xl px-4 py-3 text-cream placeholder-stone/70 outline-none text-sm resize-none transition-colors"
-            maxLength={200}
-          />
-          <p className="text-stone/60 text-xs mt-1 text-right">{notes.length}/200</p>
-        </div>
+          <div className="mb-6">
+            <h3 className="text-cream font-bold mb-3">Observações</h3>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Ex: sem cebola, ponto da massa, alergias..."
+              rows={3}
+              className="w-full bg-surface-02 border border-surface-03 focus:border-gold rounded-xl px-4 py-3 text-cream placeholder-stone/70 outline-none text-sm resize-none transition-colors"
+              maxLength={200}
+            />
+            <p className="text-stone/60 text-xs mt-1 text-right">
+              {notes.length}/200
+            </p>
+          </div>
         )}
 
         {/* ── Pizza Diagram ───────────────────────────────────────────────── */}
         {!productInventoryAvailable && (
           <div className="mb-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-center">
-            <p className="text-sm font-bold text-amber-300">{product.inventory_unavailable_message || "Indisponivel no momento."}</p>
+            <p className="text-sm font-bold text-amber-300">
+              {product.inventory_unavailable_message ||
+                "Indisponivel no momento."}
+            </p>
           </div>
         )}
 
@@ -1362,7 +2287,10 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
           {/* Close */}
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); setImageZoomOpen(false); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setImageZoomOpen(false);
+            }}
             className="absolute top-5 right-5 h-11 w-11 rounded-full bg-surface-00 border border-surface-03 text-cream flex items-center justify-center shadow-lg"
             aria-label="Fechar zoom"
           >
@@ -1370,7 +2298,9 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
           </button>
 
           {/* Product name */}
-          <p className="text-cream text-base font-bold text-center select-none">{product.name}</p>
+          <p className="text-cream text-base font-bold text-center select-none">
+            {product.name}
+          </p>
 
           {/* Image container — rect, object-contain, full pizza visible */}
           <div
@@ -1397,7 +2327,8 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                   transformOrigin: `${imageZoomPosition.x}% ${imageZoomPosition.y}%`,
                   cursor: imageZoomScale > 1 ? "grab" : "zoom-in",
                   willChange: "transform",
-                  imageRendering: "high-quality" as React.CSSProperties["imageRendering"],
+                  imageRendering:
+                    "high-quality" as React.CSSProperties["imageRendering"],
                 }}
               />
             ) : (
@@ -1422,17 +2353,27 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
           >
             <button
               type="button"
-              onClick={() => setImageZoomScale((v) => Math.max(1, Number((v - 0.25).toFixed(2))))}
+              onClick={() =>
+                setImageZoomScale((v) =>
+                  Math.max(1, Number((v - 0.25).toFixed(2))),
+                )
+              }
               className="h-10 w-10 rounded-full bg-surface-03 text-parchment flex items-center justify-center disabled:opacity-40"
               disabled={imageZoomScale <= 1}
               aria-label="Diminuir zoom"
             >
               <Minus size={17} />
             </button>
-            <span className="text-cream text-sm font-bold w-14 text-center">{Math.round(imageZoomScale * 100)}%</span>
+            <span className="text-cream text-sm font-bold w-14 text-center">
+              {Math.round(imageZoomScale * 100)}%
+            </span>
             <button
               type="button"
-              onClick={() => setImageZoomScale((v) => Math.min(4, Number((v + 0.25).toFixed(2))))}
+              onClick={() =>
+                setImageZoomScale((v) =>
+                  Math.min(4, Number((v + 0.25).toFixed(2))),
+                )
+              }
               className="h-10 w-10 rounded-full bg-gold text-cream flex items-center justify-center disabled:opacity-40"
               disabled={imageZoomScale >= 4}
               aria-label="Aumentar zoom"
@@ -1447,29 +2388,45 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
         </div>
       )}
 
-      <div className={`${embedded ? "sticky bottom-0 z-30" : "fixed bottom-0 left-0 right-0"} bg-surface-00 border-t border-surface-03 px-4 py-4 shadow-[0_-18px_40px_rgba(0,0,0,0.45)]`}>
+      <div
+        className={`${embedded ? "sticky bottom-0 z-30" : "fixed bottom-0 left-0 right-0"} bg-surface-00 border-t border-surface-03 px-4 py-4 shadow-[0_-18px_40px_rgba(0,0,0,0.45)]`}
+      >
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-4 gap-y-2 mb-3">
           <div className="min-w-0">
             <p className="text-stone text-xs">Total ({quantity}x)</p>
             <div className="flex items-end gap-2">
-              <p className="text-gold text-2xl font-bold">R$ {totalPrice.toFixed(2)}</p>
+              <p className="text-gold text-2xl font-bold">
+                R$ {totalPrice.toFixed(2)}
+              </p>
               {showPromotions && priceQuote?.promotion_applied && (
-                <p className="text-stone text-xs line-through mb-1">R$ {(priceQuote.standard_price * quantity).toFixed(2)}</p>
+                <p className="text-stone text-xs line-through mb-1">
+                  R$ {(priceQuote.standard_price * quantity).toFixed(2)}
+                </p>
               )}
             </div>
             {showPromotions && priceQuote?.promotion_applied && (
-              <p className="text-emerald-300 text-[11px] font-semibold mt-0.5">{priceQuote.promotion_name} aplicada</p>
-            )}
-            {showPromotions && priceQuote?.promotion_blocked && priceQuote.promotion_block_reason && (
-              <p className="text-amber-300 text-[11px] font-semibold mt-0.5">{priceQuote.promotion_block_reason}.</p>
-            )}
-          </div>
-          <div className="min-w-0 text-right">
-            {isPizza && !isFixedFlavorCombination && effectiveDivision > 1 && allFilled && (
-              <p className="text-stone text-xs">
-                {effectiveDivision === 2 ? "Meio a Meio" : "3 Sabores"} · {selectedSize}
+              <p className="text-emerald-300 text-[11px] font-semibold mt-0.5">
+                {priceQuote.promotion_name} aplicada
               </p>
             )}
+            {showPromotions &&
+              priceQuote?.promotion_blocked &&
+              priceQuote.promotion_block_reason && (
+                <p className="text-amber-300 text-[11px] font-semibold mt-0.5">
+                  {priceQuote.promotion_block_reason}.
+                </p>
+              )}
+          </div>
+          <div className="min-w-0 text-right">
+            {isPizza &&
+              !isFixedFlavorCombination &&
+              effectiveDivision > 1 &&
+              allFilled && (
+                <p className="text-stone text-xs">
+                  {effectiveDivision === 2 ? "Meio a Meio" : "3 Sabores"} ·{" "}
+                  {selectedSize}
+                </p>
+              )}
             {showCrustOptions && selectedCrust && (
               <p className="text-stone text-xs">Massa: {selectedCrust.name}</p>
             )}
@@ -1487,11 +2444,14 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
           {canAddToCart
             ? `${embedded ? "Adicionar ao pedido" : p.addToCartButton} · R$ ${totalPrice.toFixed(2)}`
             : !productInventoryAvailable
-            ? "Indisponivel no momento"
-            : optionGroupsLoading || optionsLoading || quoteLoading ? "Confirmando opcoes e preco..."
-            : optionsError || quoteError ? "Preco indisponivel - tente novamente"
-            : hasExplicitOptionGroups ? "Preencha as opcoes obrigatorias"
-            : `Escolha ${activeFlavors.filter((f) => !f).length} sabor(es) restante(s)`}
+              ? "Indisponivel no momento"
+              : optionGroupsLoading || optionsLoading || quoteLoading
+                ? "Confirmando opcoes e preco..."
+                : optionsError || quoteError
+                  ? "Preco indisponivel - tente novamente"
+                  : hasExplicitOptionGroups
+                    ? "Preencha as opcoes obrigatorias"
+                    : `Escolha ${activeFlavors.filter((f) => !f).length} sabor(es) restante(s)`}
         </button>
       </div>
     </div>

@@ -112,6 +112,7 @@ export default function WhatsAppOrderWorkspace({
           <ManualOrderComposer
             key={`${session.id}:${tab}`}
             mode="embedded"
+            entryChannel="whatsapp"
             defaultStep={tab === "catalog" ? 1 : 2}
             initialCustomer={customer}
             storageScope={`whatsapp:${session.id}`}

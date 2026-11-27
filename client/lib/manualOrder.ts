@@ -12,6 +12,31 @@ export interface ManualCartLine {
   name: string;
   item: CheckoutItemIn;
   promotion?: CartPromotionMeta;
+  strategic?: StrategicManualLineMeta;
+}
+
+export interface StrategicManualGroupMeta {
+  instanceId: string;
+  name: string;
+  campaignVersion: number;
+  compositionRevision: number;
+  referenceType: string;
+  sourceSubcategoryId?: string | null;
+  stepKey?: string | null;
+}
+
+export interface StrategicManualLineMeta {
+  campaignId: string;
+  offerId: string;
+  group: StrategicManualGroupMeta;
+}
+
+export function removeManualCartGroup(lines: ManualCartLine[], lineId: string) {
+  const target = lines.find((line) => line.id === lineId);
+  const instanceId = target?.strategic?.group.instanceId;
+  return instanceId
+    ? lines.filter((line) => line.strategic?.group.instanceId !== instanceId)
+    : lines.filter((line) => line.id !== lineId);
 }
 
 export function configuredManualLine(

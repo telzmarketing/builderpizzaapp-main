@@ -3,6 +3,7 @@ import {
   canCreateManualOrder,
   closedKitManualLine,
   configuredManualLine,
+  removeManualCartGroup,
   simpleManualLine,
 } from "./manualOrder";
 import type { ApiEffectivePermissions, ApiProduct, ApiPromotionalKit } from "./api";
@@ -142,5 +143,27 @@ describe("operator order adaptation", () => {
     });
     expect(line.item.product_id).toBeUndefined();
     expect(line.item.flavors).toEqual([]);
+  });
+
+  it("removes every component that belongs to the same strategic instance", () => {
+    const base = simpleManualLine({ id: "pizza", name: "Pizza", price: 30 } as ApiProduct, "line-1");
+    const strategic = (id: string) => ({
+      ...base,
+      id,
+      strategic: {
+        campaignId: "campaign",
+        offerId: "offer",
+        group: {
+          instanceId: "instance",
+          name: "Black Friday",
+          campaignVersion: 2,
+          compositionRevision: 3,
+          referenceType: "mixed_subcategories",
+          stepKey: id,
+        },
+      },
+    });
+    const regular = simpleManualLine({ id: "drink", name: "Bebida", price: 8 } as ApiProduct, "regular");
+    expect(removeManualCartGroup([strategic("first"), strategic("second"), regular], "first").map((line) => line.id)).toEqual(["regular"]);
   });
 });

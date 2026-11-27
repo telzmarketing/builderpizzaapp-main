@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 import backend.main  # noqa: F401 - load complete SQLAlchemy registry
 from backend.database import Base
 from backend.models.cmv import OrderCmvSnapshot
-from backend.models.order import Order, OrderItem, OrderStatus
+from backend.models.order import Order, OrderCommercialGroup, OrderItem, OrderStatus
 from backend.models.paid_traffic import AdDailyMetric
 from backend.models.payment import Payment, PaymentMethod, PaymentStatus
 from backend.models.product import Product
@@ -42,6 +42,7 @@ def db():
             Order.__table__,
             Payment.__table__,
             Product.__table__,
+            OrderCommercialGroup.__table__,
             OrderItem.__table__,
             OrderCmvSnapshot.__table__,
             AdDailyMetric.__table__,
@@ -75,6 +76,7 @@ def _paid_order(db, order_id="order-1", tenant_id="tenant-1", campaign_id="campa
         tenant_id=tenant_id,
         status=OrderStatus.paid,
         strategic_campaign_id=campaign_id,
+        entry_channel="legacy_unknown",
         subtotal=total,
         total=total,
         is_scheduled=True,

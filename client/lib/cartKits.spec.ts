@@ -44,4 +44,25 @@ describe("cart promotional kits", () => {
     expect(cartItemIdsForRemoval(items, "drink-row")).toEqual(["pizza-row", "drink-row"]);
     expect(cartItemIdsForRemoval(items, "normal")).toEqual(["normal"]);
   });
+
+  it("groups and removes a strategic offer as one commercial unit", () => {
+    const strategicGroup = {
+      instanceId: "offer-instance",
+      name: "Black Friday",
+      campaignVersion: 2,
+      compositionRevision: 1,
+      referenceType: "mixed_subcategories" as const,
+      stepKey: "traditional:1",
+    };
+    const items = [
+      { ...item("strategic-1", "pizza"), strategicOfferId: "offer-1", strategicGroup },
+      { ...item("strategic-2", "special"), strategicOfferId: "offer-1", strategicGroup: { ...strategicGroup, stepKey: "special:1" } },
+    ];
+
+    const groups = groupCartItems(items);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ kind: "strategic", key: "strategic:offer-instance" });
+    expect(cartItemIdsForRemoval(items, "strategic-2")).toEqual(["strategic-1", "strategic-2"]);
+  });
 });

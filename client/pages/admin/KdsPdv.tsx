@@ -45,7 +45,7 @@ export default function KdsPdv() {
         </div>
       </header>
       <div className="kds-pdv-workspace kds-pdv-inner min-h-0 min-w-0 w-full px-2 py-3 sm:px-3 md:px-6 md:py-5">
-        <section className="kds-pdv-frame min-h-0 min-w-0 overflow-hidden rounded-2xl border border-surface-03 bg-surface-01 shadow-2xl"><ManualOrderComposer mode="pos" preferredInitialProductType="pizza" /></section>
+        <section className="kds-pdv-frame min-h-0 min-w-0 overflow-hidden rounded-2xl border border-surface-03 bg-surface-01 shadow-2xl"><ManualOrderComposer mode="pos" entryChannel="pdv" preferredInitialProductType="pizza" /></section>
       </div>
     </main>
   );

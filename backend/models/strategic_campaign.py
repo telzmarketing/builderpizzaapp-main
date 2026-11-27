@@ -4,6 +4,7 @@ import enum
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Enum, ForeignKey, ForeignKeyConstraint, Index, Integer, JSON, Numeric, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -52,6 +53,9 @@ class StrategicOffer(Base):
     __table_args__ = (
         UniqueConstraint("tenant_id", "campaign_id", "code", name="uq_strategic_offers_tenant_campaign_code"),
         UniqueConstraint("tenant_id", "id", name="uq_strategic_offers_tenant_id"),
+        CheckConstraint("reference_type IN ('product','kit','subcategory','mixed_subcategories')", name="ck_strategic_offers_reference_type"),
+        CheckConstraint("pricing_strategy IN ('catalog','percentage','fixed_discount','fixed_price')", name="ck_strategic_offers_pricing_strategy"),
+        CheckConstraint("composition_revision > 0", name="ck_strategic_offers_composition_revision"),
         Index("ix_strategic_offers_tenant_campaign", "tenant_id", "campaign_id"),
     )
 
@@ -63,6 +67,12 @@ class StrategicOffer(Base):
     description = Column(Text, nullable=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="RESTRICT"), nullable=True)
     kit_id = Column(String, ForeignKey("promotional_kits.id", ondelete="RESTRICT"), nullable=True)
+    reference_type = Column(String(30), nullable=False, default="product", server_default="product")
+    pricing_strategy = Column(String(30), nullable=False, default="catalog", server_default="catalog")
+    discount_percent = Column(Numeric(8, 4), nullable=True)
+    discount_amount = Column(Numeric(20, 2), nullable=True)
+    fixed_promotional_price = Column(Numeric(20, 2), nullable=True)
+    composition_revision = Column(Integer, nullable=False, default=1, server_default="1")
     price_original = Column(Numeric(20, 2), nullable=False, default=0)
     price_promotional = Column(Numeric(20, 2), nullable=False, default=0)
     active = Column(Boolean, nullable=False, default=True)
@@ -83,6 +93,53 @@ class StrategicOffer(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     campaign = relationship("StrategicCampaign", back_populates="offers")
+    components = relationship(
+        "StrategicOfferComponent",
+        back_populates="offer",
+        cascade="all, delete-orphan",
+        order_by="StrategicOfferComponent.position",
+    )
+
+
+class StrategicOfferComponent(Base):
+    __tablename__ = "strategic_offer_components"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "offer_id"],
+            ["strategic_offers.tenant_id", "strategic_offers.id"],
+            name="fk_strategic_offer_components_offer",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "subcategory_id"],
+            ["product_categories.tenant_id", "product_categories.id"],
+            name="fk_strategic_offer_components_subcategory",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("tenant_id", "offer_id", "position", name="uq_strategic_offer_components_position"),
+        UniqueConstraint("tenant_id", "offer_id", "subcategory_id", name="uq_strategic_offer_components_subcategory"),
+        CheckConstraint("position >= 0", name="ck_strategic_offer_components_position"),
+        CheckConstraint("quantity > 0", name="ck_strategic_offer_components_quantity"),
+        Index("ix_strategic_offer_components_tenant_offer", "tenant_id", "offer_id"),
+    )
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
+    offer_id = Column(String, nullable=False)
+    position = Column(Integer, nullable=False)
+    subcategory_id = Column(String, nullable=False)
+    quantity = Column(Integer, nullable=False)
+    allow_repeated_products = Column(Boolean, nullable=False, default=True, server_default="true")
+    restrictions = Column(
+        JSON().with_variant(JSONB(), "postgresql"),
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    offer = relationship("StrategicOffer", back_populates="components")
 
 
 class StrategicCampaignVersion(Base):
@@ -242,3 +299,31 @@ class StrategicReservation(Base):
     operational_released_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class StrategicOfferRedemption(Base):
+    __tablename__ = "strategic_offer_redemptions"
+    __table_args__ = (
+        ForeignKeyConstraint(["tenant_id", "offer_id"], ["strategic_offers.tenant_id", "strategic_offers.id"], name="fk_strategic_offer_redemptions_offer", ondelete="RESTRICT"),
+        ForeignKeyConstraint(["tenant_id", "commercial_group_id"], ["order_commercial_groups.tenant_id", "order_commercial_groups.id"], name="fk_strategic_offer_redemptions_group", ondelete="RESTRICT"),
+        ForeignKeyConstraint(["tenant_id", "order_id"], ["orders.tenant_id", "orders.id"], name="fk_strategic_offer_redemptions_order", ondelete="RESTRICT"),
+        ForeignKeyConstraint(["tenant_id", "customer_id"], ["customers.tenant_id", "customers.id"], name="fk_strategic_offer_redemptions_customer", ondelete="RESTRICT"),
+        UniqueConstraint("tenant_id", "commercial_group_id", name="uq_strategic_offer_redemptions_group"),
+        CheckConstraint("quantity > 0", name="ck_strategic_offer_redemptions_quantity"),
+        CheckConstraint("status IN ('confirmed','released','cancelled','refunded')", name="ck_strategic_offer_redemptions_status"),
+        Index("ix_strategic_offer_redemptions_offer_status", "tenant_id", "offer_id", "status"),
+        Index("ix_strategic_offer_redemptions_customer", "tenant_id", "offer_id", "customer_id", "status"),
+        Index("ix_strategic_offer_redemptions_order_status", "tenant_id", "order_id", "status"),
+    )
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
+    offer_id = Column(String, nullable=False)
+    commercial_group_id = Column(String, nullable=False)
+    order_id = Column(String, nullable=False)
+    customer_id = Column(String, nullable=True)
+    quantity = Column(Integer, nullable=False)
+    status = Column(String(20), nullable=False, default="confirmed", server_default="confirmed")
+    entry_channel = Column(String(30), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    released_at = Column(DateTime(timezone=True), nullable=True)

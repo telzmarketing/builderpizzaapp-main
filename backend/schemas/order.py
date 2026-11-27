@@ -64,6 +64,19 @@ class DeliveryAddressIn(BaseModel):
     scheduled_for: Optional[datetime] = None
 
 
+class StrategicOfferSelectionIn(BaseModel):
+    step_key: str = Field(min_length=1, max_length=160)
+    item: CartItemIn
+
+
+class StrategicOfferGroupIn(BaseModel):
+    offer_id: str = Field(min_length=1, max_length=120)
+    campaign_version: int = Field(ge=1)
+    composition_revision: int = Field(ge=1)
+    quantity: int = Field(default=1, ge=1, le=100)
+    selections: list[StrategicOfferSelectionIn] = Field(min_length=1, max_length=500)
+
+
 class CheckoutIn(BaseModel):
     expected_total: Optional[float] = Field(default=None, ge=0)
     items: list[CartItemIn]
@@ -81,6 +94,9 @@ class CheckoutIn(BaseModel):
     cash_change_for: Optional[float] = Field(default=None, ge=0)
     campaign_id: Optional[str] = None
     strategic_offer_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    strategic_offer_groups: list[StrategicOfferGroupIn] = Field(default_factory=list, max_length=50)
+    reservation_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    entry_channel: Literal["landing_page", "pdv", "operations", "phone", "whatsapp", "counter"] = "landing_page"
     utm_source: Optional[str] = None
     utm_medium: Optional[str] = None
     utm_campaign: Optional[str] = None
@@ -140,6 +156,9 @@ class OrderItemFlavorOut(BaseModel):
 class OrderItemOut(BaseModel):
     id: str
     product_id: str
+    commercial_group_id: Optional[str] = None
+    commercial_group_position: Optional[int] = None
+    source_subcategory_id: Optional[str] = None
     quantity: int
     selected_size: str
     selected_size_id: Optional[str] = None
@@ -211,6 +230,7 @@ class OrderOut(BaseModel):
     strategic_campaign_id: Optional[str] = None
     strategic_offer_id: Optional[str] = None
     strategic_offer_snapshot: Optional[dict] = None
+    entry_channel: str = "landing_page"
     utm_source: Optional[str] = None
     utm_medium: Optional[str] = None
     utm_campaign: Optional[str] = None

@@ -1,4 +1,4 @@
-# Campanhas Estratégicas — Progresso C0–C10
+# Campanhas Estratégicas — Progresso C0–C11
 
 Última atualização documental: 2026-11-26
 
@@ -24,16 +24,17 @@
 | C7 | Pedido programado, pagamento e KDS canônico | Slice operacional implementado; ambiente real pendente | Reserva vinculada ao pedido; liberação idempotente pelo serviço KDS; cancelamento devolve capacidade uma vez | Validar scheduler, pagamento real, KDS físico, impressão, estoque, CMV, financeiro e retries quando aplicáveis |
 | C8 | Funil, mídia, capacidade e resultados | Backend implementado; reconciliação/dashboard pendentes | Métricas, fontes/fórmulas, `null` para ausência e integração externa não bloqueante cobertas localmente | Validar dashboard, PostgreSQL representativo, mídia real e reconciliação financeira |
 | C9 | RBAC, isolamento tenant e regressão | Implementado localmente; aceite integral pendente | Permissão dedicada de publicação; 55 backend, 17 frontend, typecheck, builds client/server e matriz responsiva aprovados | Executar E2E autenticado, PostgreSQL real, concorrência e integrações antes de produção |
-| C10 | Release imutável e rollback seguro | Documentado; não executado | Runbook preparado; head Alembic `20261126_strategic_campaign_publish_rbac_c9` | SHA/CI, homologação, backup/restore, compatibilidade de rollback e autorização de produção |
+| C10 | Release imutável e rollback seguro | Documentado; não executado | Runbook preparado; head Alembic `20261126_strategic_campaigns_c11` | SHA/CI, homologação, backup/restore, compatibilidade de rollback e autorização de produção |
+| C11 | Ofertas por subcategoria, venda multicanal e unidade comercial agrupada | Implementação local concluída; homologação pendente | Contratos aditivos; snapshot publicado como autoridade; produto/kit/subcategorias; compositor compartilhado; grupo comercial; sold-out; reservas vinculadas atomicamente; adicionais pagos preservados | PostgreSQL real, concorrência, E2E autenticado nos canais, integrações KDS/estoque/CMV/financeiro e evidência visual real |
 
 ## Evidências consolidadas
 
-- Backend focado: `55 passed`.
-- Frontend focado: `17 passed`.
-- TypeScript typecheck: aprovado.
+- Backend focado C0-C11 e target Alembic: `76 passed` na rodada consolidada, seguida por `3 passed` nos reparos finais.
+- Frontend focado: `20 passed`.
+- TypeScript do recorte C11: aprovado. O typecheck global permanece bloqueado por erros sintáticos preexistentes e fora do escopo em `CrmAgenteWhatsApp.tsx`.
 - Build do cliente: aprovado.
 - Build do servidor: aprovado.
-- Head Alembic único: `20261126_strategic_campaign_publish_rbac_c9`.
+- Head Alembic único: `20261126_strategic_campaigns_c11`.
 - Matriz visual pública: 360, 390, 430, 768, 1024, 1366 e 1920 px, com renderer e cinco ofertas presentes e `scrollWidth == clientWidth`.
 - Matriz visual administrativa do editor: 390, 768, 1366 e 1920 px, sem overflow horizontal.
 - Evidências visuais locais foram geradas pela matriz responsiva; artefatos temporários não fazem parte do pacote de produção.
@@ -57,3 +58,38 @@ Essas evidências comprovam somente a integração local coberta pelas suítes e
 Executar homologação controlada, sem promover produção: PostgreSQL real/concorrência, E2E autenticado/multi-tenant e integrações aplicáveis. Só então C9 poderá ser aprovado integralmente e C10 receber um SHA candidato.
 
 O procedimento está em `docs/strategic-campaigns-release-runbook.md`.
+
+## C11 - Matriz das melhorias funcionais
+
+### Contratos preservados
+
+- `ProductCategory` e `Product` permanecem como catálogo canônico; não foi criado catálogo paralelo.
+- `Product.tsx` permanece como configurador de tamanho, sabores, massa, borda, adicionais e opções.
+- `ManualOrderComposer` continua sendo a superfície compartilhada por PDV, Operações e atendimento WhatsApp.
+- Quote e criação continuam entrando no `OrderService`; não existe checkout estratégico paralelo.
+- Cada oferta composta é uma unidade comercial no carrinho/pedido, mas seus produtos continuam materializados individualmente para KDS, estoque e CMV.
+- `entry_channel` registra onde a venda foi lançada sem substituir `order_origin`, `sales_channel` ou a atribuição de mídia.
+
+### Requisitos incorporados
+
+| Requisito | Implementação C11 | Gate de aceite |
+|---|---|---|
+| Botões dinâmicos no PDV e Fazer Pedido | Campanhas publicadas e comercialmente elegíveis são descobertas pelo tenant/canal e acrescentadas depois de Promoções | Duas campanhas aparecem sem alteração de código; campanha encerrada desaparece |
+| Produto, combo, subcategoria e mescla | `reference_type` aditivo e componentes ordenados por subcategoria | Criar pela interface 2 tradicionais + 1 especial e republicar |
+| Quantidade variável e configuração sequencial | Cada quantidade gera uma etapa que reutiliza o configurador de produto | Impedir etapa faltante, excedente ou produto de outra subcategoria |
+| Percentual, desconto fixo e preço fixo | Estratégia persistida e recalculada pelo servidor com `Decimal` | Adulteração de preço do cliente é rejeitada; três fórmulas reconciliadas |
+| Unidade comercial agrupada | Grupo comercial com snapshot e vínculo dos `OrderItem` reais | Remoção/quantidade afeta o grupo completo; KDS recebe cada produto |
+| Disponibilidade e limite compartilhados | Consumo tenant-scoped por oferta/cliente e canal, com idempotência | Duas compras simultâneas da última unidade resultam em uma confirmação |
+| Indicadores por canal | `entry_channel` separado da atribuição publicitária | Landing, PDV, Operações, telefone, WhatsApp e balcão reconciliados |
+| Aparência Visual | Coluna visual existente preservada; mudanças limitadas ao contrato comercial e preview | Comparação visual autenticada desktop/mobile sem regressão |
+
+### Evidência ainda obrigatória para concluir C11
+
+1. Alembic upgrade em banco vazio e em cópia representativa, com head único e classificação de rollback.
+2. Concorrência real no PostgreSQL para limite total, limite por cliente, idempotência, cancelamento e liberação.
+3. E2E autenticado do cenário Black Friday integral pela interface administrativa, landing, PDV e Operações.
+4. Reconciliação dos itens configurados com pedido, pagamento, financeiro, estoque, CMV, KDS e CRM.
+5. Capturas reais das superfícies desktop e mobile; mocks isolados não aprovam este gate.
+6. Regressão de produto, combo, promoção convencional e pedidos sem campanha.
+
+Nenhum deploy em produção integra C11 nesta etapa.

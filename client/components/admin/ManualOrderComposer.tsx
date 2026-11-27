@@ -24,9 +24,12 @@ import {
   sortCommercialCategoryNames,
 } from "@/lib/catalogOrdering";
 import Product from "@/pages/Product";
+import StrategicCampaignOffers from "@/components/strategic-campaigns/StrategicCampaignOffers";
+import StrategicOfferConfigurator from "@/components/strategic-campaigns/StrategicOfferConfigurator";
 import {
   ApiRequestError,
   campaignsApi,
+  strategicCampaignsApi,
   customersApi,
   manualOrdersApi,
   ordersApi,
@@ -49,9 +52,20 @@ import {
   configuredManualLine,
   newManualOrderKey,
   closedKitManualLine,
+  removeManualCartGroup,
   simpleManualLine,
   type ManualCartLine,
 } from "@/lib/manualOrder";
+import {
+  campaignLabel,
+  strategicCampaignIdFromTab,
+  strategicCampaignTab,
+  type AvailableStrategicCampaign,
+  type AvailableStrategicOffer,
+  type StrategicEntryChannel,
+  type StrategicOfferConfiguration,
+  type StrategicOfferSelection,
+} from "@/lib/strategicOfferSelection";
 import { getProductCardAction } from "@/lib/productCardAction";
 import { readPlatformSupportSession } from "@/lib/platformSupportSession";
 import { printOrder } from "@/lib/printing";
@@ -83,6 +97,7 @@ type Draft = {
   discountType: "percentage" | "fixed" | "";
   discountValue: string;
   staffBonus: boolean;
+  strategicGroups: Array<{ instanceId: string; selection: StrategicOfferSelection }>;
   submission?: ManualOrderIn;
 };
 const input =
@@ -187,6 +202,7 @@ function emptyDraft(): Draft {
     discountType: "",
     discountValue: "",
     staffBonus: false,
+    strategicGroups: [],
   };
 }
 
@@ -225,6 +241,7 @@ export default function ManualOrderComposer({
   storageScope = "",
   defaultStep,
   preferredInitialProductType,
+  entryChannel = mode === "pos" ? "pdv" : "operations",
 }: {
   onCreated?: (order: ApiOrder) => void;
   mode?: "default" | "pos" | "embedded";
@@ -232,6 +249,7 @@ export default function ManualOrderComposer({
   storageScope?: string;
   defaultStep?: 0 | 1 | 2;
   preferredInitialProductType?: string;
+  entryChannel?: StrategicEntryChannel;
 }) {
   const [draft, setDraft] = useState<Draft>(() => readDraft(storageScope));
   const [storageKey] = useState(() => draftStorageKey(storageScope));
@@ -239,6 +257,9 @@ export default function ManualOrderComposer({
   const [step, setStep] = useState<number>(mode === "pos" ? 1 : (defaultStep ?? 0));
   const [catalog, setCatalog] = useState<ApiProduct[]>([]);
   const [promotionalKits, setPromotionalKits] = useState<ApiPromotionalKit[]>([]);
+  const [strategicCampaigns, setStrategicCampaigns] = useState<AvailableStrategicCampaign[]>([]);
+  const [campaignLoadError, setCampaignLoadError] = useState("");
+  const [strategicConfiguration, setStrategicConfiguration] = useState<StrategicOfferConfiguration | null>(null);
   const [customers, setCustomers] = useState<ApiCustomer[]>([]);
   const [flavorConfig, setFlavorConfig] = useState<MultiFlavorsConfig | null>(
     null,
@@ -303,11 +324,13 @@ export default function ManualOrderComposer({
   async function load() {
     setLoading(true);
     setLoadError("");
+    setCampaignLoadError("");
     const results = await Promise.allSettled([
       productsApi.list(true, undefined, "delivery"),
       campaignsApi.listKits(true),
       customersApi.list(),
       productsApi.getMultiFlavorsConfig(),
+      strategicCampaignsApi.listAvailable(entryChannel),
     ]);
     if (draftStorageKey(storageScope) !== storageKey) {
       setSessionChanged(true);
@@ -335,7 +358,12 @@ export default function ManualOrderComposer({
         flavorCategoryFilters: value.flavor_category_filters ?? [],
       });
     }
-    const failures = results.filter((result) => result.status === "rejected");
+    if (results[4].status === "fulfilled") setStrategicCampaigns(results[4].value);
+    else {
+      setStrategicCampaigns([]);
+      setCampaignLoadError("Campanhas estratégicas indisponíveis no momento.");
+    }
+    const failures = results.slice(0, 4).filter((result) => result.status === "rejected");
     if (failures.length)
       setLoadError(
         "Não foi possível carregar catálogo e clientes. Tente novamente.",
@@ -344,7 +372,7 @@ export default function ManualOrderComposer({
   }
   useEffect(() => {
     if (allowed) void load();
-  }, [allowed]);
+  }, [allowed, entryChannel]);
   useEffect(() => {
     if (created || draftStorageKey(storageScope) !== storageKey) return;
     try {
@@ -372,7 +400,7 @@ export default function ManualOrderComposer({
       partner_order_number: isPartnerOrigin(draft.orderOrigin)
         ? draft.partnerOrderNumber.trim()
         : null,
-      items: draft.lines.map((line) => line.item),
+      items: draft.lines.filter((line) => !line.strategic).map((line) => line.item),
       delivery: {
         name: draft.customer.name,
         phone: draft.phone,
@@ -403,8 +431,10 @@ export default function ManualOrderComposer({
       coupon_code: draft.coupon.trim() || undefined,
       discount_type: draft.discountType || undefined,
       discount_value: draft.discountValue.trim() ? Number(draft.discountValue.replace(",", ".")) : undefined,
-    };
-  }, [draft]);
+      entry_channel: entryChannel,
+      strategic_offer_groups: draft.strategicGroups.map((group) => group.selection),
+    } as ManualOrderIn;
+  }, [draft, entryChannel]);
   const signature = payload ? JSON.stringify(payload) : "";
   useEffect(() => {
     if (!payload || draft.submission || created) return;
@@ -439,6 +469,19 @@ export default function ManualOrderComposer({
     ]),
     [catalog],
   );
+  const categoryTabs = useMemo(
+    () => [
+      ...getManualOrderCategoryTabs(categories),
+      ...strategicCampaigns.map((campaign) => strategicCampaignTab(campaign.id)),
+    ],
+    [categories, strategicCampaigns],
+  );
+  const selectedStrategicCampaign = useMemo(() => {
+    const campaignId = strategicCampaignIdFromTab(category);
+    return campaignId
+      ? strategicCampaigns.find((campaign) => campaign.id === campaignId) ?? null
+      : null;
+  }, [category, strategicCampaigns]);
   const filteredProducts = catalog.filter(
     (product) =>
       (category === MANUAL_ORDER_PROMOTIONS_TAB
@@ -492,6 +535,57 @@ export default function ManualOrderComposer({
 
   function handlePromotionalKitAction(kit: ApiPromotionalKit) {
     patch({ lines: [...draft.lines, closedKitManualLine(kit, newManualOrderKey())] });
+  }
+
+  function handleStrategicKitAction(offer: AvailableStrategicOffer) {
+    const kit = promotionalKits.find((candidate) => candidate.id === offer.kit_id);
+    const campaign = strategicCampaigns.find((candidate) => candidate.id === offer.campaign_id);
+    if (!kit || !campaign) {
+      setError("O combo desta oferta não está disponível no catálogo. Atualize a tela ou revise a campanha.");
+      return;
+    }
+    setError("");
+    const instanceId = crypto.randomUUID();
+    const base = closedKitManualLine(kit, newManualOrderKey());
+    const line: ManualCartLine = {
+      ...base,
+      strategic: {
+        campaignId: campaign.id,
+        offerId: offer.id,
+        group: {
+          instanceId,
+          name: offer.title,
+          campaignVersion: campaign.published_version,
+          compositionRevision: offer.composition_revision,
+          referenceType: "kit",
+          stepKey: "kit:1",
+        },
+      },
+    };
+    patch({
+      lines: [...draft.lines, line],
+      strategicGroups: [...draft.strategicGroups, {
+        instanceId,
+        selection: {
+          offer_id: offer.id,
+          campaign_version: campaign.published_version,
+          composition_revision: offer.composition_revision,
+          quantity: 1,
+          selections: [{ step_key: "kit:1", item: line.item }],
+        },
+      }],
+    });
+  }
+
+  function removeLineOrStrategicGroup(lineId: string) {
+    const line = draft.lines.find((candidate) => candidate.id === lineId);
+    const instanceId = line?.strategic?.group.instanceId;
+    patch({
+      lines: removeManualCartGroup(draft.lines, lineId),
+      strategicGroups: instanceId
+        ? draft.strategicGroups.filter((group) => group.instanceId !== instanceId)
+        : draft.strategicGroups,
+    });
   }
 
   function setProductQuantity(productId: string, value: string) {
@@ -740,6 +834,22 @@ export default function ManualOrderComposer({
       </section>
     );
   }
+  if (strategicConfiguration)
+    return (
+      <StrategicOfferConfigurator
+        configuration={strategicConfiguration}
+        flavorConfig={flavorConfig}
+        onCancel={() => setStrategicConfiguration(null)}
+        onComplete={({ selection, lines, instanceId }) => {
+          patch({
+            lines: [...draft.lines, ...lines],
+            strategicGroups: [...draft.strategicGroups, { instanceId, selection }],
+          });
+          setStrategicConfiguration(null);
+        }}
+      />
+    );
+
   if (selectedProduct && flavorConfig)
     return (
       <section
@@ -846,6 +956,9 @@ export default function ManualOrderComposer({
                     </button>
                   </div>
                 )}
+                {campaignLoadError && !loadError && (
+                  <p role="status" className="mb-4 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-200">{campaignLoadError}</p>
+                )}
                 {error && (
                   <p
                     role="alert"
@@ -868,18 +981,25 @@ export default function ManualOrderComposer({
                   />
                 </label>
                 <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
-                  {getManualOrderCategoryTabs(categories).map((value) => (
+                  {categoryTabs.map((value) => (
                     <button
                       type="button"
                       key={value}
                       onClick={() => setCategory(value)}
                       className={`min-h-11 shrink-0 rounded-xl border px-4 text-sm font-bold transition-colors ${category === value ? "border-gold bg-gold text-black" : "border-surface-03 bg-surface-01 text-stone hover:border-gold/50 hover:text-cream"}`}
                     >
-                      {value === MANUAL_ORDER_PROMOTIONS_TAB ? "Promoções" : value || "Todos"}
+                      {value === MANUAL_ORDER_PROMOTIONS_TAB
+                        ? "Promoções"
+                        : strategicCampaignIdFromTab(value)
+                          ? campaignLabel(strategicCampaigns.find((campaign) => strategicCampaignTab(campaign.id) === value)!)
+                          : value || "Todos"}
                     </button>
                   ))}
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                  {selectedStrategicCampaign && (
+                    <StrategicCampaignOffers campaign={selectedStrategicCampaign} entryChannel={entryChannel} query={query} onConfigure={setStrategicConfiguration} onSelectKit={handleStrategicKitAction} />
+                  )}
                   {category === MANUAL_ORDER_PROMOTIONS_TAB && filteredPromotionalKits.map((kit) => (
                     <PromotionalKitCard key={`kit-${kit.id}`} kit={kit} products={catalog} onAdd={handlePromotionalKitAction} />
                   ))}
@@ -1220,13 +1340,7 @@ export default function ManualOrderComposer({
                           type="button"
                           aria-label={`Remover ${line.name}`}
                           className="text-stone hover:text-red-300"
-                          onClick={() =>
-                            patch({
-                              lines: draft.lines.filter(
-                                (value) => value.id !== line.id,
-                              ),
-                            })
-                          }
+                          onClick={() => removeLineOrStrategicGroup(line.id)}
                         >
                           <Trash2 size={16} />
                         </button>
@@ -1406,6 +1520,9 @@ export default function ManualOrderComposer({
               Tentar novamente
             </button>
           </div>
+        )}
+        {campaignLoadError && !loadError && (
+          <p role="status" className="rounded-xl bg-amber-500/10 p-3 text-sm text-amber-200">{campaignLoadError}</p>
         )}
         {error && (
           <p
@@ -1629,18 +1746,25 @@ export default function ManualOrderComposer({
                 />
               </label>
               <div className="flex gap-2 overflow-x-auto pb-2">
-                {getManualOrderCategoryTabs(categories).map((value) => (
+                {categoryTabs.map((value) => (
                   <button
                     type="button"
                     key={value}
                     onClick={() => setCategory(value)}
                     className={`min-h-12 shrink-0 rounded-full border px-4 font-bold ${category === value ? "border-gold bg-gold text-black" : "border-surface-03"}`}
                   >
-                    {value === MANUAL_ORDER_PROMOTIONS_TAB ? "Promoções" : value || "Todos"}
+                    {value === MANUAL_ORDER_PROMOTIONS_TAB
+                      ? "Promoções"
+                      : strategicCampaignIdFromTab(value)
+                        ? campaignLabel(strategicCampaigns.find((campaign) => strategicCampaignTab(campaign.id) === value)!)
+                        : value || "Todos"}
                   </button>
                 ))}
               </div>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                {selectedStrategicCampaign && (
+                  <StrategicCampaignOffers campaign={selectedStrategicCampaign} entryChannel={entryChannel} query={query} onConfigure={setStrategicConfiguration} onSelectKit={handleStrategicKitAction} />
+                )}
                 {category === MANUAL_ORDER_PROMOTIONS_TAB && filteredPromotionalKits.map((kit) => (
                   <PromotionalKitCard key={`kit-${kit.id}`} kit={kit} products={catalog} onAdd={handlePromotionalKitAction} />
                 ))}
@@ -1749,7 +1873,7 @@ export default function ManualOrderComposer({
                   </div>
                 ))}
               </div>
-              {!filteredProducts.length && !filteredPromotionalKits.length && !loading && (
+              {!selectedStrategicCampaign && !filteredProducts.length && !filteredPromotionalKits.length && !loading && (
                 <p className="py-8 text-center text-stone">
                   Nenhum produto nesta seleção.
                 </p>
@@ -1772,13 +1896,7 @@ export default function ManualOrderComposer({
                       type="button"
                       aria-label={`Remover ${line.name}`}
                       className="min-h-12 min-w-12 rounded-lg text-red-300"
-                      onClick={() =>
-                        patch({
-                          lines: draft.lines.filter(
-                            (value) => value.id !== line.id,
-                          ),
-                        })
-                      }
+                      onClick={() => removeLineOrStrategicGroup(line.id)}
                     >
                       <Trash2 size={18} />
                     </button>

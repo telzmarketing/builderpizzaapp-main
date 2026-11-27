@@ -76,7 +76,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Use inicialmente:
 
 ```env
-ALEMBIC_TARGET=20261125_schema_index_repairs
+ALEMBIC_TARGET=20261126_strategic_campaigns_c11
 INSTALL_SSL=false
 ```
 

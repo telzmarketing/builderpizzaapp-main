@@ -114,6 +114,30 @@ function CartKitRow({ group, onRemove }: { group: Extract<CartItemGroup, { kind:
   );
 }
 
+function StrategicCartRow({ group, onRemove }: { group: Extract<CartItemGroup, { kind: "strategic" }>; onRemove: () => void }) {
+  const total = group.items.reduce((sum, item) => sum + item.finalPrice * item.quantity, 0);
+  return (
+    <div className="rounded-2xl border border-gold/40 bg-surface-02 p-4" data-testid="strategic-cart-group">
+      <div className="flex min-w-0 items-start gap-3">
+        <CartProductIcon icons={group.items.map((item) => item.productData.icon)} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="break-words text-sm font-semibold text-cream">{group.strategic.name}</h3>
+            <button onClick={onRemove} aria-label={`Remover ${group.strategic.name}`} className="text-stone transition-colors hover:text-red-400">
+              <Trash2 size={17} />
+            </button>
+          </div>
+          <p className="mt-1 text-xs font-semibold text-gold">Oferta estratégica · unidade comercial</p>
+          <ul className="mt-2 space-y-1 text-xs text-stone">
+            {group.items.map((item) => <li key={item.cartItemId}>{item.quantity}x {item.productData.name}</li>)}
+          </ul>
+          <p className="mt-2 text-sm font-bold text-gold">R$ {total.toFixed(2)}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const SIZE_LABEL: Record<string, string> = {
   Brotinho: "Pizza Individual",
   "Pizza Broto": "Pizza Individual",
@@ -289,6 +313,9 @@ export default function Cart() {
           {cartGroups.map((group) => {
             if (group.kind === "kit") {
               return <CartKitRow key={group.key} group={group} onRemove={() => removeFromCart(group.items[0].cartItemId)} />;
+            }
+            if (group.kind === "strategic") {
+              return <StrategicCartRow key={group.key} group={group} onRemove={() => removeFromCart(group.items[0].cartItemId)} />;
             }
             const item = group.item;
             const promotionGift = promotionGiftByCartItemId.get(item.cartItemId);

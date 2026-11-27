@@ -74,6 +74,17 @@ export interface CartKitMeta {
   components: CartKitComponent[];
 }
 
+export interface StrategicCartGroupMeta {
+  instanceId: string;
+  name: string;
+  campaignVersion: number;
+  compositionRevision: number;
+  referenceType: "product" | "kit" | "subcategory" | "mixed_subcategories";
+  stepKey: string;
+  sourceSubcategoryId?: string | null;
+  quantity?: number;
+}
+
 export interface CartItem {
   cartItemId: string;
   productId: string;
@@ -105,12 +116,14 @@ export interface CartItem {
   strategicCampaignId?: string | null;
   strategicOfferId?: string | null;
   strategicCampaignSlug?: string | null;
+  strategicGroup?: StrategicCartGroupMeta;
 }
 
 export interface StrategicCartMeta {
   campaignId?: string | null;
   offerId: string;
   campaignSlug?: string | null;
+  group?: StrategicCartGroupMeta;
 }
 
 export interface CartPromotionMeta {
@@ -1003,6 +1016,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         strategicCampaignId: strategicOffer?.campaignId ?? null,
         strategicOfferId: strategicOffer?.offerId ?? null,
         strategicCampaignSlug: strategicOffer?.campaignSlug ?? null,
+        strategicGroup: strategicOffer?.group,
       },
     ]);
     const _td = getTrackingData();
@@ -1022,7 +1036,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateCartItem = (cartItemId: string, quantity: number, size: string, addOns: string[]) =>
     setCart((prev) => {
       const target = prev.find((item) => item.cartItemId === cartItemId);
-      if (target?.kit?.instanceId) return prev;
+      if (target?.kit?.instanceId || target?.strategicGroup?.instanceId) return prev;
       return prev.map((item) => item.cartItemId === cartItemId
         ? { ...item, quantity, selectedSize: size, selectedAddOns: addOns }
         : item);

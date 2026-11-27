@@ -9,7 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.models.cmv import OrderCmvSnapshot
-from backend.models.order import Order, OrderItem, OrderStatus
+from backend.models.order import Order, OrderCommercialGroup, OrderItem, OrderStatus
 from backend.models.paid_traffic import AdDailyMetric
 from backend.models.payment import Payment, PaymentStatus
 from backend.models.product import Product
@@ -56,6 +56,7 @@ class StrategicCampaignMetricsService:
 
         event_metrics = self._event_metrics(campaign_id, start_dt, end_dt)
         order_metrics = self._order_metrics(campaign_id, start_dt, end_dt)
+        sales_breakdown = self._sales_breakdown(campaign_id, order_metrics)
         operational = self._operational_metrics(campaign_id, start_dt, end_dt, order_metrics["order_ids"])
 
         config = campaign.marketing_config or {}
@@ -133,6 +134,9 @@ class StrategicCampaignMetricsService:
             },
             "financial": financial,
             "operational": operational,
+            # Additive C11 dimensions. ``entry_channel`` represents where the
+            # order was entered and remains independent from UTM/ad attribution.
+            "sales_breakdown": sales_breakdown,
             "definitions": self._definitions(),
             "data_quality": {
                 "warnings": list(dict.fromkeys(warnings)),
@@ -180,13 +184,105 @@ class StrategicCampaignMetricsService:
 
     def _order_metrics(self, campaign_id: str, start_dt: datetime, end_dt: datetime) -> dict:
         rows = self._paid_orders_query(campaign_id, start_dt, end_dt).with_entities(
-            Order.id, Order.total, Order.is_scheduled
+            Order.id, Order.total, Order.is_scheduled, Order.entry_channel
         ).all()
         return {
             "order_ids": [row.id for row in rows],
             "paid_orders": len(rows),
             "revenue": round(sum(float(row.total or 0) for row in rows), 2),
             "scheduled_paid_orders": sum(1 for row in rows if row.is_scheduled),
+            "rows": rows,
+        }
+
+    def _sales_breakdown(self, campaign_id: str, order_metrics: dict) -> dict:
+        """Return additive C11 dimensions from canonical paid campaign orders."""
+
+        channels: dict[str, dict] = {}
+        for row in order_metrics["rows"]:
+            channel = str(row.entry_channel or "").strip() or "unknown"
+            bucket = channels.setdefault(channel, {
+                "entry_channel": channel,
+                "paid_orders": 0,
+                "revenue": 0.0,
+                "scheduled_paid_orders": 0,
+            })
+            bucket["paid_orders"] += 1
+            bucket["revenue"] += float(row.total or 0)
+            bucket["scheduled_paid_orders"] += int(bool(row.is_scheduled))
+
+        by_entry_channel = []
+        for channel in sorted(channels):
+            bucket = channels[channel]
+            bucket["revenue"] = round(bucket["revenue"], 2)
+            bucket["average_ticket"] = round(bucket["revenue"] / bucket["paid_orders"], 2)
+            by_entry_channel.append(bucket)
+
+        order_ids = order_metrics["order_ids"]
+        if not order_ids:
+            return {
+                "by_entry_channel": by_entry_channel,
+                "by_selected_subcategory": [],
+                "by_selected_component": [],
+            }
+
+        base_filter = (
+            OrderCommercialGroup.tenant_id == self.tenant_id,
+            OrderCommercialGroup.strategic_campaign_id == campaign_id,
+            OrderCommercialGroup.order_id.in_(order_ids),
+            OrderItem.tenant_id == self.tenant_id,
+            OrderItem.order_id == OrderCommercialGroup.order_id,
+            OrderItem.commercial_group_id == OrderCommercialGroup.id,
+            OrderItem.superseded_at.is_(None),
+        )
+        subcategory_rows = self.db.query(
+            OrderItem.source_subcategory_id,
+            func.coalesce(func.sum(OrderItem.quantity), 0),
+            func.count(func.distinct(OrderCommercialGroup.order_id)),
+            func.count(func.distinct(OrderCommercialGroup.id)),
+        ).select_from(OrderCommercialGroup).join(
+            OrderItem, OrderItem.commercial_group_id == OrderCommercialGroup.id
+        ).filter(
+            *base_filter,
+            OrderItem.source_subcategory_id.isnot(None),
+        ).group_by(OrderItem.source_subcategory_id).all()
+
+        component_rows = self.db.query(
+            OrderCommercialGroup.strategic_offer_id,
+            OrderItem.source_subcategory_id,
+            OrderItem.product_id,
+            func.coalesce(func.sum(OrderItem.quantity), 0),
+            func.count(func.distinct(OrderCommercialGroup.order_id)),
+            func.count(func.distinct(OrderCommercialGroup.id)),
+        ).select_from(OrderCommercialGroup).join(
+            OrderItem, OrderItem.commercial_group_id == OrderCommercialGroup.id
+        ).filter(*base_filter).group_by(
+            OrderCommercialGroup.strategic_offer_id,
+            OrderItem.source_subcategory_id,
+            OrderItem.product_id,
+        ).all()
+
+        return {
+            "by_entry_channel": by_entry_channel,
+            "by_selected_subcategory": [
+                {
+                    "subcategory_id": row[0],
+                    "quantity": int(row[1] or 0),
+                    "paid_orders": int(row[2] or 0),
+                    "commercial_groups": int(row[3] or 0),
+                }
+                for row in sorted(subcategory_rows, key=lambda item: str(item[0]))
+            ],
+            "by_selected_component": [
+                {
+                    "offer_id": row[0],
+                    "subcategory_id": row[1],
+                    "product_id": row[2],
+                    "quantity": int(row[3] or 0),
+                    "paid_orders": int(row[4] or 0),
+                    "commercial_groups": int(row[5] or 0),
+                }
+                for row in sorted(component_rows, key=lambda item: (str(item[0]), str(item[1] or ""), str(item[2])))
+            ],
         }
 
     def _media_metrics(self, traffic_campaign_id: str | None, start_date: date, end_date: date) -> dict:
@@ -328,6 +424,8 @@ class StrategicCampaignMetricsService:
             "capacity": "Soma dos slots cujo início pertence ao período selecionado.",
             "reservations": "Reservas criadas no período; valores ativos consideram held e confirmed.",
             "pizzas_sold": "Soma das quantidades de itens ativos cujo produto canônico tem product_type=pizza.",
+            "entry_channel": "Canal operacional de entrada do pedido; não substitui UTM nem atribuição de mídia.",
+            "selected_components": "Itens ativos de grupos comerciais C11 em pedidos pagos, agregados pela subcategoria de origem e produto selecionado.",
         }
 
     @staticmethod

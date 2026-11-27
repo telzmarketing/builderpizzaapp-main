@@ -254,6 +254,7 @@ def _serialize_orders(db: Session, orders: list[Order]) -> list[dict]:
 
 @router.post("", status_code=201)
 def create_order(body: CheckoutIn, request: Request, db: Session = Depends(get_db)):
+    body = body.model_copy(update={"entry_channel": "landing_page"})
     if not body.customer_id:
         return err_msg(
             "É necessário ter uma conta cadastrada para fazer um pedido.",
@@ -415,6 +416,7 @@ def create_admin_manual_order(
 
 @router.post("/quote")
 def quote_checkout(body: CheckoutIn, request: Request, db: Session = Depends(get_db)):
+    body = body.model_copy(update={"entry_channel": "landing_page"})
     if not body.customer_id:
         return err_msg("Entre na sua conta para revisar o pedido.", code="CustomerRequired", status_code=401)
     tenant_context = resolve_public_tenant_context(request, db)

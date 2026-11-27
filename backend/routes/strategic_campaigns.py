@@ -20,6 +20,8 @@ from backend.schemas.strategic_campaign import (
     StrategicOfferOut,
     StrategicOfferReorder,
     StrategicOfferUpdate,
+    StrategicAvailableCampaignOut,
+    StrategicOfferConfigurationOut,
 )
 from backend.schemas.strategic_campaign_capacity import (
     StrategicCapacitySlotCreate,
@@ -34,6 +36,7 @@ from backend.schemas.strategic_campaign_capacity import (
 )
 from backend.services.strategic_campaign_capacity_service import StrategicCampaignCapacityService
 from backend.services.strategic_campaign_service import StrategicCampaignService
+from backend.services.strategic_offer_composition_service import StrategicOfferCompositionService
 from backend.services.strategic_campaign_metrics_service import StrategicCampaignMetricsService
 
 router = APIRouter(prefix="/strategic-campaigns", tags=["strategic-campaigns"])
@@ -55,12 +58,77 @@ def create_campaign(body: StrategicCampaignCreate, db: Session = Depends(get_db)
         return err(exc)
 
 
+@router.get("/available")
+def available_campaigns(
+    entry_channel: Literal["landing_page", "pdv", "operations", "phone", "whatsapp", "counter"] = Query(...),
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(view),
+):
+    rows = StrategicOfferCompositionService(db, actor.tenant_id).available_campaigns(entry_channel)
+    return ok([StrategicAvailableCampaignOut.model_validate(row) for row in rows])
+
+
+@router.get("/offers/{offer_id}/configuration")
+def offer_configuration(
+    offer_id: str,
+    campaign_version: int | None = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(view),
+):
+    try:
+        document = StrategicOfferCompositionService(db, actor.tenant_id).configuration(offer_id, campaign_version)
+        return ok(StrategicOfferConfigurationOut.model_validate(document))
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.get("/{campaign_id}/available-offers")
+def available_offers(
+    campaign_id: str,
+    entry_channel: Literal["landing_page", "pdv", "operations", "phone", "whatsapp", "counter"] = Query(...),
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(view),
+):
+    try:
+        return ok(StrategicOfferCompositionService(db, actor.tenant_id).available_offers(campaign_id, entry_channel))
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.get("/public/offers/{offer_id}/configuration")
+def public_offer_configuration(
+    offer_id: str,
+    request: Request,
+    campaign_version: int | None = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+):
+    context = resolve_public_tenant_context(request, db)
+    if context is None:
+        raise DomainError("Tenant publico nao resolvido.", code="PublicTenantRequired")
+    document = StrategicOfferCompositionService(db, context.tenant_id).configuration(offer_id, campaign_version)
+    return ok(StrategicOfferConfigurationOut.model_validate(document))
+
+
 @router.get("/public/{slug}")
 def public_campaign(slug: str, request: Request, db: Session = Depends(get_db)):
     context = resolve_public_tenant_context(request, db)
     if context is None:
         raise DomainError("Tenant público não resolvido.", code="PublicTenantRequired")
     public_document = StrategicCampaignService(db, context.tenant_id).get_public(slug)
+    availability = StrategicOfferCompositionService(db, context.tenant_id).available_offers(
+        public_document.id, "landing_page",
+    )
+    by_offer_id = {row["id"]: row for row in availability}
+    public_document = public_document.model_copy(update={
+        "offers": [
+            offer.model_copy(update={
+                "available": by_offer_id[offer.id].get("available", True),
+                "remaining_quantity": by_offer_id[offer.id].get("remaining_quantity"),
+            })
+            for offer in public_document.offers
+            if offer.id in by_offer_id
+        ],
+    })
     return ok(StrategicCampaignPublicOut.model_validate(public_document))
 
 

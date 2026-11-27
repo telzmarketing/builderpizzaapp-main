@@ -9,10 +9,10 @@ from decimal import Decimal
 from sqlalchemy.orm import Session, selectinload
 
 from backend.core.exceptions import DomainError
-from backend.models.product import Product
+from backend.models.product import Product, ProductCategory
 from backend.models.product_promotion import ProductPromotion
 from backend.models.campaign import PromotionalKit
-from backend.models.strategic_campaign import StrategicCampaign, StrategicCampaignStatus, StrategicCampaignVersion, StrategicOffer
+from backend.models.strategic_campaign import StrategicCampaign, StrategicCampaignStatus, StrategicCampaignVersion, StrategicOffer, StrategicOfferComponent
 from backend.schemas.strategic_campaign import (
     STRATEGIC_CAMPAIGN_SNAPSHOT_SCHEMA_VERSION,
     StrategicCampaignCreate,
@@ -36,7 +36,7 @@ class StrategicCampaignService:
         self.tenant_id = tenant_id
 
     def _campaign(self, campaign_id: str) -> StrategicCampaign:
-        row = self.db.query(StrategicCampaign).options(selectinload(StrategicCampaign.offers)).filter(
+        row = self.db.query(StrategicCampaign).options(selectinload(StrategicCampaign.offers).selectinload(StrategicOffer.components)).filter(
             StrategicCampaign.tenant_id == self.tenant_id, StrategicCampaign.id == campaign_id,
         ).first()
         if not row:
@@ -44,7 +44,7 @@ class StrategicCampaignService:
         return row
 
     def list(self) -> list[StrategicCampaign]:
-        return self.db.query(StrategicCampaign).options(selectinload(StrategicCampaign.offers)).filter(
+        return self.db.query(StrategicCampaign).options(selectinload(StrategicCampaign.offers).selectinload(StrategicOffer.components)).filter(
             StrategicCampaign.tenant_id == self.tenant_id,
         ).order_by(StrategicCampaign.updated_at.desc()).all()
 
@@ -142,9 +142,13 @@ class StrategicCampaignService:
             raise DomainError("Produto da oferta não encontrado.", code="StrategicOfferProductNotFound")
         if payload.kit_id and not self.db.query(PromotionalKit).filter(PromotionalKit.tenant_id == self.tenant_id, PromotionalKit.id == payload.kit_id, PromotionalKit.active.is_(True)).first():
             raise DomainError("Kit da oferta não encontrado.", code="StrategicOfferKitNotFound")
+        self._assert_reference_shape(payload.reference_type, payload.product_id, payload.kit_id, payload.components)
         self._assert_offer_promotion(payload.product_id, payload.config)
+        self._assert_offer_components(payload.reference_type, payload.components)
         self._assert_offer_period(payload.sales_starts_at, payload.sales_ends_at, campaign)
-        row = StrategicOffer(id=f"so-{uuid.uuid4().hex[:12]}", tenant_id=self.tenant_id, campaign_id=campaign_id, **payload.model_dump())
+        data = payload.model_dump(exclude={"components"})
+        row = StrategicOffer(id=f"so-{uuid.uuid4().hex[:12]}", tenant_id=self.tenant_id, campaign_id=campaign_id, **data)
+        row.components = self._component_rows(row.id, payload.components)
         self.db.add(row)
         self.db.commit()
         return row
@@ -154,17 +158,67 @@ class StrategicCampaignService:
         self._assert_offer_not_archived(row)
         campaign = self._campaign(row.campaign_id)
         data = payload.model_dump(exclude_unset=True)
+        components = data.pop("components", None)
+        reference_type = data.get("reference_type", row.reference_type)
+        product_id = data.get("product_id", row.product_id)
+        kit_id = data.get("kit_id", row.kit_id)
+        effective_components = components if components is not None else row.components
+        self._assert_reference_shape(reference_type, product_id, kit_id, effective_components)
+        if "product_id" in data and product_id and not self.db.query(Product).filter(Product.tenant_id == self.tenant_id, Product.id == product_id, Product.active.is_(True)).first():
+            raise DomainError("Produto da oferta nao encontrado.", code="StrategicOfferProductNotFound")
+        if "kit_id" in data and kit_id and not self.db.query(PromotionalKit).filter(PromotionalKit.tenant_id == self.tenant_id, PromotionalKit.id == kit_id, PromotionalKit.active.is_(True)).first():
+            raise DomainError("Kit da oferta nao encontrado.", code="StrategicOfferKitNotFound")
         original = data.get("price_original", row.price_original)
         promotional = data.get("price_promotional", row.price_promotional)
         if promotional > original:
             raise DomainError("O preço promocional não pode superar o preço original.", code="InvalidStrategicOfferPrice")
+        self._assert_pricing_strategy(
+            data.get("pricing_strategy", row.pricing_strategy),
+            data.get("discount_percent", row.discount_percent),
+            data.get("discount_amount", row.discount_amount),
+            data.get("fixed_promotional_price", row.fixed_promotional_price),
+        )
         if "config" in data and data["config"] is not None:
-            self._assert_offer_promotion(row.product_id, data["config"])
+            self._assert_offer_promotion(product_id, data["config"])
+        if components is not None:
+            self._assert_offer_components(reference_type, components)
+            row.components = self._component_rows(row.id, components)
+            row.composition_revision += 1
+        if any(key in data for key in {"reference_type", "product_id", "kit_id", "pricing_strategy", "discount_percent", "discount_amount", "fixed_promotional_price"}) and components is None:
+            row.composition_revision += 1
         self._assert_offer_period(data.get("sales_starts_at", row.sales_starts_at), data.get("sales_ends_at", row.sales_ends_at), campaign)
         for key, value in data.items():
             setattr(row, key, value)
         self.db.commit()
         return row
+
+    @staticmethod
+    def _assert_pricing_strategy(
+        strategy: str,
+        discount_percent: Decimal | None,
+        discount_amount: Decimal | None,
+        fixed_promotional_price: Decimal | None,
+    ) -> None:
+        values = {
+            "percentage": discount_percent,
+            "fixed_discount": discount_amount,
+            "fixed_price": fixed_promotional_price,
+        }
+        if strategy != "catalog" and values.get(strategy) is None:
+            raise DomainError(
+                "A estrategia de preco exige seu valor correspondente.",
+                code="InvalidStrategicOfferPricingStrategy",
+            )
+        if strategy == "catalog" and any(value is not None for value in values.values()):
+            raise DomainError(
+                "A estrategia catalog nao aceita desconto estrategico.",
+                code="InvalidStrategicOfferPricingStrategy",
+            )
+        if any(value is not None for key, value in values.items() if key != strategy):
+            raise DomainError(
+                "Informe somente o valor da estrategia de preco selecionada.",
+                code="InvalidStrategicOfferPricingStrategy",
+            )
 
     def duplicate_offer(self, offer_id: str, payload: StrategicOfferDuplicate) -> StrategicOffer:
         source = self._offer(offer_id)
@@ -323,6 +377,12 @@ class StrategicCampaignService:
             description=source.description,
             product_id=source.product_id,
             kit_id=source.kit_id,
+            reference_type=source.reference_type,
+            pricing_strategy=source.pricing_strategy,
+            discount_percent=source.discount_percent,
+            discount_amount=source.discount_amount,
+            fixed_promotional_price=source.fixed_promotional_price,
+            composition_revision=source.composition_revision,
             price_original=source.price_original,
             price_promotional=source.price_promotional,
             active=source.active,
@@ -339,7 +399,60 @@ class StrategicCampaignService:
             highlighted=source.highlighted,
             config=deepcopy(source.config or {}),
             archived_at=None,
+            components=[
+                StrategicOfferComponent(
+                    id=f"soc-{uuid.uuid4().hex[:12]}", tenant_id=self.tenant_id,
+                    position=component.position, subcategory_id=component.subcategory_id,
+                    quantity=component.quantity, allow_repeated_products=component.allow_repeated_products,
+                    restrictions=deepcopy(component.restrictions or {}),
+                )
+                for component in source.components
+            ],
         )
+
+    def _assert_offer_components(self, reference_type: str, components) -> None:
+        if reference_type not in {"subcategory", "mixed_subcategories"}:
+            if components:
+                raise DomainError("Produto e kit nao aceitam componentes por subcategoria.", code="StrategicOfferComponentsInvalid")
+            return
+        ids = [component.subcategory_id if hasattr(component, "subcategory_id") else component["subcategory_id"] for component in components]
+        rows = self.db.query(ProductCategory).filter(
+            ProductCategory.tenant_id == self.tenant_id,
+            ProductCategory.id.in_(ids),
+            ProductCategory.parent_id.is_not(None),
+            ProductCategory.active.is_(True),
+        ).all()
+        if len(rows) != len(ids):
+            raise DomainError("A composicao contem subcategoria invalida ou de outro tenant.", code="StrategicOfferSubcategoryNotFound")
+        product_subcategories = {row[0] for row in self.db.query(Product.subcategory_id).filter(
+            Product.tenant_id == self.tenant_id,
+            Product.subcategory_id.in_(ids),
+            Product.active.is_(True),
+        ).distinct().all()}
+        if product_subcategories != set(ids):
+            raise DomainError("Todas as subcategorias precisam ter produtos ativos.", code="StrategicOfferSubcategoryEmpty")
+
+    @staticmethod
+    def _assert_reference_shape(reference_type: str, product_id: str | None, kit_id: str | None, components) -> None:
+        count = len(components or [])
+        valid = (
+            reference_type == "product" and bool(product_id) and not kit_id and count == 0
+            or reference_type == "kit" and bool(kit_id) and not product_id and count == 0
+            or reference_type == "subcategory" and not product_id and not kit_id and count == 1
+            or reference_type == "mixed_subcategories" and not product_id and not kit_id and count >= 2
+        )
+        if not valid:
+            raise DomainError("Referencia e composicao da oferta sao inconsistentes.", code="StrategicOfferReferenceInvalid")
+
+    def _component_rows(self, offer_id: str, components) -> list[StrategicOfferComponent]:
+        return [StrategicOfferComponent(
+            id=f"soc-{uuid.uuid4().hex[:12]}", tenant_id=self.tenant_id, offer_id=offer_id,
+            position=position,
+            subcategory_id=component.subcategory_id if hasattr(component, "subcategory_id") else component["subcategory_id"],
+            quantity=component.quantity if hasattr(component, "quantity") else component["quantity"],
+            allow_repeated_products=(component.allow_repeated_products if hasattr(component, "allow_repeated_products") else component.get("allow_repeated_products", True)),
+            restrictions=((component.restrictions.model_dump(exclude_none=True) if component.restrictions else {}) if hasattr(component, "restrictions") else component.get("restrictions") or {}),
+        ) for position, component in enumerate(components)]
 
     @staticmethod
     def _copy_label(value: str, max_length: int) -> str:
@@ -396,6 +509,9 @@ class StrategicCampaignService:
                         offer.setdefault("active", True)
                         offer.setdefault("display_order", display_order)
                         offer.setdefault("archived_at", None)
+                        if "reference_type" not in offer:
+                            offer["reference_type"] = "kit" if offer.get("kit_id") else "product"
+                        offer.setdefault("components", [])
             return StrategicCampaignSnapshot.model_validate(snapshot)
         except Exception as exc:
             raise DomainError(

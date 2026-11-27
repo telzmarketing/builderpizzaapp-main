@@ -12,7 +12,7 @@ from backend.core.exceptions import DomainError
 from backend.database import Base
 from backend.models.product import Product
 from backend.models.product_promotion import ProductPromotion
-from backend.models.strategic_campaign import StrategicCampaign, StrategicOffer
+from backend.models.strategic_campaign import StrategicCampaign, StrategicOffer, StrategicOfferComponent
 from backend.schemas.strategic_campaign import StrategicOfferCreate, StrategicOfferUpdate
 from backend.services.strategic_campaign_service import StrategicCampaignService
 
@@ -31,6 +31,7 @@ def db():
             ProductPromotion.__table__,
             StrategicCampaign.__table__,
             StrategicOffer.__table__,
+            StrategicOfferComponent.__table__,
         ],
     )
     session = sessionmaker(bind=engine, expire_on_commit=False)()

@@ -16,6 +16,7 @@ from backend.models.strategic_campaign import (
     StrategicCampaignStatus,
     StrategicCampaignVersion,
     StrategicOffer,
+    StrategicOfferComponent,
 )
 from backend.routes import strategic_campaigns
 from backend.schemas.order import CheckoutIn, DeliveryAddressIn
@@ -42,6 +43,7 @@ def db():
             ProductPromotion.__table__,
             StrategicCampaign.__table__,
             StrategicOffer.__table__,
+            StrategicOfferComponent.__table__,
             StrategicCampaignVersion.__table__,
         ],
     )
@@ -120,11 +122,14 @@ def test_public_snapshot_lookup_is_isolated_when_tenants_share_slug(db):
 
 
 def test_every_administrative_route_has_view_or_edit_rbac_dependency():
-    public_path = "/strategic-campaigns/public/{slug}"
+    public_paths = {
+        "/strategic-campaigns/public/{slug}",
+        "/strategic-campaigns/public/offers/{offer_id}/configuration",
+    }
     admin_routes = [
         route
         for route in strategic_campaigns.router.routes
-        if isinstance(route, APIRoute) and route.path != public_path
+        if isinstance(route, APIRoute) and route.path not in public_paths
     ]
 
     assert admin_routes

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, String, Float, Integer, Enum, DateTime, ForeignKey, ForeignKeyConstraint, Index, JSON, Numeric, Text, text, and_
+from sqlalchemy import Boolean, CheckConstraint, Column, String, Float, Integer, Enum, DateTime, ForeignKey, ForeignKeyConstraint, Index, JSON, Numeric, Text, UniqueConstraint, text, and_
 from sqlalchemy.orm import relationship, foreign
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime, timezone
@@ -40,6 +40,10 @@ class Order(Base):
             "order_origin IN ('own','partner_99','ifood','keeta')",
             name="ck_orders_order_origin",
         ),
+        CheckConstraint(
+            "entry_channel IN ('legacy_unknown','landing_page','pdv','operations','phone','whatsapp','counter')",
+            name="ck_orders_entry_channel",
+        ),
         CheckConstraint("composition_revision >= 0", name="ck_orders_composition_revision"),
     )
 
@@ -69,6 +73,7 @@ class Order(Base):
     strategic_campaign_id = Column(String, ForeignKey("strategic_campaigns.id", ondelete="SET NULL"), nullable=True)
     strategic_offer_id = Column(String, ForeignKey("strategic_offers.id", ondelete="SET NULL"), nullable=True)
     strategic_offer_snapshot = Column(JSON, nullable=True)
+    entry_channel = Column(String(30), nullable=False)
     utm_source = Column(String(100), nullable=True)
     utm_medium = Column(String(100), nullable=True)
     utm_campaign = Column(String(200), nullable=True)
@@ -160,6 +165,40 @@ class Order(Base):
     delivery = relationship("Delivery", back_populates="order", uselist=False)
     table = relationship("RestaurantTable")
     table_session = relationship("TableSession", back_populates="orders")
+    commercial_groups = relationship("OrderCommercialGroup", back_populates="order", cascade="all, delete-orphan")
+
+
+class OrderCommercialGroup(Base):
+    __tablename__ = "order_commercial_groups"
+    __table_args__ = (
+        ForeignKeyConstraint(["tenant_id", "order_id"], ["orders.tenant_id", "orders.id"], name="fk_order_commercial_groups_order", ondelete="CASCADE"),
+        ForeignKeyConstraint(["tenant_id", "strategic_campaign_id"], ["strategic_campaigns.tenant_id", "strategic_campaigns.id"], name="fk_order_commercial_groups_campaign", ondelete="RESTRICT"),
+        ForeignKeyConstraint(["tenant_id", "strategic_offer_id"], ["strategic_offers.tenant_id", "strategic_offers.id"], name="fk_order_commercial_groups_offer", ondelete="RESTRICT"),
+        UniqueConstraint("tenant_id", "id", name="uq_order_commercial_groups_tenant_id"),
+        UniqueConstraint("tenant_id", "order_id", "position", name="uq_order_commercial_groups_position"),
+        CheckConstraint("quantity > 0", name="ck_order_commercial_groups_quantity"),
+        Index("ix_order_commercial_groups_tenant_offer", "tenant_id", "strategic_offer_id", "created_at"),
+    )
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False)
+    order_id = Column(String, nullable=False)
+    position = Column(Integer, nullable=False)
+    group_type = Column(String(30), nullable=False, default="strategic_offer", server_default="strategic_offer")
+    strategic_campaign_id = Column(String, nullable=False)
+    strategic_offer_id = Column(String, nullable=False)
+    campaign_version = Column(Integer, nullable=False)
+    composition_revision = Column(Integer, nullable=False)
+    quantity = Column(Integer, nullable=False, default=1)
+    entry_channel = Column(String(30), nullable=False)
+    pricing_strategy = Column(String(30), nullable=False)
+    original_amount = Column(Numeric(20, 2), nullable=False)
+    discount_amount = Column(Numeric(20, 2), nullable=False)
+    promotional_amount = Column(Numeric(20, 2), nullable=False)
+    commercial_snapshot = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    order = relationship("Order", back_populates="commercial_groups")
 
 
 class OrderItem(Base):
@@ -169,6 +208,8 @@ class OrderItem(Base):
         Index("uq_order_items_tenant_id_id", "tenant_id", "id", unique=True),
         ForeignKeyConstraint(["tenant_id", "selected_border_id"], ["product_crust_types.tenant_id", "product_crust_types.id"], name="fk_order_items_tenant_border"),
         ForeignKeyConstraint(["tenant_id", "selected_drink_variant_id"], ["product_drink_variants.tenant_id", "product_drink_variants.id"], name="fk_order_items_tenant_drink_variant"),
+        ForeignKeyConstraint(["tenant_id", "commercial_group_id"], ["order_commercial_groups.tenant_id", "order_commercial_groups.id"], name="fk_order_items_commercial_group", ondelete="RESTRICT"),
+        ForeignKeyConstraint(["tenant_id", "source_subcategory_id"], ["product_categories.tenant_id", "product_categories.id"], name="fk_order_items_source_subcategory", ondelete="RESTRICT"),
     )
 
     id = Column(String, primary_key=True)
@@ -176,6 +217,9 @@ class OrderItem(Base):
     order_id = Column(String, ForeignKey("orders.id"), nullable=False)
     product_id = Column(String, ForeignKey("products.id"), nullable=False)
     position = Column(Integer, nullable=False, default=0)
+    commercial_group_id = Column(String, nullable=True)
+    commercial_group_position = Column(Integer, nullable=True)
+    source_subcategory_id = Column(String, nullable=True)
 
     quantity = Column(Integer, default=1)
     selected_size = Column(String(50))

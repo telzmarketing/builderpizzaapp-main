@@ -14,6 +14,7 @@ import uuid
 import hashlib
 import json
 from copy import deepcopy
+from dataclasses import replace
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session, joinedload
@@ -38,7 +39,7 @@ from backend.core.tenant_ownership import (
 from backend.core.events import (
     bus, OrderCreated, OrderStatusChanged, OrderCancelled as EvOrderCancelled, PaymentConfirmed,
 )
-from backend.models.order import Order, OrderItem, OrderItemFlavor, OrderStatus, OrderAmendment
+from backend.models.order import Order, OrderItem, OrderItemFlavor, OrderStatus, OrderAmendment, OrderCommercialGroup
 from backend.models.payment import Payment, PaymentMethod, PaymentStatus
 from backend.models.payment_config import PaymentGatewayConfig
 from backend.models.paid_traffic import CampaignLink, TrafficCampaign
@@ -49,6 +50,7 @@ from backend.services.customer_metrics_service import sync_customer_order_metric
 from backend.services.product_pricing_service import ProductPriceResult, ProductPricingService, normalize_crust_price_addition
 from backend.services.product_category_service import effective_capabilities
 from backend.services.combo_service import ComboService, ResolvedComboComponent
+from backend.models.strategic_campaign import StrategicOffer, StrategicOfferRedemption, StrategicReservation
 
 
 # ── Pricing helpers (shared with front-end logic) ─────────────────────────────
@@ -431,6 +433,13 @@ class OrderService:
         )
         if not capabilities["enable_promotions"]:
             pricing = ProductPriceResult(standard_price=pricing.standard_price, final_price=pricing.standard_price)
+        pricing = replace(pricing, strategic_additions=round(
+            option_price_addition
+            + normalize_crust_price_addition(crust.price_addition if crust else 0, product.price)
+            + float(border.price_addition if border else 0)
+            + float(variant.price_addition if variant else 0),
+            2,
+        ))
         item.selected_size = size.label if size else ("Combo" if combo_component else "Unico")
         item.selected_crust_type_name = crust.name if crust else None
         item.selected_border_name = border.name if border else None
@@ -520,10 +529,17 @@ class OrderService:
 
     def quote_checkout(self, payload: CheckoutIn, *, allow_manual_discount: bool = False) -> dict:
         """Validate cart and calculate totals without creating an order."""
+        payload, strategic_groups = self._prepare_strategic_groups(payload, consume_limits=False)
         if not payload.items:
             raise CartEmpty()
 
         strategic_context = self._resolve_strategic_context(payload)
+        self._assert_legacy_strategic_purchase_limit(
+            strategic_context, payload, consume_limits=False,
+        )
+        strategic_commercial_contexts = self._strategic_commercial_contexts(
+            strategic_context, strategic_groups,
+        )
 
         if payload.customer_id:
             if not self._tenant_query(CustomerModel).filter(CustomerModel.id == payload.customer_id).first():
@@ -532,19 +548,18 @@ class OrderService:
                     code="CustomerNotFound",
                 )
 
-        self._validate_strategic_commercial_rules(payload, strategic_context)
+        self._validate_strategic_commercial_rules(payload, strategic_commercial_contexts)
         from backend.services.store_operation_service import StoreOperationService
 
         StoreOperationService(self._db, self._tenant_context.tenant_id if self._tenant_context else "default").validate_order_allowed(
             is_scheduled=payload.delivery.is_scheduled if payload.delivery else False,
             scheduled_for=payload.delivery.scheduled_for if payload.delivery else None,
-            allow_closed_campaign=self._strategic_allows_closed_store(strategic_context),
+            allow_closed_campaign=self._strategic_allows_closed_store(strategic_commercial_contexts),
         )
 
-        if any(item.kit_id for item in payload.items):
-            expanded_items, combo_components = ComboService(self._db, self._tenant_context).expand(payload.items)
-        else:
-            expanded_items, combo_components = payload.items, {}
+        expanded_items, combo_components, strategic_groups = self._expand_combo_items(
+            payload.items, strategic_groups,
+        )
         config = self._get_config()
         items: list[dict] = []
         subtotal = 0.0
@@ -578,6 +593,7 @@ class OrderService:
                 "unit_price": unit_price,
                 "line_total": line_total,
                 "standard_unit_price": pricing.standard_price,
+                "strategic_additions": pricing.strategic_additions,
                 "promotion_applied": pricing.promotion_applied,
                 "promotion_id": pricing.promotion_id,
                 "promotion_name": pricing.promotion_name,
@@ -599,6 +615,11 @@ class OrderService:
         self._validate_inventory_items(expanded_items)
         subtotal = round(subtotal, 2)
         self._assert_strategic_quote(strategic_context, subtotal, expanded_items)
+        strategic_group_quotes, strategic_discount = self._quote_strategic_groups(
+            strategic_groups,
+            [row["line_total"] for row in items],
+            [round(float(row["strategic_additions"]) * int(row["quantity"]), 2) for row in items],
+        )
 
         from backend.services.shipping_service import ShippingService
         from backend.schemas.shipping_v2 import ShippingCalculateIn
@@ -648,7 +669,7 @@ class OrderService:
         if promotion_free_shipping:
             delivery_fee_final = 0.0
 
-        coupon_discount = _money_decimal(discount, "Desconto do cupom")
+        coupon_discount = _money_decimal(discount, "Desconto do cupom") + strategic_discount
         manual_discount, manual_discount_type, manual_discount_value = self._resolve_manual_discount(
             payload,
             _money_decimal(subtotal, "Subtotal"),
@@ -684,6 +705,8 @@ class OrderService:
             "total": total,
             "payment_method": payload.payment_method,
             "cash_change_amount": cash_change_amount,
+            "strategic_offer_groups": strategic_group_quotes,
+            "strategic_discount": float(strategic_discount),
         }
         if strategic_context:
             campaign, offer = strategic_context
@@ -695,9 +718,11 @@ class OrderService:
     def _resolve_strategic_context(self, payload: CheckoutIn):
         if not payload.strategic_offer_id:
             return None
-        from backend.services.strategic_campaign_service import StrategicCampaignService
+        from backend.services.strategic_offer_composition_service import StrategicOfferCompositionService
         tenant_id = self._tenant_context.tenant_id if self._tenant_context else "tenant-legacy-default"
-        campaign, offer = StrategicCampaignService(self._db, tenant_id).resolve_checkout_offer(payload.strategic_offer_id)
+        campaign, offer = StrategicOfferCompositionService(self._db, tenant_id)._published_offer(
+            payload.strategic_offer_id, None,
+        )
         if len(payload.items) != 1:
             raise DomainError("A oferta estratégica deve ser enviada como uma única linha de checkout.", code="StrategicOfferCompositionInvalid")
         item = payload.items[0]
@@ -705,29 +730,237 @@ class OrderService:
             raise DomainError("A composição do checkout não corresponde à oferta estratégica.", code="StrategicOfferCompositionInvalid")
         return campaign, offer
 
+    def _prepare_strategic_groups(self, payload: CheckoutIn, *, consume_limits: bool):
+        if payload.strategic_offer_id and payload.strategic_offer_groups:
+            raise DomainError("Use strategic_offer_id legado ou strategic_offer_groups, nunca ambos.", code="StrategicOfferContractConflict")
+        if not payload.strategic_offer_groups:
+            return payload, []
+        from backend.services.strategic_offer_composition_service import StrategicOfferCompositionService
+        tenant_id = self._tenant_context.tenant_id if self._tenant_context else "tenant-legacy-default"
+        composition = StrategicOfferCompositionService(self._db, tenant_id)
+        extra_items, resolved = composition.expand_groups(
+            payload.strategic_offer_groups, item_start=len(payload.items), customer_id=payload.customer_id,
+            consume_limits=False, reservation_id=payload.reservation_id,
+        )
+        if consume_limits:
+            quantities: dict[str, int] = {}
+            for group in resolved:
+                quantities[group.offer.id] = quantities.get(group.offer.id, 0) + group.request.quantity
+            for offer_id, quantity in quantities.items():
+                self._db.query(StrategicOffer).filter(
+                    StrategicOffer.tenant_id == tenant_id,
+                    StrategicOffer.id == offer_id,
+                ).with_for_update().one()
+                published_offer = next(group.offer for group in resolved if group.offer.id == offer_id)
+                composition._assert_purchase_limits(
+                    published_offer, quantity, payload.customer_id,
+                    reservation_id=payload.reservation_id,
+                    require_confirmed_reservation=True,
+                )
+        return payload.model_copy(update={"items": [*payload.items, *extra_items]}), resolved
+
+    def _expand_combo_items(self, items, strategic_groups):
+        if not any(item.kit_id for item in items):
+            return items, {}, strategic_groups
+
+        combo_service = ComboService(self._db, self._tenant_context)
+        expanded_items = []
+        combo_components = {}
+        spans: list[tuple[int, int]] = []
+        for item in items:
+            start = len(expanded_items)
+            item_expanded, item_components = combo_service.expand([item])
+            expanded_items.extend(item_expanded)
+            combo_components.update(item_components)
+            spans.append((start, len(item_expanded)))
+
+        remapped_groups = []
+        for group in strategic_groups:
+            source_indexes = range(group.item_start, group.item_start + group.item_count)
+            mapped_start = spans[group.item_start][0]
+            mapped_count = sum(spans[index][1] for index in source_indexes)
+            mapped_subcategories = tuple(
+                subcategory_id
+                for index, subcategory_id in zip(source_indexes, group.step_subcategories)
+                for _ in range(spans[index][1])
+            )
+            remapped_groups.append(replace(
+                group,
+                item_start=mapped_start,
+                item_count=mapped_count,
+                step_subcategories=mapped_subcategories,
+            ))
+        return expanded_items, combo_components, remapped_groups
+
+    def _assert_legacy_strategic_purchase_limit(
+        self,
+        context,
+        payload: CheckoutIn,
+        *,
+        consume_limits: bool,
+    ) -> None:
+        if not context:
+            return
+        from backend.services.strategic_offer_composition_service import StrategicOfferCompositionService
+
+        tenant_id = self._tenant_context.tenant_id if self._tenant_context else "tenant-legacy-default"
+        offer = context[1]
+        if consume_limits:
+            offer = StrategicOfferCompositionService(self._db, tenant_id)._published_offer(
+                offer.id, None, lock=True,
+            )[1]
+        quantity = sum(max(0, int(item.quantity or 0)) for item in payload.items)
+        StrategicOfferCompositionService(self._db, tenant_id)._assert_purchase_limits(
+            offer, quantity, payload.customer_id,
+            reservation_id=getattr(payload, "reservation_id", None),
+            require_confirmed_reservation=consume_limits,
+        )
+
+    def _bind_checkout_reservation(self, payload: CheckoutIn, order: Order, legacy_context, groups) -> None:
+        if not payload.reservation_id:
+            return
+        tenant_id = self._tenant_context.tenant_id if self._tenant_context else "tenant-legacy-default"
+        reservation = self._db.query(StrategicReservation).filter(
+            StrategicReservation.tenant_id == tenant_id,
+            StrategicReservation.id == payload.reservation_id,
+        ).with_for_update().first()
+        if not reservation or reservation.status != "confirmed" or reservation.order_id is not None:
+            raise DomainError("Reserva estrategica indisponivel para este pedido.", code="StrategicReservationUnavailable")
+        quantities: dict[str, int] = {}
+        if legacy_context:
+            quantities[legacy_context[1].id] = sum(max(0, int(item.quantity or 0)) for item in payload.items)
+        for group in groups:
+            quantities[group.offer.id] = quantities.get(group.offer.id, 0) + group.request.quantity
+        if quantities.get(reservation.offer_id) != reservation.quantity:
+            raise DomainError("A reserva nao corresponde a composicao do pedido.", code="StrategicReservationOfferMismatch")
+        if reservation.customer_reference and reservation.customer_reference != payload.customer_id:
+            raise DomainError("A reserva pertence a outro cliente.", code="StrategicReservationCustomerMismatch")
+        reservation.order_id = order.id
+
+    @staticmethod
+    def _strategic_commercial_contexts(legacy_context, groups) -> list[tuple]:
+        contexts = [legacy_context] if legacy_context else []
+        seen = {legacy_context[0].id} if legacy_context else set()
+        for group in groups:
+            if group.campaign.id not in seen:
+                contexts.append((group.campaign, group.offer))
+                seen.add(group.campaign.id)
+        return contexts
+
+    @staticmethod
+    def _quote_strategic_groups(groups, line_totals, line_additions=None) -> tuple[list[dict], Decimal]:
+        if not groups:
+            return [], Decimal("0.00")
+        from backend.services.strategic_offer_composition_service import StrategicOfferCompositionService
+        line_additions = line_additions or [0 for _ in line_totals]
+        documents = []
+        total_discount = Decimal("0.00")
+        for resolved in groups:
+            quantity = max(1, int(resolved.request.quantity or 1))
+            if resolved.item_count % quantity:
+                raise DomainError(
+                    "A composicao da oferta nao pode ser dividida em unidades comerciais.",
+                    code="StrategicOfferCompositionInvalid",
+                )
+            items_per_unit = resolved.item_count // quantity
+            unit_originals = [
+                sum((
+                    _money_decimal(line_totals[index], "Item estrategico")
+                    for index in range(
+                        resolved.item_start + unit_index * items_per_unit,
+                        resolved.item_start + (unit_index + 1) * items_per_unit,
+                    )
+                ), Decimal("0.00"))
+                for unit_index in range(quantity)
+            ]
+            unit_additions = [
+                sum((
+                    _money_decimal(line_additions[index], "Adicional estrategico")
+                    for index in range(
+                        resolved.item_start + unit_index * items_per_unit,
+                        resolved.item_start + (unit_index + 1) * items_per_unit,
+                    )
+                ), Decimal("0.00"))
+                for unit_index in range(quantity)
+            ]
+            original = sum(unit_originals, Decimal("0.00"))
+            promotional = sum((
+                StrategicOfferCompositionService.promotional_total(
+                    resolved.offer, max(Decimal("0.00"), unit_original - additions),
+                ) + additions
+                for unit_original, additions in zip(unit_originals, unit_additions)
+            ), Decimal("0.00")).quantize(_CENT, rounding=ROUND_HALF_UP)
+            discount = max(Decimal("0.00"), original - promotional).quantize(_CENT, rounding=ROUND_HALF_UP)
+            total_discount += discount
+            documents.append({
+                "offer_id": resolved.offer.id,
+                "campaign_id": resolved.campaign.id,
+                "campaign_version": resolved.request.campaign_version,
+                "composition_revision": resolved.request.composition_revision,
+                "quantity": resolved.request.quantity,
+                "entry_channel": None,
+                "pricing_strategy": resolved.offer.pricing_strategy,
+                "original_amount": original,
+                "discount_amount": discount,
+                "promotional_amount": promotional,
+                "item_start": resolved.item_start,
+                "item_count": resolved.item_count,
+                "step_subcategories": list(resolved.step_subcategories),
+                "snapshot": {
+                    "offer": {"id": resolved.offer.id, "code": resolved.offer.code, "title": resolved.offer.title},
+                    "selections": [selection.model_dump(mode="json") for selection in resolved.request.selections],
+                },
+            })
+        return documents, total_discount.quantize(_CENT, rounding=ROUND_HALF_UP)
+
     @staticmethod
     def _strategic_allows_closed_store(context) -> bool:
-        return bool(context and (context[0].commercial_config or {}).get("allow_when_store_closed"))
+        contexts = OrderService._normalize_strategic_contexts(context)
+        return bool(contexts) and all(
+            bool((campaign.commercial_config or {}).get("allow_when_store_closed"))
+            for campaign, _ in contexts
+        )
+
+    @staticmethod
+    def _normalize_strategic_contexts(context) -> list[tuple]:
+        if not context:
+            return []
+        if (
+            isinstance(context, tuple)
+            and len(context) == 2
+            and hasattr(context[0], "commercial_config")
+        ):
+            return [context]
+        return list(context)
 
     @staticmethod
     def _validate_strategic_commercial_rules(payload: CheckoutIn, context) -> None:
-        if not context:
+        contexts = OrderService._normalize_strategic_contexts(context)
+        if not contexts:
             return
-        campaign = context[0]
-        config = campaign.commercial_config or {}
+        now = datetime.now(timezone.utc)
         scheduled = bool(payload.delivery and payload.delivery.is_scheduled)
-        mode = config.get("sales_mode", "immediate")
-        if mode == "preorder" or config.get("require_scheduled_order"):
+        for campaign, _ in contexts:
+            starts_at = campaign.starts_at
+            ends_at = campaign.ends_at
+            if starts_at and (starts_at if starts_at.tzinfo else starts_at.replace(tzinfo=timezone.utc)) > now:
+                raise DomainError("A campanha estrategica ainda nao iniciou.", code="StrategicCampaignUnavailable")
+            if ends_at and (ends_at if ends_at.tzinfo else ends_at.replace(tzinfo=timezone.utc)) <= now:
+                raise DomainError("A campanha estrategica foi encerrada.", code="StrategicCampaignUnavailable")
+            config = campaign.commercial_config or {}
+            mode = config.get("sales_mode", "immediate")
+            if mode == "preorder" or config.get("require_scheduled_order"):
+                if not scheduled or not payload.delivery.scheduled_for:
+                    raise DomainError("Esta campanha exige data e horario futuro para o pedido.", code="StrategicScheduleRequired")
+            allowed_payments = set(config.get("allowed_payment_methods") or [])
+            if allowed_payments and payload.payment_method not in allowed_payments:
+                raise DomainError("A forma de pagamento nao esta habilitada para esta campanha.", code="StrategicPaymentMethodNotAllowed")
             if not scheduled or not payload.delivery.scheduled_for:
-                raise DomainError("Esta campanha exige data e horario futuro para o pedido.", code="StrategicScheduleRequired")
-        allowed_payments = set(config.get("allowed_payment_methods") or [])
-        if allowed_payments and payload.payment_method not in allowed_payments:
-            raise DomainError("A forma de pagamento nao esta habilitada para esta campanha.", code="StrategicPaymentMethodNotAllowed")
-        if scheduled and payload.delivery.scheduled_for:
+                continue
             target = payload.delivery.scheduled_for
             if target.tzinfo is None:
                 target = target.replace(tzinfo=timezone.utc)
-            lead_minutes = (target.astimezone(timezone.utc) - datetime.now(timezone.utc)).total_seconds() / 60
+            lead_minutes = (target.astimezone(timezone.utc) - now).total_seconds() / 60
             minimum = int(config.get("min_lead_minutes") or 0)
             maximum_days = config.get("max_lead_days")
             if lead_minutes < minimum:
@@ -1382,9 +1615,16 @@ class OrderService:
 
         Called by both the loja (REST endpoint) and ERP integrations.
         """
+        payload, strategic_groups = self._prepare_strategic_groups(payload, consume_limits=True)
         if not payload.items:
             raise CartEmpty()
         strategic_context = self._resolve_strategic_context(payload)
+        self._assert_legacy_strategic_purchase_limit(
+            strategic_context, payload, consume_limits=True,
+        )
+        strategic_commercial_contexts = self._strategic_commercial_contexts(
+            strategic_context, strategic_groups,
+        )
         if sales_channel not in {"counter", "delivery", "pickup", "dine_in"}:
             raise DomainError("Canal de venda invalido.", code="InvalidSalesChannel")
         origin_aliases = {"99": "partner_99", "99food": "partner_99", "propria": "own", "venda_propria": "own"}
@@ -1416,19 +1656,18 @@ class OrderService:
                     code="CustomerNotFound",
                 )
 
-        self._validate_strategic_commercial_rules(payload, strategic_context)
+        self._validate_strategic_commercial_rules(payload, strategic_commercial_contexts)
         from backend.services.store_operation_service import StoreOperationService
 
         StoreOperationService(self._db, self._tenant_context.tenant_id if self._tenant_context else "default").validate_order_allowed(
             is_scheduled=payload.delivery.is_scheduled if payload.delivery else False,
             scheduled_for=payload.delivery.scheduled_for if payload.delivery else None,
-            allow_closed_campaign=self._strategic_allows_closed_store(strategic_context),
+            allow_closed_campaign=self._strategic_allows_closed_store(strategic_commercial_contexts),
         )
 
-        if any(item.kit_id for item in payload.items):
-            expanded_items, combo_components = ComboService(self._db, self._tenant_context).expand(payload.items)
-        else:
-            expanded_items, combo_components = payload.items, {}
+        expanded_items, combo_components, strategic_groups = self._expand_combo_items(
+            payload.items, strategic_groups,
+        )
         config = self._get_config()
 
         # 1. Validate items and compute subtotal
@@ -1453,6 +1692,11 @@ class OrderService:
         self._validate_inventory_items(expanded_items)
         subtotal = round(subtotal, 2)
         self._assert_strategic_quote(strategic_context, subtotal, expanded_items)
+        strategic_group_quotes, strategic_discount = self._quote_strategic_groups(
+            strategic_groups,
+            [round(unit_price * item.quantity, 2) for item, unit_price, _, _, _, _ in item_data],
+            [round(pricing.strategic_additions * item.quantity, 2) for item, _, _, pricing, _, _ in item_data],
+        )
         coupon_blocker = next((pricing for _, _, _, pricing, _, _ in item_data if pricing.blocks_other_coupons), None)
         promotion_free_shipping = any(pricing.free_shipping for _, _, _, pricing, _, _ in item_data)
         promotion_gifts = self._collect_promotion_gifts(item_data)
@@ -1519,7 +1763,7 @@ class OrderService:
             delivery_fee_final = 0.0
             free_shipping_applied = True
 
-        coupon_discount = _money_decimal(discount, "Desconto do cupom")
+        coupon_discount = _money_decimal(discount, "Desconto do cupom") + strategic_discount
         manual_discount, manual_discount_type, manual_discount_value = self._resolve_manual_discount(
             payload,
             _money_decimal(subtotal, "Subtotal"),
@@ -1561,6 +1805,8 @@ class OrderService:
         external_reference = external_reference_override or order_id
         order_code = self._generate_order_code()
         tracking = self._tracking_fields(payload)
+        compatibility_group = strategic_groups[0] if len(strategic_groups) == 1 else None
+        compatibility_quote = strategic_group_quotes[0] if len(strategic_group_quotes) == 1 else None
         order = Order(
             id=order_id,
             order_code=order_code,
@@ -1578,9 +1824,13 @@ class OrderService:
                     else OrderStatus.aguardando_pagamento),
             coupon_id=resolved_coupon_id,
             campaign_id=tracking["campaign_id"],
-            strategic_campaign_id=strategic_context[0].id if strategic_context else None,
-            strategic_offer_id=strategic_context[1].id if strategic_context else None,
-            strategic_offer_snapshot=self._strategic_snapshot(strategic_context[0], strategic_context[1], [item.model_dump(mode="json") for item in payload.items]) if strategic_context else None,
+            strategic_campaign_id=(strategic_context[0].id if strategic_context else compatibility_group.campaign.id if compatibility_group else None),
+            strategic_offer_id=(strategic_context[1].id if strategic_context else compatibility_group.offer.id if compatibility_group else None),
+            strategic_offer_snapshot=(
+                self._strategic_snapshot(strategic_context[0], strategic_context[1], [item.model_dump(mode="json") for item in payload.items])
+                if strategic_context else compatibility_quote["snapshot"] if compatibility_quote else None
+            ),
+            entry_channel=payload.entry_channel,
             utm_source=tracking["utm_source"],
             utm_medium=tracking["utm_medium"],
             utm_campaign=tracking["utm_campaign"],
@@ -1617,7 +1867,88 @@ class OrderService:
         self._own(order)
         self._db.add(order)
         self._db.flush()
+        self._bind_checkout_reservation(payload, order, strategic_context, strategic_groups)
         self._save_first_delivery_address(payload)
+
+        commercial_group_by_item: dict[int, tuple[OrderCommercialGroup, int, str | None]] = {}
+        if strategic_context:
+            legacy_quantity = sum(max(0, int(item.quantity or 0)) for item in payload.items)
+            legacy_group = OrderCommercialGroup(
+                id=f"ocg-{uuid.uuid4().hex[:12]}",
+                order_id=order.id,
+                position=0,
+                strategic_campaign_id=strategic_context[0].id,
+                strategic_offer_id=strategic_context[1].id,
+                campaign_version=strategic_context[0].published_version,
+                composition_revision=getattr(strategic_context[1], "composition_revision", 1),
+                quantity=legacy_quantity,
+                entry_channel=payload.entry_channel,
+                pricing_strategy=getattr(strategic_context[1], "pricing_strategy", "catalog"),
+                original_amount=_money_decimal(subtotal, "Subtotal estrategico"),
+                discount_amount=Decimal("0.00"),
+                promotional_amount=_money_decimal(subtotal, "Subtotal estrategico"),
+                commercial_snapshot=self._strategic_snapshot(
+                    strategic_context[0], strategic_context[1],
+                    [item.model_dump(mode="json") for item in payload.items],
+                ),
+            )
+            self._own(legacy_group)
+            self._db.add(legacy_group)
+            self._db.flush()
+            legacy_redemption = StrategicOfferRedemption(
+                id=f"sor-{uuid.uuid4().hex[:12]}",
+                offer_id=strategic_context[1].id,
+                commercial_group_id=legacy_group.id,
+                order_id=order.id,
+                customer_id=payload.customer_id,
+                quantity=legacy_quantity,
+                status="confirmed",
+                entry_channel=payload.entry_channel,
+            )
+            self._own(legacy_redemption)
+            self._db.add(legacy_redemption)
+            for item_index in range(len(item_data)):
+                commercial_group_by_item[item_index] = (legacy_group, item_index, None)
+        for group_position, document in enumerate(strategic_group_quotes):
+            document["entry_channel"] = payload.entry_channel
+            commercial_group = OrderCommercialGroup(
+                id=f"ocg-{uuid.uuid4().hex[:12]}",
+                order_id=order.id,
+                position=group_position,
+                strategic_campaign_id=document["campaign_id"],
+                strategic_offer_id=document["offer_id"],
+                campaign_version=document["campaign_version"],
+                composition_revision=document["composition_revision"],
+                quantity=document["quantity"],
+                entry_channel=payload.entry_channel,
+                pricing_strategy=document["pricing_strategy"],
+                original_amount=document["original_amount"],
+                discount_amount=document["discount_amount"],
+                promotional_amount=document["promotional_amount"],
+                commercial_snapshot=document["snapshot"],
+            )
+            self._own(commercial_group)
+            self._db.add(commercial_group)
+            self._db.flush()
+            redemption = StrategicOfferRedemption(
+                id=f"sor-{uuid.uuid4().hex[:12]}",
+                offer_id=document["offer_id"],
+                commercial_group_id=commercial_group.id,
+                order_id=order.id,
+                customer_id=payload.customer_id,
+                quantity=document["quantity"],
+                status="confirmed",
+                entry_channel=payload.entry_channel,
+            )
+            self._own(redemption)
+            self._db.add(redemption)
+            for relative_position in range(document["item_count"]):
+                item_index = document["item_start"] + relative_position
+                commercial_group_by_item[item_index] = (
+                    commercial_group,
+                    relative_position,
+                    document["step_subcategories"][relative_position],
+                )
 
         payment = Payment(
             id=str(uuid.uuid4()),
@@ -1648,11 +1979,15 @@ class OrderService:
 
         cmv_contexts: list[CmvOrderItemContext] = []
         for item_position, (item, unit_price, flavor_products, pricing, size_obj, crust_obj) in enumerate(item_data):
+            group_binding = commercial_group_by_item.get(item_position)
             oi = OrderItem(
                 id=str(uuid.uuid4()),
                 order_id=order.id,
                 product_id=item.product_id,
                 position=item_position,
+                commercial_group_id=group_binding[0].id if group_binding else None,
+                commercial_group_position=group_binding[1] if group_binding else None,
+                source_subcategory_id=group_binding[2] if group_binding else None,
                 quantity=item.quantity,
                 selected_size=_clip_text(item.selected_size, 50),
                 selected_size_id=size_obj.id if size_obj else item.selected_size_id,
@@ -1921,6 +2256,7 @@ class OrderService:
             delivery_city="Salao",
             delivery_complement=session.waiter_name,
             status=OrderStatus.preparing,
+            entry_channel="counter",
             sales_channel="dine_in",
             fulfillment_type="dine_in",
             table_id=session.table_id,
@@ -2112,6 +2448,8 @@ class OrderService:
         new_status: str,
         *,
         changed_by: str = "system",
+        _commit: bool = True,
+        _event_sink: list | None = None,
     ) -> Order:
         """
         The ONLY way to change an order status.
@@ -2198,7 +2536,8 @@ class OrderService:
             self._consume_inventory_for_effective_sale(order.id)
         if new_status in {"cancelled", "refunded"}:
             self._reverse_inventory_for_cancelled_sale(order.id)
-        if new_status == "cancelled" and order.strategic_campaign_id:
+            self._release_strategic_redemptions(order, status=new_status)
+        if new_status in {"cancelled", "refunded"}:
             from backend.services.strategic_campaign_capacity_service import StrategicCampaignCapacityService
             StrategicCampaignCapacityService(
                 self._db, order.tenant_id
@@ -2208,15 +2547,20 @@ class OrderService:
         AutomationEventProducer(self._db, order.tenant_id).order_status_changed(
             order, old_status, new_status
         )
-        self._db.commit()
+        if _commit:
+            self._db.commit()
 
-        bus.publish(OrderStatusChanged(
+        status_event = OrderStatusChanged(
             order_id=order_id,
             from_status=old_status,
             to_status=new_status,
             changed_by=changed_by,
             tenant_id=order.tenant_id,
-        ))
+        )
+        if _event_sink is not None:
+            _event_sink.append(status_event)
+        elif _commit:
+            bus.publish(status_event)
 
         # Award loyalty points when delivered
         if new_status == "delivered" and order.customer_id:
@@ -2229,7 +2573,8 @@ class OrderService:
             sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
             self._db.commit()
 
-        self._db.refresh(order)
+        if _commit:
+            self._db.refresh(order)
         return order
 
     def complete_customer_pickup(
@@ -2385,6 +2730,19 @@ class OrderService:
         order = self._get_order(order_id)
         InventoryService(self._db, order.tenant_id, self._tenant_context).reverse_order_sale(order_id)
 
+    def _release_strategic_redemptions(self, order: Order, *, status: str = "cancelled") -> int:
+        """Release campaign limits exactly once when a sale stops consuming them."""
+        rows = self._db.query(StrategicOfferRedemption).filter(
+            StrategicOfferRedemption.tenant_id == order.tenant_id,
+            StrategicOfferRedemption.order_id == order.id,
+            StrategicOfferRedemption.status == "confirmed",
+        ).with_for_update().all()
+        released_at = datetime.now(timezone.utc)
+        for row in rows:
+            row.status = status
+            row.released_at = released_at
+        return len(rows)
+
     def cancel(
         self,
         order_id: str,
@@ -2394,28 +2752,41 @@ class OrderService:
         cancelled_by: str = "system",
     ) -> Order:
         """Cancels an order through the state machine, recording who cancelled."""
-        order = self.change_status(order_id, "cancelled", changed_by=changed_by)
-        now = datetime.now(timezone.utc)
-        order.cancelled_by = cancelled_by
-        order.cancellation_reason = reason or None
-        order.cancelled_at = now
-        from backend.services.kds_production_service import KdsProductionService
-        kds_context = self._tenant_context or TenantContext(
-            tenant_id=order.tenant_id,
-            source=TenantSource.JOB,
-        )
-        KdsProductionService(self._db, kds_context).cancel_for_order(
-            order.id,
-            actor_id=(
-                cancelled_by
-                if cancelled_by not in {"system", "admin", "customer"}
-                else None
-            ),
-            reason=reason,
-        )
-        self._db.flush()
-        self._db.commit()
+        status_events: list = []
+        try:
+            order = self.change_status(
+                order_id,
+                "cancelled",
+                changed_by=changed_by,
+                _commit=False,
+                _event_sink=status_events,
+            )
+            now = datetime.now(timezone.utc)
+            order.cancelled_by = cancelled_by
+            order.cancellation_reason = reason or None
+            order.cancelled_at = now
+            from backend.services.kds_production_service import KdsProductionService
+            kds_context = self._tenant_context or TenantContext(
+                tenant_id=order.tenant_id,
+                source=TenantSource.JOB,
+            )
+            KdsProductionService(self._db, kds_context).cancel_for_order(
+                order.id,
+                actor_id=(
+                    cancelled_by
+                    if cancelled_by not in {"system", "admin", "customer"}
+                    else None
+                ),
+                reason=reason,
+            )
+            self._db.flush()
+            self._db.commit()
+        except Exception:
+            self._db.rollback()
+            raise
         self._db.refresh(order)
+        for event in status_events:
+            bus.publish(event)
         bus.publish(EvOrderCancelled(
             order_id=order_id,
             reason=reason,

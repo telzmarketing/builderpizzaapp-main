@@ -32,6 +32,7 @@ def is_napolitana_crust(name: str | None) -> bool:
 class ProductPriceResult:
     standard_price: float
     final_price: float
+    strategic_additions: float = 0.0
     promotion_id: str | None = None
     promotion_name: str | None = None
     discount_amount: float = 0.0

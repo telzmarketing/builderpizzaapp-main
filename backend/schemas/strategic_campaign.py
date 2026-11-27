@@ -80,6 +80,13 @@ class StrategicOfferRestrictions(BaseModel):
         return value
 
 
+class StrategicOfferComponentIn(BaseModel):
+    subcategory_id: StrategicCatalogId
+    quantity: int = Field(ge=1, le=100)
+    allow_repeated_products: bool = True
+    restrictions: StrategicOfferRestrictions | None = None
+
+
 class StrategicOfferConfig(BaseModel):
     pricing_mode: Literal["catalog", "product_promotion", "strategic_price"] | None = None
     product_promotion_id: StrategicCatalogId | None = None
@@ -109,6 +116,12 @@ class StrategicOfferCreate(BaseModel):
     description: str | None = None
     product_id: str | None = None
     kit_id: str | None = None
+    reference_type: Literal["product", "kit", "subcategory", "mixed_subcategories"] | None = None
+    components: list[StrategicOfferComponentIn] = Field(default_factory=list, max_length=100)
+    pricing_strategy: Literal["catalog", "percentage", "fixed_discount", "fixed_price"] = "catalog"
+    discount_percent: Decimal | None = Field(default=None, gt=0, le=100, decimal_places=4)
+    discount_amount: Decimal | None = Field(default=None, gt=0, decimal_places=2)
+    fixed_promotional_price: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     price_original: Decimal = Field(ge=0, decimal_places=2)
     price_promotional: Decimal = Field(ge=0, decimal_places=2)
     display_order: int = Field(default=0, ge=0)
@@ -131,8 +144,31 @@ class StrategicOfferCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_reference_and_price(self):
-        if bool(self.product_id) == bool(self.kit_id):
+        inferred = self.reference_type or ("product" if self.product_id else "kit" if self.kit_id else None)
+        if inferred in {"product", "kit"} and bool(self.product_id) == bool(self.kit_id):
             raise ValueError("Informe exatamente um produto ou kit para a oferta.")
+        if inferred == "product" and (not self.product_id or self.kit_id or self.components):
+            raise ValueError("A referencia product exige somente product_id.")
+        if inferred == "kit" and (not self.kit_id or self.product_id or self.components):
+            raise ValueError("A referencia kit exige somente kit_id.")
+        if inferred in {"subcategory", "mixed_subcategories"} and (self.product_id or self.kit_id or not self.components):
+            raise ValueError("Ofertas por subcategoria exigem componentes e nao aceitam produto ou kit direto.")
+        if inferred == "subcategory" and len(self.components) != 1:
+            raise ValueError("A referencia subcategory exige exatamente um componente.")
+        if inferred == "mixed_subcategories" and len(self.components) < 2:
+            raise ValueError("A referencia mixed_subcategories exige ao menos dois componentes.")
+        if not inferred:
+            raise ValueError("Informe uma referencia valida para a oferta.")
+        if len({item.subcategory_id for item in self.components}) != len(self.components):
+            raise ValueError("A mesma subcategoria nao pode ser repetida na composicao.")
+        self.reference_type = inferred
+        values = {"percentage": self.discount_percent, "fixed_discount": self.discount_amount, "fixed_price": self.fixed_promotional_price}
+        if self.pricing_strategy != "catalog" and values[self.pricing_strategy] is None:
+            raise ValueError("A estrategia de preco exige seu valor correspondente.")
+        if any(value is not None for key, value in values.items() if key != self.pricing_strategy):
+            raise ValueError("Informe somente o valor da estrategia de preco selecionada.")
+        if self.pricing_strategy == "catalog" and any(value is not None for value in values.values()):
+            raise ValueError("A estrategia catalog nao aceita desconto estrategico.")
         if self.price_promotional > self.price_original:
             raise ValueError("O preço promocional não pode superar o preço original.")
         if self.sales_starts_at and self.sales_ends_at and self.sales_ends_at <= self.sales_starts_at:
@@ -143,6 +179,14 @@ class StrategicOfferCreate(BaseModel):
 class StrategicOfferUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
+    reference_type: Literal["product", "kit", "subcategory", "mixed_subcategories"] | None = None
+    product_id: str | None = None
+    kit_id: str | None = None
+    components: list[StrategicOfferComponentIn] | None = Field(default=None, max_length=100)
+    pricing_strategy: Literal["catalog", "percentage", "fixed_discount", "fixed_price"] | None = None
+    discount_percent: Decimal | None = Field(default=None, gt=0, le=100, decimal_places=4)
+    discount_amount: Decimal | None = Field(default=None, gt=0, decimal_places=2)
+    fixed_promotional_price: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     price_original: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     price_promotional: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     active: bool | None = None
@@ -188,6 +232,13 @@ class StrategicOfferOut(BaseModel):
     description: str | None
     product_id: str | None
     kit_id: str | None
+    reference_type: str = "product"
+    components: list[StrategicOfferComponentIn] = Field(default_factory=list)
+    pricing_strategy: str = "catalog"
+    discount_percent: Decimal | None = None
+    discount_amount: Decimal | None = None
+    fixed_promotional_price: Decimal | None = None
+    composition_revision: int = 1
     price_original: Decimal
     price_promotional: Decimal
     active: bool
@@ -259,6 +310,13 @@ class StrategicCampaignSnapshotOffer(BaseModel):
     description: str | None = None
     product_id: str | None = None
     kit_id: str | None = None
+    reference_type: str = "product"
+    components: list[StrategicOfferComponentIn] = Field(default_factory=list)
+    pricing_strategy: str = "catalog"
+    discount_percent: Decimal | None = None
+    discount_amount: Decimal | None = None
+    fixed_promotional_price: Decimal | None = None
+    composition_revision: int = 1
     price_original: Decimal
     price_promotional: Decimal
     active: bool = True
@@ -268,6 +326,8 @@ class StrategicCampaignSnapshotOffer(BaseModel):
     sales_starts_at: datetime | None = None
     sales_ends_at: datetime | None = None
     show_when_sold_out: bool = True
+    available: bool | None = None
+    remaining_quantity: int | None = None
     button_text: str | None = None
     image_desktop_url: str | None = None
     image_mobile_url: str | None = None
@@ -293,3 +353,23 @@ class StrategicCampaignSnapshot(BaseModel):
 class StrategicCampaignPublicOut(StrategicCampaignSnapshotCampaign):
     schema_version: int = STRATEGIC_CAMPAIGN_SNAPSHOT_SCHEMA_VERSION
     offers: list[StrategicCampaignSnapshotOffer] = Field(default_factory=list)
+
+
+class StrategicAvailableCampaignOut(BaseModel):
+    id: str
+    name: str
+    commercial_name: str
+    slug: str
+    published_version: int
+    offers_available: int
+
+
+class StrategicOfferConfigurationOut(BaseModel):
+    offer_id: str
+    campaign_id: str
+    campaign_version: int
+    composition_revision: int
+    reference_type: str
+    pricing_strategy: str
+    price_range: dict[str, Decimal | None]
+    steps: list[dict[str, Any]]

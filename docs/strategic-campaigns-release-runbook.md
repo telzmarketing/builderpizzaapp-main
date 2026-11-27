@@ -1,10 +1,10 @@
-# Campanhas Estratégicas — Runbook de Release C10
+# Campanhas Estratégicas — Runbook de Release C11
 
 Status: preparado, não executado
 
 Data: 2026-11-26
 
-Target Alembic: `20261126_strategic_campaign_publish_rbac_c9`
+Target Alembic: `20261126_strategic_campaigns_c11`
 
 ## 1. Objetivo e limites
 
@@ -17,7 +17,7 @@ O candidato deve usar SHA completo e reproduzível. Não usar working tree, `git
 - escopo revisado e candidato fechado;
 - commit/push somente após autorização específica e CI verde no SHA completo;
 - no mínimo `55 passed` backend e `17 passed` frontend, typecheck e builds do pipeline no mesmo SHA;
-- head único `20261126_strategic_campaign_publish_rbac_c9`;
+- head único `20261126_strategic_campaigns_c11`;
 - upgrade ensaiado em PostgreSQL real vazio e com dados representativos;
 - concorrência de capacidade/reservas comprovada com conexões independentes;
 - E2E autenticado de RBAC, tenant, publicação, landing e checkout canônico;
@@ -32,7 +32,7 @@ Modelo, não executado:
 
 ```bash
 TARGET_SHA='<SHA-COMPLETO-APROVADO>'
-ALEMBIC_TARGET='20261126_strategic_campaign_publish_rbac_c9'
+ALEMBIC_TARGET='20261126_strategic_campaigns_c11'
 
 sudo env \
   TELZ_ALEMBIC_TARGET="$ALEMBIC_TARGET" \
@@ -87,7 +87,8 @@ Exigir SHA/manifesto, CI/builds, ensaio PostgreSQL/concorrência, revisão Alemb
 
 - Documentação C10: preparada.
 - Head esperado: confirmado localmente.
-- Backend: `55 passed`; frontend: `17 passed`; typecheck e build client: aprovados.
+- Backend focado C0-C11/target Alembic: `76 passed` na rodada consolidada, com os reparos finais revalidados; frontend focado: `20 passed`.
+- Typecheck do recorte C11: aprovado; o typecheck global segue bloqueado por erros sintáticos preexistentes em `CrmAgenteWhatsApp.tsx`, fora deste escopo.
 - PostgreSQL real/concorrência e integrações físicas/externas: pendentes.
 - Commit, push e deploy: não executados.
 - Produção: inalterada por este checkpoint.
