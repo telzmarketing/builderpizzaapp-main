@@ -149,12 +149,9 @@ export function getStrategicOfferComponents(
 export function buildStrategicOfferConfig(
   draft: Pick<
     OfferDraft,
-    | "sourceType"
-    | "components"
-    | "selectionQuantity"
-    | "pricingStrategy"
-    | "pricingValue"
-  >,
+    "sourceType" | "components" | "pricingStrategy" | "pricingValue"
+  > &
+    Partial<Pick<OfferDraft, "selectionQuantity">>,
 ): ApiStrategicOfferConfig {
   const value = Number(draft.pricingValue);
   const config: ApiStrategicOfferConfig = {
@@ -187,12 +184,9 @@ export function buildStrategicOfferConfig(
 export function buildStrategicOfferCommercialContract(
   draft: Pick<
     OfferDraft,
-    | "sourceType"
-    | "components"
-    | "selectionQuantity"
-    | "pricingStrategy"
-    | "pricingValue"
-  >,
+    "sourceType" | "components" | "pricingStrategy" | "pricingValue"
+  > &
+    Partial<Pick<OfferDraft, "selectionQuantity">>,
 ) {
   const pricingValue = Number(draft.pricingValue);
   const components =
@@ -232,7 +226,8 @@ export function calculateStrategicOfferPriceRange(
     | "pricingStrategy"
     | "pricingValue"
     | "priceOriginal"
-  >,
+  > &
+    Partial<Pick<OfferDraft, "selectionQuantity">>,
   products: ApiProduct[],
   kits: ApiPromotionalKit[],
 ) {
