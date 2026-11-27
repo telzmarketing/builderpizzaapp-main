@@ -10,6 +10,7 @@ import {
   type StrategicOfferSelection,
 } from "@/lib/strategicOfferSelection";
 import type { ManualCartLine } from "@/lib/manualOrder";
+import { isAssetUrl, resolveOptimizedAssetUrl } from "@/lib/api";
 
 export default function StrategicOfferConfigurator({
   configuration,
@@ -94,9 +95,18 @@ export default function StrategicOfferConfigurator({
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {products.map((product) => (
                   <button key={product.id} type="button" onClick={() => setSelectedProductId(product.id)} className="min-h-32 rounded-2xl border border-surface-03 bg-surface-01 p-4 text-left transition-colors hover:border-gold">
-                    <span className="text-3xl">{product.icon || "🍕"}</span>
+                    <span className="flex h-24 w-full items-center justify-center overflow-hidden rounded-xl bg-surface-02">
+                      {isAssetUrl(product.icon) ? (
+                        <img
+                          src={resolveOptimizedAssetUrl(product.icon, 240)}
+                          alt={product.name}
+                          className="h-full w-full object-contain"
+                          loading="lazy"
+                        />
+                      ) : <span className="text-3xl">{product.icon || "🍕"}</span>}
+                    </span>
                     <strong className="mt-3 block">{product.name}</strong>
-                    <span className="mt-1 block text-xs text-stone">Configurar</span>
+                    <span className="mt-1 block text-xs text-stone">Escolher</span>
                   </button>
                 ))}
               </div>

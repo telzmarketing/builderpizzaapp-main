@@ -694,6 +694,11 @@ export default function StrategicCampaignOffersTab({
       );
       return;
     }
+    const referencePrice = Number(draft.priceOriginal);
+    if (!Number.isFinite(referencePrice) || referencePrice < 0) {
+      setMessage("Informe o valor de referência da oferta, incluindo o frete grátis.");
+      return;
+    }
     const pricingValue = Number(draft.pricingValue);
     if (
       (draft.pricingStrategy !== "catalog" && !Number.isFinite(pricingValue)) ||
@@ -729,10 +734,7 @@ export default function StrategicCampaignOffersTab({
       const common = {
         title: draft.title.trim(),
         description: draft.description.trim() || null,
-        price_original: Math.max(
-          priceRange.originalMaximum,
-          priceRange.promotionalMaximum,
-        ),
+        price_original: referencePrice,
         price_promotional: priceRange.promotionalMinimum,
         quantity_limit: draft.quantityLimit
           ? Number(draft.quantityLimit)
@@ -868,9 +870,11 @@ export default function StrategicCampaignOffersTab({
   };
 
   const pricePreview =
-    priceRange.promotionalMinimum === priceRange.promotionalMaximum
-      ? `R$ ${priceRange.promotionalMinimum.toFixed(2)}`
-      : `R$ ${priceRange.promotionalMinimum.toFixed(2)} a R$ ${priceRange.promotionalMaximum.toFixed(2)}`;
+    draft.pricingStrategy === "fixed_price" && Number.isFinite(Number(draft.pricingValue))
+      ? `R$ ${Number(draft.pricingValue).toFixed(2)}`
+      : priceRange.promotionalMinimum === priceRange.promotionalMaximum
+        ? `R$ ${priceRange.promotionalMinimum.toFixed(2)}`
+        : `R$ ${priceRange.promotionalMinimum.toFixed(2)} a R$ ${priceRange.promotionalMaximum.toFixed(2)}`;
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1672,6 +1676,24 @@ export default function StrategicCampaignOffersTab({
                     />
                   </label>
                   <label className="text-xs text-parchment">
+                    Valor de referência da oferta (inclui frete grátis)
+                    <input
+                      required
+                      min="0"
+                      step="0.01"
+                      type="number"
+                      value={draft.priceOriginal}
+                      onChange={(event) =>
+                        setDraft({ ...draft, priceOriginal: event.target.value })
+                      }
+                      className={inputClass}
+                      placeholder="Ex.: 43,90"
+                    />
+                    <span className="mt-1 block text-[11px] text-stone">
+                      Este valor é informado manualmente e não é puxado do cardápio.
+                    </span>
+                  </label>
+                  <label className="text-xs text-parchment">
                     Estratégia de preço
                     <select
                       value={draft.pricingStrategy}
@@ -1738,9 +1760,8 @@ export default function StrategicCampaignOffersTab({
                     </strong>
                     <span>
                       Faixa original calculada pelo catálogo: R${" "}
-                      {priceRange.originalMinimum.toFixed(2)} a R${" "}
-                      {priceRange.originalMaximum.toFixed(2)}. O backend
-                      confirma o valor final.
+                      {Number(draft.priceOriginal || 0).toFixed(2)}. O frete
+                      grÃ¡tis pode ser embutido neste valor.
                     </span>
                   </div>
                   <label className="text-xs text-parchment">

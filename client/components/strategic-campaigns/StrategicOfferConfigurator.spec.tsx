@@ -14,7 +14,7 @@ describe("StrategicOfferConfigurator", () => {
       pricing_strategy: "fixed_price",
       price_range: { minimum: 80, maximum: 100, fixed_promotional: 89.9 },
       steps: [
-        { key: "traditional:1", position: 1, subcategory_id: "traditional", subcategory_name: "Tradicionais", eligible_products: [{ id: "pizza", name: "Pizza", price: 50, icon: "🍕" }] },
+        { key: "traditional:1", position: 1, subcategory_id: "traditional", subcategory_name: "Tradicionais", eligible_products: [{ id: "pizza", name: "Pizza", price: 50, icon: "/uploads/pizza.webp" }] },
         { key: "special:1", position: 2, subcategory_id: "special", subcategory_name: "Especiais", eligible_products: [{ id: "special", name: "Especial", price: 60, icon: "🍕" }] },
       ],
     });
@@ -24,5 +24,7 @@ describe("StrategicOfferConfigurator", () => {
     expect(html).toContain("Tradicionais");
     expect(html).toContain("Pizza");
     expect(html).toContain("Especiais");
+    expect(html).toContain("/uploads/optimized/240/pizza.webp");
+    expect(html).toContain("Escolher");
   });
 });
