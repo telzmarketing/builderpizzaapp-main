@@ -55,6 +55,7 @@ const products = [
   { id: "traditional-2", subcategory_id: "traditional", price: 45, current_price: 45 },
   { id: "special-1", subcategory_id: "special", price: 60, current_price: 55 },
   { id: "special-2", subcategory_id: "special", price: 75, current_price: 75 },
+  { id: "cola-1", category_id: "drinks-direct", subcategory_id: null, price: 8, current_price: 8, active: true },
 ] as ApiProduct[];
 
 const categories = [
@@ -62,14 +63,23 @@ const categories = [
   { id: "traditional", name: "Tradicionais", parent_id: "pizzas", active: true, sort_order: 1 },
   { id: "drinks", name: "Bebidas", parent_id: null, active: true, sort_order: 2 },
   { id: "sodas", name: "Refrigerantes", parent_id: "drinks", active: true, sort_order: 1 },
+  { id: "drinks-direct", name: "Bebidas diretas", parent_id: null, active: true, sort_order: 3 },
 ] as ApiProductCategory[];
 
 describe("strategic offer admin commercial contract", () => {
   it("offers every active parent category that has active subcategories", () => {
-    expect(getActiveCatalogParentCategories(categories).map((category) => category.id)).toEqual([
+    expect(getActiveCatalogParentCategories(categories, products).map((category) => category.id)).toEqual([
       "pizzas",
       "drinks",
+      "drinks-direct",
     ]);
+  });
+
+  it("offers an active root category that contains direct products", () => {
+    expect(getActiveCatalogParentCategories(
+      categories.filter((category) => category.id !== "drinks" && category.id !== "sodas"),
+      products,
+    ).map((category) => category.id)).toContain("drinks-direct");
   });
 
   it("prioritizes C11 top-level reference fields and preserves component order", () => {
@@ -168,8 +178,8 @@ describe("strategic offer admin commercial contract", () => {
       sourceType: "mixed_subcategories" as const,
       selectionQuantity: "99",
       selectionGroups: [
-        { categoryId: "pizzas", subcategoryIds: ["traditional", "special"], quantity: "2" },
-        { categoryId: "drinks", subcategoryIds: ["sodas"], quantity: "1" },
+        { categoryId: "pizzas", subcategoryIds: ["traditional", "special"], productIds: [], quantity: "2" },
+        { categoryId: "drinks", subcategoryIds: ["sodas"], productIds: [], quantity: "1" },
       ],
       components: [
         { subcategoryId: "traditional", quantity: "1" },
@@ -189,5 +199,26 @@ describe("strategic offer admin commercial contract", () => {
     ]);
     expect(config.selection_groups).toEqual(contract.selection_groups);
     expect(config.selection_quantity).toBe(3);
+  });
+
+  it("serializes direct catalog products without dropping subcategory compatibility", () => {
+    const contract = buildStrategicOfferCommercialContract({
+      sourceType: "mixed_subcategories" as const,
+      components: [{ subcategoryId: "traditional", quantity: "1" }],
+      selectionGroups: [
+        { categoryId: "pizzas", subcategoryIds: ["traditional"], productIds: [], quantity: "1" },
+        { categoryId: "drinks-direct", subcategoryIds: [], productIds: ["cola-1"], quantity: "1" },
+      ],
+      pricingStrategy: "catalog" as const,
+      pricingValue: "",
+    });
+
+    expect(contract.selection_groups).toEqual([
+      { category_id: "pizzas", subcategory_ids: ["traditional"], quantity: 1 },
+      { category_id: "drinks-direct", subcategory_ids: [], product_ids: ["cola-1"], quantity: 1 },
+    ]);
+    expect(contract.components).toEqual([
+      { subcategory_id: "traditional", quantity: 1, allow_repeated_products: true, restrictions: null },
+    ]);
   });
 });

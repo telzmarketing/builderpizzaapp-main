@@ -105,7 +105,7 @@ class StrategicOfferCompositionService:
             selection_groups = self._selection_groups(offer)
             if selection_groups is not None:
                 for group in selection_groups:
-                    products = self._eligible_products_for_subcategories(group["subcategory_ids"])
+                    products = self._eligible_products_for_selection_group(group)
                     prices = [Decimal(str(product.price)).quantize(CENT) for product in products]
                     minimum += min(prices) * group["quantity"]
                     maximum += max(prices) * group["quantity"]
@@ -276,12 +276,9 @@ class StrategicOfferCompositionService:
                 if offer.reference_type == "mixed_subcategories":
                     product = self._product(item.product_id)
                     selection_group = self._selection_group_for_step(offer, selection.step_key)
-                    allowed_subcategories = (
-                        set(selection_group["subcategory_ids"])
-                        if selection_group is not None
-                        else {component.subcategory_id for component in offer.components}
-                    )
-                    if product is None or product.subcategory_id not in allowed_subcategories:
+                    allowed_subcategories = set(selection_group["subcategory_ids"]) if selection_group else {component.subcategory_id for component in offer.components}
+                    allowed_products = set(selection_group["product_ids"]) if selection_group else set()
+                    if product is None or (allowed_products and product.id not in allowed_products) or (not allowed_products and product.subcategory_id not in allowed_subcategories):
                         product = None
                 if offer.reference_type == "product" and product.id != offer.product_id:
                     product = None
@@ -291,24 +288,22 @@ class StrategicOfferCompositionService:
                     restrictions = (offer.config or {}).get("restrictions") or {}
                 else:
                     if offer.reference_type == "mixed_subcategories":
-                        component = next(
-                            row for row in offer.components
-                            if row.subcategory_id == product.subcategory_id
-                        )
-                        component_position = component.position
                         selection_group_index = (
                             self._selection_group_for_step(offer, selection.step_key) or {"index": 0}
                         )["index"]
+                        selection_group = self._selection_group_for_step(offer, selection.step_key)
+                        component = next((row for row in offer.components if row.subcategory_id == product.subcategory_id), None)
+                        component_position = component.position if component is not None else -1
                     else:
                         component_position = int(selection.step_key.split("component-")[-1].split(":", 1)[0])
                         component = next(row for row in offer.components if row.position == component_position)
                         selection_group_index = 0
                     group_index = self._step_group_index(selection.step_key)
                     bucket = seen.setdefault((group_index, selection_group_index, component_position), set())
-                    if not component.allow_repeated_products and product.id in bucket:
+                    if component is not None and not component.allow_repeated_products and product.id in bucket:
                         raise DomainError("A oferta nao permite repetir produtos nesta subcategoria.", code="StrategicOfferRepeatedProduct")
                     bucket.add(product.id)
-                    restrictions = component.restrictions or {}
+                    restrictions = component.restrictions or {} if component is not None else {}
                 self._assert_item_restrictions(item, restrictions)
                 items.append(item)
             offer._pricing_quantity = request.quantity
@@ -537,31 +532,41 @@ class StrategicOfferCompositionService:
             raise DomainError("Os grupos de escolha da oferta sao invalidos.", code="StrategicOfferSelectionGroupsInvalid")
         groups: list[dict] = []
         seen_subcategories: set[str] = set()
+        seen_products: set[str] = set()
         for index, candidate in enumerate(raw, start=1):
             if not isinstance(candidate, dict):
                 raise DomainError("Os grupos de escolha da oferta sao invalidos.", code="StrategicOfferSelectionGroupsInvalid")
-            subcategory_ids = candidate.get("subcategory_ids")
+            subcategory_ids = candidate.get("subcategory_ids") or []
+            product_ids = candidate.get("product_ids") or []
             quantity = candidate.get("quantity")
             if (
                 not isinstance(subcategory_ids, list)
-                or not subcategory_ids
+                or not isinstance(product_ids, list)
+                or bool(subcategory_ids) == bool(product_ids)
                 or any(not isinstance(value, str) or not value.strip() for value in subcategory_ids)
+                or any(not isinstance(value, str) or not value.strip() for value in product_ids)
                 or len(set(subcategory_ids)) != len(subcategory_ids)
+                or len(set(product_ids)) != len(product_ids)
                 or isinstance(quantity, bool)
                 or not isinstance(quantity, int)
                 or quantity < 1
                 or quantity > 100
                 or seen_subcategories.intersection(subcategory_ids)
+                or seen_products.intersection(product_ids)
             ):
                 raise DomainError("Os grupos de escolha da oferta sao invalidos.", code="StrategicOfferSelectionGroupsInvalid")
             seen_subcategories.update(subcategory_ids)
+            seen_products.update(product_ids)
             category_id = candidate.get("category_id")
+            if product_ids and (not isinstance(category_id, str) or not category_id.strip()):
+                raise DomainError("Produtos diretos exigem category_id.", code="StrategicOfferSelectionGroupsInvalid")
             title = candidate.get("title")
             groups.append({
                 "index": index,
                 "category_id": category_id if isinstance(category_id, str) else None,
                 "title": title.strip() if isinstance(title, str) and title.strip() else f"Escolha do grupo {index}",
                 "subcategory_ids": list(subcategory_ids),
+                "product_ids": list(product_ids),
                 "quantity": quantity,
             })
         component_subcategories = {
@@ -661,6 +666,37 @@ class StrategicOfferCompositionService:
                 if product.id not in seen_ids:
                     products.append(product)
                     seen_ids.add(product.id)
+        return products
+
+    def _eligible_products_for_selection_group(self, group: dict) -> list[Product]:
+        if group.get("subcategory_ids"):
+            return self._eligible_products_for_subcategories(group["subcategory_ids"])
+        category_id = group.get("category_id")
+        product_ids = group.get("product_ids") or []
+        category = self.db.query(ProductCategory).filter(
+            ProductCategory.tenant_id == self.tenant_id,
+            ProductCategory.id == category_id,
+            ProductCategory.parent_id.is_(None),
+            ProductCategory.active.is_(True),
+        ).first()
+        if not category:
+            raise DomainError("Categoria da oferta nao encontrada.", code="StrategicOfferCategoryNotFound")
+        products = self.db.query(Product).filter(
+            Product.tenant_id == self.tenant_id,
+            Product.id.in_(product_ids),
+            Product.category_id == category_id,
+            Product.subcategory_id.is_(None),
+            Product.active.is_(True),
+        ).order_by(Product.name, Product.id).all()
+        if len(products) != len(product_ids):
+            raise DomainError("Produto direto da categoria nao encontrado.", code="StrategicOfferProductNotFound")
+        if not products:
+            raise DomainError("Categoria sem produtos vendaveis.", code="StrategicOfferCategoryEmpty")
+        from backend.services.inventory_service import ProductInventoryAvailabilityService
+        availability = ProductInventoryAvailabilityService(self.db, self.tenant_id).product_payloads([product.id for product in products])
+        products = [product for product in products if availability.get(product.id, {}).get("inventory_available", True)]
+        if not products:
+            raise DomainError("Categoria sem produtos vendaveis.", code="StrategicOfferCategoryEmpty")
         return products
 
     @staticmethod

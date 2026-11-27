@@ -142,9 +142,10 @@ class StrategicCampaignService:
             raise DomainError("Produto da oferta não encontrado.", code="StrategicOfferProductNotFound")
         if payload.kit_id and not self.db.query(PromotionalKit).filter(PromotionalKit.tenant_id == self.tenant_id, PromotionalKit.id == payload.kit_id, PromotionalKit.active.is_(True)).first():
             raise DomainError("Kit da oferta não encontrado.", code="StrategicOfferKitNotFound")
-        self._assert_reference_shape(payload.reference_type, payload.product_id, payload.kit_id, payload.components)
+        self._assert_reference_shape(payload.reference_type, payload.product_id, payload.kit_id, payload.components, payload.config)
         self._assert_offer_promotion(payload.product_id, payload.config)
         self._assert_offer_components(payload.reference_type, payload.components)
+        self._assert_selection_groups(payload.reference_type, payload.config)
         self._assert_offer_period(payload.sales_starts_at, payload.sales_ends_at, campaign)
         data = payload.model_dump(exclude={"components", "selection_quantity"})
         if payload.selection_quantity is not None:
@@ -176,7 +177,8 @@ class StrategicCampaignService:
         product_id = data.get("product_id", row.product_id)
         kit_id = data.get("kit_id", row.kit_id)
         effective_components = components if components is not None else row.components
-        self._assert_reference_shape(reference_type, product_id, kit_id, effective_components)
+        effective_config = {**(row.config or {}), **(data.get("config") or {})}
+        self._assert_reference_shape(reference_type, product_id, kit_id, effective_components, effective_config)
         if "product_id" in data and product_id and not self.db.query(Product).filter(Product.tenant_id == self.tenant_id, Product.id == product_id, Product.active.is_(True)).first():
             raise DomainError("Produto da oferta nao encontrado.", code="StrategicOfferProductNotFound")
         if "kit_id" in data and kit_id and not self.db.query(PromotionalKit).filter(PromotionalKit.tenant_id == self.tenant_id, PromotionalKit.id == kit_id, PromotionalKit.active.is_(True)).first():
@@ -197,6 +199,8 @@ class StrategicCampaignService:
             self._assert_offer_components(reference_type, components)
             row.components = self._component_rows(row.id, components)
             row.composition_revision += 1
+        if "config" in data or components is not None or "reference_type" in data:
+            self._assert_selection_groups(reference_type, effective_config)
         if any(key in data for key in {"reference_type", "product_id", "kit_id", "pricing_strategy", "discount_percent", "discount_amount", "fixed_promotional_price"}) and components is None:
             row.composition_revision += 1
         self._assert_offer_period(data.get("sales_starts_at", row.sales_starts_at), data.get("sales_ends_at", row.sales_ends_at), campaign)
@@ -445,14 +449,79 @@ class StrategicCampaignService:
         if product_subcategories != set(ids):
             raise DomainError("Todas as subcategorias precisam ter produtos ativos.", code="StrategicOfferSubcategoryEmpty")
 
+    def _assert_selection_groups(self, reference_type: str, config: dict | None) -> None:
+        raw_groups = (config or {}).get("selection_groups")
+        if raw_groups is None:
+            return
+        if reference_type != "mixed_subcategories" or not isinstance(raw_groups, list) or not raw_groups:
+            raise DomainError("Grupos de escolha exigem uma referencia mista valida.", code="StrategicOfferSelectionGroupsInvalid")
+        seen_subcategories: set[str] = set()
+        seen_products: set[str] = set()
+        for group in raw_groups:
+            if not isinstance(group, dict):
+                raise DomainError("Os grupos de escolha da oferta sao invalidos.", code="StrategicOfferSelectionGroupsInvalid")
+            category_id = group.get("category_id")
+            subcategory_ids = group.get("subcategory_ids") or []
+            product_ids = group.get("product_ids") or []
+            quantity = group.get("quantity")
+            if not isinstance(quantity, int) or not 1 <= quantity <= 100:
+                raise DomainError("Os grupos de escolha da oferta sao invalidos.", code="StrategicOfferSelectionGroupsInvalid")
+            if bool(subcategory_ids) == bool(product_ids):
+                raise DomainError("Cada grupo deve apontar para subcategorias ou produtos diretos.", code="StrategicOfferSelectionGroupsInvalid")
+            if len(set(subcategory_ids)) != len(subcategory_ids) or len(set(product_ids)) != len(product_ids):
+                raise DomainError("Os grupos de escolha nao podem repetir referencias.", code="StrategicOfferSelectionGroupsInvalid")
+            if subcategory_ids:
+                rows = self.db.query(ProductCategory).filter(
+                    ProductCategory.tenant_id == self.tenant_id,
+                    ProductCategory.id.in_(subcategory_ids),
+                    ProductCategory.active.is_(True),
+                ).all()
+                if len(rows) != len(subcategory_ids) or seen_subcategories.intersection(subcategory_ids):
+                    raise DomainError("Subcategoria da referencia nao encontrada ou repetida.", code="StrategicOfferSubcategoryNotFound")
+                if category_id:
+                    parent_ids = {row.parent_id for row in rows}
+                    if parent_ids != {category_id}:
+                        raise DomainError("Subcategoria nao pertence a categoria da referencia.", code="StrategicOfferSubcategoryNotFound")
+                elif any(row.parent_id is None for row in rows):
+                    raise DomainError("A referencia de subcategoria e invalida.", code="StrategicOfferSubcategoryNotFound")
+                available = {row[0] for row in self.db.query(Product.subcategory_id).filter(
+                    Product.tenant_id == self.tenant_id,
+                    Product.subcategory_id.in_(subcategory_ids),
+                    Product.active.is_(True),
+                ).distinct().all()}
+                if available != set(subcategory_ids):
+                    raise DomainError("Todas as subcategorias precisam ter produtos ativos.", code="StrategicOfferSubcategoryEmpty")
+                seen_subcategories.update(subcategory_ids)
+            else:
+                if not isinstance(category_id, str) or not category_id.strip():
+                    raise DomainError("Produtos diretos exigem category_id.", code="StrategicOfferSelectionGroupsInvalid")
+                category = self.db.query(ProductCategory).filter(
+                    ProductCategory.tenant_id == self.tenant_id,
+                    ProductCategory.id == category_id,
+                    ProductCategory.active.is_(True),
+                    ProductCategory.parent_id.is_(None),
+                ).first()
+                if not category:
+                    raise DomainError("Categoria de referencia nao encontrada.", code="StrategicOfferCategoryNotFound")
+                rows = self.db.query(Product.id).filter(
+                    Product.tenant_id == self.tenant_id,
+                    Product.id.in_(product_ids),
+                    Product.category_id == category_id,
+                    Product.subcategory_id.is_(None),
+                    Product.active.is_(True),
+                ).all()
+                if len(rows) != len(product_ids) or seen_products.intersection(product_ids):
+                    raise DomainError("Produto direto da referencia nao encontrado ou repetido.", code="StrategicOfferProductNotFound")
+                seen_products.update(product_ids)
+
     @staticmethod
-    def _assert_reference_shape(reference_type: str, product_id: str | None, kit_id: str | None, components) -> None:
+    def _assert_reference_shape(reference_type: str, product_id: str | None, kit_id: str | None, components, config: dict | None = None) -> None:
         count = len(components or [])
         valid = (
             reference_type == "product" and bool(product_id) and not kit_id and count == 0
             or reference_type == "kit" and bool(kit_id) and not product_id and count == 0
             or reference_type == "subcategory" and not product_id and not kit_id and count == 1
-            or reference_type == "mixed_subcategories" and not product_id and not kit_id and count >= 2
+            or reference_type == "mixed_subcategories" and not product_id and not kit_id and (count >= 2 or bool((config or {}).get("selection_groups")))
         )
         if not valid:
             raise DomainError("Referencia e composicao da oferta sao inconsistentes.", code="StrategicOfferReferenceInvalid")

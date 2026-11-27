@@ -87,10 +87,32 @@ class StrategicOfferComponentIn(BaseModel):
     restrictions: StrategicOfferRestrictions | None = None
 
 
+class StrategicOfferSelectionGroup(BaseModel):
+    """Independent catalog reference used by mixed strategic offers."""
+
+    category_id: StrategicCatalogId | None = None
+    subcategory_ids: list[StrategicCatalogId] = Field(default_factory=list, max_length=100)
+    product_ids: list[StrategicCatalogId] = Field(default_factory=list, max_length=100)
+    quantity: int = Field(ge=1, le=100)
+
+    @model_validator(mode="after")
+    def validate_reference(self):
+        if len(self.subcategory_ids) != len(set(self.subcategory_ids)):
+            raise ValueError("O grupo nao pode repetir subcategorias.")
+        if len(self.product_ids) != len(set(self.product_ids)):
+            raise ValueError("O grupo nao pode repetir produtos.")
+        if bool(self.subcategory_ids) == bool(self.product_ids):
+            raise ValueError("O grupo deve informar subcategorias ou produtos diretos.")
+        if self.product_ids and not self.category_id:
+            raise ValueError("Produtos diretos exigem category_id.")
+        return self
+
+
 class StrategicOfferConfig(BaseModel):
     pricing_mode: Literal["catalog", "product_promotion", "strategic_price"] | None = None
     product_promotion_id: StrategicCatalogId | None = None
     restrictions: StrategicOfferRestrictions | None = None
+    selection_groups: list[StrategicOfferSelectionGroup] | None = Field(default=None, max_length=100)
 
     model_config = ConfigDict(extra="allow")
 
@@ -152,11 +174,15 @@ class StrategicOfferCreate(BaseModel):
             raise ValueError("A referencia product exige somente product_id.")
         if inferred == "kit" and (not self.kit_id or self.product_id or self.components):
             raise ValueError("A referencia kit exige somente kit_id.")
-        if inferred in {"subcategory", "mixed_subcategories"} and (self.product_id or self.kit_id or not self.components):
+        selection_groups = self.config.get("selection_groups")
+        has_selection_groups = bool(selection_groups)
+        if inferred == "subcategory" and (self.product_id or self.kit_id or not self.components):
             raise ValueError("Ofertas por subcategoria exigem componentes e nao aceitam produto ou kit direto.")
+        if inferred == "mixed_subcategories" and (self.product_id or self.kit_id or (not self.components and not has_selection_groups)):
+            raise ValueError("Ofertas mistas exigem componentes ou grupos de escolha.")
         if inferred == "subcategory" and len(self.components) != 1:
             raise ValueError("A referencia subcategory exige exatamente um componente.")
-        if inferred == "mixed_subcategories" and len(self.components) < 2:
+        if inferred == "mixed_subcategories" and len(self.components) < 2 and not has_selection_groups:
             raise ValueError("A referencia mixed_subcategories exige ao menos dois componentes.")
         if not inferred:
             raise ValueError("Informe uma referencia valida para a oferta.")

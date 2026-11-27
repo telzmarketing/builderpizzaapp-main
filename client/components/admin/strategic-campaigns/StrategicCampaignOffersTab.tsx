@@ -43,6 +43,7 @@ type ComponentDraft = {
 type SelectionGroupDraft = {
   categoryId: string;
   subcategoryIds: string[];
+  productIds: string[];
   quantity: string;
 };
 
@@ -168,6 +169,7 @@ function selectionGroupsFromComponents(
     const current = groups.get(categoryId) ?? {
       categoryId,
       subcategoryIds: [],
+      productIds: [],
       quantity: previous.find((group) => group.categoryId === categoryId)?.quantity ?? "1",
     };
     if (!current.subcategoryIds.includes(component.subcategoryId)) {
@@ -182,6 +184,7 @@ function selectionGroupsPayload(groups: SelectionGroupDraft[]): StrategicOfferSe
   return groups.map((group) => ({
     category_id: group.categoryId,
     subcategory_ids: group.subcategoryIds,
+    ...(group.productIds.length ? { product_ids: group.productIds } : {}),
     quantity: Math.max(1, Math.trunc(Number(group.quantity) || 1)),
   }));
 }
@@ -195,6 +198,7 @@ function selectionGroupsTotal(groups: SelectionGroupDraft[]) {
 
 export function getActiveCatalogParentCategories(
   categories: ApiProductCategory[],
+  products: ApiProduct[] = [],
 ): ApiProductCategory[] {
   const activeSubcategoryParentIds = new Set(
     categories
@@ -206,7 +210,13 @@ export function getActiveCatalogParentCategories(
       (category) =>
         category.active &&
         !category.parent_id &&
-        activeSubcategoryParentIds.has(category.id),
+        (activeSubcategoryParentIds.has(category.id) ||
+          products.some(
+            (product) =>
+              product.active &&
+              product.category_id === category.id &&
+              !product.subcategory_id,
+          )),
     )
     .sort(
       (left, right) =>
@@ -331,7 +341,10 @@ export function calculateStrategicOfferPriceRange(
     if (draft.sourceType === "mixed_subcategories" && draft.selectionGroups?.length) {
       for (const group of draft.selectionGroups) {
         const eligiblePrices = products
-          .filter((product) => group.subcategoryIds.includes(product.subcategory_id ?? ""))
+          .filter((product) =>
+            group.subcategoryIds.includes(product.subcategory_id ?? "") ||
+            group.productIds.includes(product.id),
+          )
           .map((product) => Number(product.price))
           .filter((price) => Number.isFinite(price) && price >= 0);
         if (!eligiblePrices.length) continue;
@@ -398,6 +411,7 @@ function offerDraft(offer: ApiStrategicOffer): OfferDraft {
   const selectionGroups = savedGroups.map((group) => ({
     categoryId: group.category_id,
     subcategoryIds: group.subcategory_ids,
+    productIds: group.product_ids ?? [],
     quantity: String(group.quantity),
   }));
   const pricingStrategy =
@@ -569,8 +583,8 @@ export default function StrategicCampaignOffersTab({
   );
 
   const catalogParentCategories = useMemo(
-    () => getActiveCatalogParentCategories(categories),
-    [categories],
+    () => getActiveCatalogParentCategories(categories, products),
+    [categories, products],
   );
 
   const priceRange = useMemo(
@@ -620,8 +634,13 @@ export default function StrategicCampaignOffersTab({
       setMessage("Selecione uma subcategoria e informe a quantidade.");
       return;
     }
-    if (draft.sourceType === "mixed_subcategories" && composition.length < 2) {
-      setMessage("Adicione pelo menos duas subcategorias para criar a mescla.");
+    const selectedMixedReferences = draft.selectionGroups.reduce(
+      (total, group) =>
+        total + group.subcategoryIds.filter(Boolean).length + group.productIds.filter(Boolean).length,
+      0,
+    );
+    if (draft.sourceType === "mixed_subcategories" && selectedMixedReferences < 2) {
+      setMessage("Adicione pelo menos duas referências de produtos para criar a mescla.");
       return;
     }
     if (
@@ -1255,6 +1274,12 @@ export default function StrategicCampaignOffersTab({
                           const groupSubcategories = subcategories.filter(
                             (subcategory) => subcategory.parent_id === group.categoryId,
                           );
+                          const directProducts = products.filter(
+                            (product) =>
+                              product.active &&
+                              product.category_id === group.categoryId &&
+                              !product.subcategory_id,
+                          );
                           return (
                             <section key={group.categoryId} className="space-y-3 rounded-xl border border-gold/35 bg-gold/5 p-3">
                               <div className="flex items-center justify-between gap-3">
@@ -1287,7 +1312,9 @@ export default function StrategicCampaignOffersTab({
                                   <Trash2 size={14} />
                                 </button>
                               </div>
-                              {group.subcategoryIds.map((subcategoryId, subcategoryIndex) => (
+                              {groupSubcategories.length > 0 ? (
+                                <>
+                                {group.subcategoryIds.map((subcategoryId, subcategoryIndex) => (
                                 <div key={`${group.categoryId}-${subcategoryIndex}`} className="flex items-end gap-2">
                                   <label className="min-w-0 flex-1 text-xs text-parchment">
                                     Subcategoria
@@ -1391,6 +1418,99 @@ export default function StrategicCampaignOffersTab({
                                   />
                                 </label>
                               </div>
+                                </>
+                              ) : (
+                                <>
+                                  <p className="text-xs text-stone">
+                                    Escolha os produtos ativos desta referência.
+                                  </p>
+                                  {group.productIds.map((productId, productIndex) => (
+                                    <div key={`${group.categoryId}-product-${productIndex}`} className="flex items-end gap-2">
+                                      <label className="min-w-0 flex-1 text-xs text-parchment">
+                                        Produto
+                                        <select
+                                          value={productId}
+                                          onChange={(event) => setDraft((current) => ({
+                                            ...current,
+                                            selectionGroups: current.selectionGroups.map((item) =>
+                                              item.categoryId === group.categoryId
+                                                ? { ...item, productIds: item.productIds.map((id, index) => index === productIndex ? event.target.value : id) }
+                                                : item,
+                                            ),
+                                          }))}
+                                          className={inputClass}
+                                        >
+                                          <option value="">Selecione</option>
+                                          {directProducts.map((product) => (
+                                            <option
+                                              key={product.id}
+                                              value={product.id}
+                                              disabled={group.productIds.some((id, index) => id === product.id && index !== productIndex)}
+                                            >
+                                              {product.name}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </label>
+                                      <button
+                                        type="button"
+                                        aria-label={`Remover produto ${productIndex + 1} de ${parent?.name ?? "categoria"}`}
+                                        onClick={() => setDraft((current) => ({
+                                          ...current,
+                                          selectionGroups: current.selectionGroups.map((item) =>
+                                            item.categoryId === group.categoryId
+                                              ? { ...item, productIds: item.productIds.filter((_, index) => index !== productIndex) }
+                                              : item,
+                                          ),
+                                        }))}
+                                        className="rounded-lg border border-red-500/30 p-2 text-red-300"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </div>
+                                  ))}
+                                  <div className="flex flex-wrap items-end gap-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => setDraft((current) => ({
+                                        ...current,
+                                        selectionGroups: current.selectionGroups.map((item) =>
+                                          item.categoryId === group.categoryId
+                                            ? { ...item, productIds: [...item.productIds, ""] }
+                                            : item,
+                                        ),
+                                      }))}
+                                      className="inline-flex items-center gap-2 rounded-lg border border-surface-03 px-3 py-2 text-sm font-semibold text-parchment"
+                                    >
+                                      <Plus size={14} /> Adicionar produto
+                                    </button>
+                                    <label className="min-w-[12rem] text-xs text-parchment">
+                                      Quantidade de {parent?.name ?? "produtos"}
+                                      <input
+                                        required
+                                        min="1"
+                                        max="100"
+                                        step="1"
+                                        type="number"
+                                        value={group.quantity}
+                                        onChange={(event) => setDraft((current) => {
+                                          const selectionGroups = current.selectionGroups.map((item) =>
+                                            item.categoryId === group.categoryId
+                                              ? { ...item, quantity: event.target.value }
+                                              : item,
+                                          );
+                                          return {
+                                            ...current,
+                                            selectionGroups,
+                                            selectionQuantity: String(selectionGroupsTotal(selectionGroups) || 1),
+                                          };
+                                        })}
+                                        className={inputClass}
+                                      />
+                                    </label>
+                                  </div>
+                                </>
+                              )}
                             </section>
                           );
                         })}
@@ -1420,7 +1540,12 @@ export default function StrategicCampaignOffersTab({
                                   if (!categoryId || current.selectionGroups.some((group) => group.categoryId === categoryId)) return current;
                                   const selectionGroups = [
                                     ...current.selectionGroups,
-                                    { categoryId, subcategoryIds: [""], quantity: "1" },
+                                    {
+                                      categoryId,
+                                      subcategoryIds: subcategories.some((item) => item.parent_id === categoryId) ? [""] : [],
+                                      productIds: subcategories.some((item) => item.parent_id === categoryId) ? [] : [""],
+                                      quantity: "1",
+                                    },
                                   ];
                                   return { ...current, selectionGroups };
                                 });

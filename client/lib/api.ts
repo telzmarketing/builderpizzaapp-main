@@ -1315,6 +1315,7 @@ export interface StrategicOfferComponent {
 export interface StrategicOfferSelectionGroup {
   category_id: string;
   subcategory_ids: string[];
+  product_ids?: string[];
   quantity: number;
 }
 
