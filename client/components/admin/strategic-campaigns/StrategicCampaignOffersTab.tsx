@@ -453,6 +453,7 @@ export default function StrategicCampaignOffersTab({
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [catalogReferenceToAdd, setCatalogReferenceToAdd] = useState("");
 
   useEffect(() => {
     setCatalogLoading(true);
@@ -480,6 +481,35 @@ export default function StrategicCampaignOffersTab({
   useEffect(() => {
     if (!formOpen) setDraft(emptyDraft(campaign));
   }, [campaign, formOpen]);
+
+  useEffect(() => {
+    if (
+      draft.sourceType !== "mixed_subcategories" ||
+      draft.selectionGroups.length > 0 ||
+      !draft.components.some((component) => component.subcategoryId) ||
+      categories.length === 0
+    ) {
+      return;
+    }
+    setDraft((current) => {
+      if (
+        current.sourceType !== "mixed_subcategories" ||
+        current.selectionGroups.length > 0
+      ) {
+        return current;
+      }
+      const selectionGroups = selectionGroupsFromComponents(
+        current.components,
+        categories,
+        current.selectionGroups,
+      );
+      return {
+        ...current,
+        selectionGroups,
+        selectionQuantity: String(selectionGroupsTotal(selectionGroups) || 1),
+      };
+    });
+  }, [categories, draft.components, draft.selectionGroups.length, draft.sourceType]);
 
   const sources = useMemo(() => {
     const term = search.trim().toLocaleLowerCase("pt-BR");
@@ -516,6 +546,23 @@ export default function StrategicCampaignOffersTab({
     [categories],
   );
 
+  const catalogParentCategories = useMemo(
+    () =>
+      categories
+        .filter(
+          (category) =>
+            category.active &&
+            !category.parent_id &&
+            subcategories.some((subcategory) => subcategory.parent_id === category.id),
+        )
+        .sort(
+          (left, right) =>
+            left.sort_order - right.sort_order ||
+            left.name.localeCompare(right.name, "pt-BR"),
+        ),
+    [categories, subcategories],
+  );
+
   const priceRange = useMemo(
     () => calculateStrategicOfferPriceRange(draft, products, kits),
     [draft, kits, products],
@@ -526,6 +573,7 @@ export default function StrategicCampaignOffersTab({
     setDraft(emptyDraft(campaign));
     setSearch("");
     setMessage("");
+    setCatalogReferenceToAdd("");
     setFormOpen(true);
   };
 
@@ -534,6 +582,7 @@ export default function StrategicCampaignOffersTab({
     setDraft(offerDraft(offer));
     setSearch("");
     setMessage("");
+    setCatalogReferenceToAdd("");
     setFormOpen(true);
   };
 
@@ -969,12 +1018,7 @@ export default function StrategicCampaignOffersTab({
                             components:
                               type === "subcategory"
                                 ? [{ subcategoryId: "", quantity: "1" }]
-                                : type === "mixed_subcategories"
-                                  ? [
-                                      { subcategoryId: "", quantity: "1" },
-                                      { subcategoryId: "", quantity: "1" },
-                                    ]
-                                  : [],
+                                : [],
                           }))
                         }
                         className={`rounded-xl border px-3 py-2 text-sm font-semibold ${draft.sourceType === type ? "border-gold bg-gold/15 text-gold" : "border-surface-03 text-parchment"}`}
@@ -1192,34 +1236,146 @@ export default function StrategicCampaignOffersTab({
                         ))}
                         {draft.sourceType === "mixed_subcategories" && draft.selectionGroups.map((group) => {
                           const parent = categories.find((category) => category.id === group.categoryId);
+                          const groupSubcategories = subcategories.filter(
+                            (subcategory) => subcategory.parent_id === group.categoryId,
+                          );
                           return (
-                            <label key={group.categoryId} className="block rounded-xl border border-gold/25 bg-gold/10 p-3 text-sm text-parchment">
-                              Quantidade de {parent?.name ?? "produtos da categoria"}
-                              <input
-                                required
-                                min="1"
-                                max="100"
-                                step="1"
-                                type="number"
-                                value={group.quantity}
-                                onChange={(event) => setDraft((current) => {
-                                  const selectionGroups = current.selectionGroups.map((item) =>
-                                    item.categoryId === group.categoryId
-                                      ? { ...item, quantity: event.target.value }
-                                      : item,
-                                  );
-                                  return {
-                                    ...current,
-                                    selectionGroups,
-                                    selectionQuantity: String(selectionGroupsTotal(selectionGroups) || 1),
-                                  };
-                                })}
-                                className={inputClass}
-                              />
-                              <span className="mt-1 block text-xs text-stone">
-                                Escolhas entre: {group.subcategoryIds.map((subcategoryId) => subcategories.find((item) => item.id === subcategoryId)?.name ?? subcategoryId).join(", ")}.
-                              </span>
-                            </label>
+                            <section key={group.categoryId} className="space-y-3 rounded-xl border border-gold/35 bg-gold/5 p-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <h4 className="font-semibold text-cream">
+                                    Referência do catálogo: {parent?.name ?? "Categoria"}
+                                  </h4>
+                                  <p className="text-xs text-stone">
+                                    Escolha as subcategorias elegíveis desta referência.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  aria-label={`Remover referência ${parent?.name ?? group.categoryId}`}
+                                  onClick={() => setDraft((current) => {
+                                    const selectionGroups = current.selectionGroups.filter(
+                                      (item) => item.categoryId !== group.categoryId,
+                                    );
+                                    return {
+                                      ...current,
+                                      selectionGroups,
+                                      components: selectionGroups.flatMap((item) =>
+                                        item.subcategoryIds.map((subcategoryId) => ({ subcategoryId, quantity: "1" })),
+                                      ),
+                                      selectionQuantity: String(selectionGroupsTotal(selectionGroups) || 1),
+                                    };
+                                  })}
+                                  className="rounded-lg border border-red-500/30 p-2 text-red-300"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                              {group.subcategoryIds.map((subcategoryId, subcategoryIndex) => (
+                                <div key={`${group.categoryId}-${subcategoryIndex}`} className="flex items-end gap-2">
+                                  <label className="min-w-0 flex-1 text-xs text-parchment">
+                                    Subcategoria
+                                    <select
+                                      value={subcategoryId}
+                                      onChange={(event) => setDraft((current) => {
+                                        const selectionGroups = current.selectionGroups.map((item) => {
+                                          if (item.categoryId !== group.categoryId) return item;
+                                          const subcategoryIds = [...item.subcategoryIds];
+                                          subcategoryIds[subcategoryIndex] = event.target.value;
+                                          return { ...item, subcategoryIds };
+                                        });
+                                        return {
+                                          ...current,
+                                          selectionGroups,
+                                          components: selectionGroups.flatMap((item) =>
+                                            item.subcategoryIds.map((id) => ({ subcategoryId: id, quantity: "1" })),
+                                          ),
+                                        };
+                                      })}
+                                      className={inputClass}
+                                    >
+                                      <option value="">Selecione</option>
+                                      {groupSubcategories.map((subcategory) => (
+                                        <option
+                                          key={subcategory.id}
+                                          value={subcategory.id}
+                                          disabled={draft.selectionGroups.some((item) =>
+                                            item.subcategoryIds.some(
+                                              (id, otherIndex) =>
+                                                id === subcategory.id &&
+                                                !(item.categoryId === group.categoryId && otherIndex === subcategoryIndex),
+                                            ),
+                                          )}
+                                        >
+                                          {subcategory.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <button
+                                    type="button"
+                                    aria-label={`Remover subcategoria ${subcategoryIndex + 1} de ${parent?.name ?? "categoria"}`}
+                                    onClick={() => setDraft((current) => {
+                                      const selectionGroups = current.selectionGroups.map((item) =>
+                                        item.categoryId === group.categoryId
+                                          ? { ...item, subcategoryIds: item.subcategoryIds.filter((_, index) => index !== subcategoryIndex) }
+                                          : item,
+                                      );
+                                      return {
+                                        ...current,
+                                        selectionGroups,
+                                        components: selectionGroups.flatMap((item) =>
+                                          item.subcategoryIds.map((id) => ({ subcategoryId: id, quantity: "1" })),
+                                        ),
+                                      };
+                                    })}
+                                    className="rounded-lg border border-red-500/30 p-2 text-red-300"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              ))}
+                              <div className="flex flex-wrap items-end gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => setDraft((current) => {
+                                    const selectionGroups = current.selectionGroups.map((item) =>
+                                      item.categoryId === group.categoryId
+                                        ? { ...item, subcategoryIds: [...item.subcategoryIds, ""] }
+                                        : item,
+                                    );
+                                    return { ...current, selectionGroups };
+                                  })}
+                                  className="inline-flex items-center gap-2 rounded-lg border border-surface-03 px-3 py-2 text-sm font-semibold text-parchment"
+                                >
+                                  <Plus size={14} /> Adicionar subcategoria
+                                </button>
+                                <label className="min-w-[12rem] text-xs text-parchment">
+                                  Quantidade de {parent?.name ?? "produtos"}
+                                  <input
+                                    required
+                                    min="1"
+                                    max="100"
+                                    step="1"
+                                    type="number"
+                                    value={group.quantity}
+                                    onChange={(event) => setDraft((current) => {
+                                      const selectionGroups = current.selectionGroups.map((item) =>
+                                        item.categoryId === group.categoryId
+                                          ? { ...item, quantity: event.target.value }
+                                          : item,
+                                      );
+                                      return {
+                                        ...current,
+                                        selectionGroups,
+                                        selectionQuantity: String(selectionGroupsTotal(selectionGroups) || 1),
+                                      };
+                                    })}
+                                    className={inputClass}
+                                  />
+                                </label>
+                              </div>
+                            </section>
                           );
                         })}
                         {false && draft.sourceType === "mixed_subcategories" && (
@@ -1243,21 +1399,42 @@ export default function StrategicCampaignOffersTab({
                           </label>
                         )}
                         {draft.sourceType === "mixed_subcategories" && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setDraft((current) => ({
-                                ...current,
-                                components: [
-                                  ...current.components,
-                                  { subcategoryId: "", quantity: "1" },
-                                ],
-                              }))
-                            }
-                            className="inline-flex items-center gap-2 rounded-lg border border-surface-03 px-3 py-2 text-sm font-semibold text-parchment"
-                          >
-                            <Plus size={14} /> Adicionar subcategoria
-                          </button>
+                          <div className="flex flex-wrap items-end gap-2 rounded-xl border border-dashed border-surface-03 p-3">
+                            <label className="min-w-[15rem] flex-1 text-xs text-parchment">
+                              Adicionar referência de catálogo
+                              <select
+                                value={catalogReferenceToAdd}
+                                onChange={(event) => setCatalogReferenceToAdd(event.target.value)}
+                                className={inputClass}
+                              >
+                                <option value="">Selecione uma categoria</option>
+                                {catalogParentCategories
+                                  .filter((category) => !draft.selectionGroups.some((group) => group.categoryId === category.id))
+                                  .map((category) => (
+                                    <option key={category.id} value={category.id}>{category.name}</option>
+                                  ))}
+                              </select>
+                            </label>
+                            <button
+                              type="button"
+                              disabled={!catalogReferenceToAdd}
+                              onClick={() => {
+                                const categoryId = catalogReferenceToAdd;
+                                setDraft((current) => {
+                                  if (!categoryId || current.selectionGroups.some((group) => group.categoryId === categoryId)) return current;
+                                  const selectionGroups = [
+                                    ...current.selectionGroups,
+                                    { categoryId, subcategoryIds: [""], quantity: "1" },
+                                  ];
+                                  return { ...current, selectionGroups };
+                                });
+                                setCatalogReferenceToAdd("");
+                              }}
+                              className="inline-flex items-center gap-2 rounded-lg border border-gold px-3 py-2 text-sm font-semibold text-gold disabled:opacity-40"
+                            >
+                              <Plus size={14} /> Adicionar referência
+                            </button>
+                          </div>
                         )}
                         {draft.sourceType === "subcategory" && <label className="block rounded-xl border border-gold/25 bg-gold/10 p-3 text-sm text-parchment">
                           Quantidade total de produtos escolhíveis

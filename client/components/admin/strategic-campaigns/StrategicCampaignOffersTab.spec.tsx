@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ApiProduct, ApiPromotionalKit, ApiStrategicOffer } from "@/lib/api";
 import {
+  buildStrategicOfferConfig,
   buildStrategicOfferCommercialContract,
   calculateStrategicOfferPriceRange,
   getStrategicOfferComponents,
@@ -83,7 +84,7 @@ describe("strategic offer admin commercial contract", () => {
 
   it("serializes mixed subcategories and percentage at top-level and in legacy config", () => {
     const contract = buildStrategicOfferCommercialContract({
-      sourceType: "mixed_subcategories",
+      sourceType: "mixed_subcategories" as const,
       components: [
         { subcategoryId: "traditional", quantity: "2" },
         { subcategoryId: "special", quantity: "1" },
@@ -143,7 +144,7 @@ describe("strategic offer admin commercial contract", () => {
   });
 
   it("serializes mixed parent-category counters and their compatibility sum", () => {
-    const contract = buildStrategicOfferCommercialContract({
+    const draft = {
       sourceType: "mixed_subcategories",
       selectionQuantity: "99",
       selectionGroups: [
@@ -155,14 +156,18 @@ describe("strategic offer admin commercial contract", () => {
         { subcategoryId: "special", quantity: "1" },
         { subcategoryId: "sodas", quantity: "1" },
       ],
-      pricingStrategy: "fixed_price",
+      pricingStrategy: "fixed_price" as const,
       pricingValue: "39.90",
-    });
+    };
+    const contract = buildStrategicOfferCommercialContract(draft);
+    const config = buildStrategicOfferConfig(draft);
 
     expect(contract.selection_quantity).toBe(3);
     expect(contract.selection_groups).toEqual([
       { category_id: "pizzas", subcategory_ids: ["traditional", "special"], quantity: 2 },
       { category_id: "drinks", subcategory_ids: ["sodas"], quantity: 1 },
     ]);
+    expect(config.selection_groups).toEqual(contract.selection_groups);
+    expect(config.selection_quantity).toBe(3);
   });
 });
