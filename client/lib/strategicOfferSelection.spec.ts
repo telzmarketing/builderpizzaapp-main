@@ -68,7 +68,11 @@ describe("strategic offer sales selection", () => {
         },
       },
     }];
-    const result = buildStrategicOfferSelection(configuration, configured, "instance-1");
+    const result = buildStrategicOfferSelection(
+      configuration,
+      configured,
+      "00000000-0000-0000-0000-000000000001",
+    );
     expect(result.selection).toEqual({
       offer_id: "offer-1",
       campaign_version: 4,
@@ -78,7 +82,7 @@ describe("strategic offer sales selection", () => {
     });
     expect(result.selection).not.toHaveProperty("instance_id");
     expect(result.lines[0].strategic?.group).toMatchObject({
-      instanceId: "instance-1",
+      instanceId: "00000000-0000-0000-0000-000000000001",
       campaignVersion: 4,
       compositionRevision: 2,
       referenceType: "subcategory",
