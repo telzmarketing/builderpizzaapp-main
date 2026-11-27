@@ -44,11 +44,6 @@ class StrategicCampaign(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-    @property
-    def selection_quantity(self) -> int | None:
-        value = (self.config or {}).get("selection_quantity")
-        return int(value) if value is not None else None
-
     offers = relationship("StrategicOffer", back_populates="campaign", cascade="all, delete-orphan")
     versions = relationship("StrategicCampaignVersion", back_populates="campaign", cascade="all, delete-orphan")
 
@@ -96,6 +91,11 @@ class StrategicOffer(Base):
     archived_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    @property
+    def selection_quantity(self) -> int | None:
+        value = (self.config or {}).get("selection_quantity")
+        return int(value) if value is not None else None
 
     campaign = relationship("StrategicCampaign", back_populates="offers")
     components = relationship(
