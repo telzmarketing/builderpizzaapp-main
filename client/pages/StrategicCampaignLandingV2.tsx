@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import StrategicCampaignRenderer from "@/components/strategic-campaigns/StrategicCampaignRenderer";
 import StrategicOfferConfigurator from "@/components/strategic-campaigns/StrategicOfferConfigurator";
 import {
@@ -31,6 +31,7 @@ const localDateTimeValue = (value: string) => {
 export default function StrategicCampaignLandingV2() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { addToCart, multiFlavorsConfig } = useApp();
   const [campaign, setCampaign] = useState<ApiStrategicCampaign | null>(null);
   const [error, setError] = useState("");
@@ -41,6 +42,7 @@ export default function StrategicCampaignLandingV2() {
   const [selectedScheduledFor, setSelectedScheduledFor] = useState("");
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const trackedViewRef = useRef<string | null>(null);
+  const resumedAvailabilityRef = useRef(false);
 
   useEffect(() => {
     captureTrackingFromUrl();
@@ -64,12 +66,15 @@ export default function StrategicCampaignLandingV2() {
       .catch(() => setError("Campanha não encontrada ou encerrada."));
   }, [slug]);
 
-  const openOffer = async (offer: ApiStrategicOffer, scheduledFor = "") => {
+  const openOffer = async (offer: ApiStrategicOffer, scheduledFor = "", scheduledSlotId = "") => {
     if (!campaign) return;
-    setPendingOffer(null);
-    setAvailability(null);
-    if (scheduledFor) sessionStorage.setItem("telz:strategic-scheduled-for", scheduledFor);
-    else sessionStorage.removeItem("telz:strategic-scheduled-for");
+    if (scheduledFor) {
+      sessionStorage.setItem("telz:strategic-scheduled-for", scheduledFor);
+      sessionStorage.setItem("telz:strategic-scheduled-slot", scheduledSlotId);
+    } else {
+      sessionStorage.removeItem("telz:strategic-scheduled-for");
+      sessionStorage.removeItem("telz:strategic-scheduled-slot");
+    }
     trackEvent("strategic_campaign_offer_click", undefined, {
       campaign_id: campaign.id,
       campaign_slug: campaign.slug,
@@ -139,6 +144,15 @@ export default function StrategicCampaignLandingV2() {
     }
   };
 
+  useEffect(() => {
+    if (!campaign || searchParams.get("resume") !== "availability" || resumedAvailabilityRef.current) return;
+    const offerId = searchParams.get("offer");
+    const offer = campaign.offers.find((candidate) => candidate.id === offerId);
+    if (!offer) return;
+    resumedAvailabilityRef.current = true;
+    void selectOffer(offer);
+  }, [campaign, searchParams]);
+
   if (error)
     return (
       <div className="flex min-h-screen items-center justify-center bg-surface-00 p-6 text-center text-cream">
@@ -178,6 +192,7 @@ export default function StrategicCampaignLandingV2() {
                 offerId: configuration.offer_id,
                 campaignSlug: campaign.slug,
                 scheduledFor: sessionStorage.getItem("telz:strategic-scheduled-for"),
+                scheduledSlotId: sessionStorage.getItem("telz:strategic-scheduled-slot"),
                 group: {
                   instanceId,
                   name: configuration.title,
@@ -192,6 +207,10 @@ export default function StrategicCampaignLandingV2() {
               forwarded[15] = strategic;
               (addToCart as (...values: unknown[]) => void)(...forwarded);
             });
+            sessionStorage.setItem("telz:strategic-return", JSON.stringify({
+              slug: campaign.slug,
+              offerId: configuration.offer_id,
+            }));
             navigate("/cart");
           }}
         />
@@ -202,12 +221,12 @@ export default function StrategicCampaignLandingV2() {
     pendingOffer ? (
       <main className="flex min-h-screen items-start justify-center bg-surface-00 p-4 text-cream sm:p-8">
         <section className="w-full max-w-xl space-y-5 rounded-2xl border border-surface-03 bg-surface-01 p-5">
-          <button type="button" onClick={() => { setPendingOffer(null); setAvailability(null); }} className="text-sm text-stone hover:text-cream">← Voltar para ofertas</button>
+          <button type="button" onClick={() => { setPendingOffer(null); setAvailability(null); setSelectedScheduledFor(""); sessionStorage.removeItem("telz:strategic-scheduled-for"); sessionStorage.removeItem("telz:strategic-scheduled-slot"); }} className="text-sm text-stone hover:text-cream">← Voltar para ofertas</button>
           <div><p className="text-xs font-black uppercase tracking-widest text-gold">Disponibilidade</p><h1 className="text-xl font-black">Quando você quer receber?</h1><p className="mt-1 text-sm text-stone">Escolha o horário antes de montar sua pizza.</p></div>
           {availabilityLoading ? <p role="status" className="text-stone">Carregando horários...</p> : (
             <div className="space-y-3">
               {campaign.commercial_config.sales_mode !== "preorder" && <button type="button" onClick={() => openOffer(pendingOffer)} className="w-full rounded-xl border border-gold bg-gold/10 p-4 text-left"><strong>Agora</strong><span className="mt-1 block text-xs text-stone">Venda imediata, se a loja estiver aberta.</span></button>}
-              {availability?.dates.flatMap((day) => day.slots).filter((slot) => slot.available).map((slot) => <button key={slot.id} type="button" onClick={() => { const value = localDateTimeValue(slot.starts_at); setSelectedScheduledFor(value); openOffer(pendingOffer, value); }} className={`w-full rounded-xl border p-4 text-left ${selectedScheduledFor === localDateTimeValue(slot.starts_at) ? "border-gold bg-gold/10" : "border-surface-03 bg-surface-02"}`}><strong>{slot.label || new Date(slot.starts_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</strong><span className="mt-1 block text-xs text-stone">{slot.remaining_capacity} vagas disponíveis</span></button>)}
+              {availability?.dates.flatMap((day) => day.slots).filter((slot) => slot.available).map((slot) => <button key={slot.id} type="button" onClick={() => { const value = localDateTimeValue(slot.starts_at); setSelectedScheduledFor(value); openOffer(pendingOffer, value, slot.id); }} className={`w-full rounded-xl border p-4 text-left ${selectedScheduledFor === localDateTimeValue(slot.starts_at) ? "border-gold bg-gold/10" : "border-surface-03 bg-surface-02"}`}><strong>{slot.label || new Date(slot.starts_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</strong><span className="mt-1 block text-xs text-stone">{slot.remaining_capacity} pedidos disponíveis</span></button>)}
               {campaign.commercial_config.sales_mode === "preorder" && !availability?.dates.some((day) => day.slots.some((slot) => slot.available)) && <p role="alert" className="rounded-xl bg-amber-500/10 p-4 text-amber-200">Nenhum horário disponível para esta oferta.</p>}
             </div>
           )}

@@ -293,6 +293,23 @@ def public_campaign_availability(
     return ok(StrategicCampaignAvailabilityOut.model_validate(document))
 
 
+@router.post("/public/{campaign_id}/reservations", status_code=201)
+def create_public_strategic_reservation(
+    campaign_id: str,
+    body: StrategicReservationCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    context = resolve_public_tenant_context(request, db)
+    if context is None:
+        raise DomainError("Tenant publico nao resolvido.", code="PublicTenantRequired")
+    try:
+        row = StrategicCampaignCapacityService(db, context.tenant_id).create_reservation(campaign_id, body)
+        return created(StrategicReservationOut.model_validate(row))
+    except DomainError as exc:
+        return err(exc)
+
+
 @router.post("/{campaign_id}/capacity-slots", status_code=201)
 def create_capacity_slot(
     campaign_id: str,

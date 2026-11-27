@@ -158,6 +158,19 @@ export default function Cart() {
   const { pages, nav } = siteContent;
   const c = pages.cart;
   const cartGroups = useMemo(() => groupCartItems(cart), [cart]);
+  const strategicReturnItem = cart.find(
+    (item) => item.strategicCampaignSlug && item.strategicOfferId,
+  );
+  const hasStrategicOffer = Boolean(strategicReturnItem);
+  const handleBack = () => {
+    if (strategicReturnItem?.strategicCampaignSlug && strategicReturnItem.strategicOfferId) {
+      navigate(
+        `/campanha-estrategica/${encodeURIComponent(strategicReturnItem.strategicCampaignSlug)}?resume=availability&offer=${encodeURIComponent(strategicReturnItem.strategicOfferId)}`,
+      );
+      return;
+    }
+    navigate(-1);
+  };
 
   const [couponCode, setCouponCode] = useState("");
   const [couponDiscount, setCouponDiscount] = useState(0);
@@ -260,7 +273,7 @@ export default function Cart() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 flex flex-col">
         <div className="bg-brand-dark px-4 py-3 flex justify-between items-center sticky top-0 z-30">
-          <button onClick={() => navigate(-1)} className="translate-y-4 text-parchment hover:text-cream transition-colors lg:translate-y-2">
+          <button onClick={handleBack} className="translate-y-4 text-parchment hover:text-cream transition-colors lg:translate-y-2">
             <ChevronLeft size={24} />
           </button>
           <button onClick={() => navigate("/")} aria-label="Ir para a home da loja" className="translate-y-4 lg:translate-y-2">
@@ -291,7 +304,7 @@ export default function Cart() {
 
       {/* Header */}
       <div className="bg-brand-dark px-4 py-3 flex justify-between items-center sticky top-0 z-30">
-        <button onClick={() => navigate(-1)} className="translate-y-4 text-parchment hover:text-cream transition-colors lg:translate-y-2">
+        <button onClick={handleBack} className="translate-y-4 text-parchment hover:text-cream transition-colors lg:translate-y-2">
           <ChevronLeft size={24} />
         </button>
         <button onClick={() => navigate("/")} aria-label="Ir para a home da loja" className="translate-y-4 lg:translate-y-2">
@@ -463,19 +476,19 @@ export default function Cart() {
       <div className="fixed bottom-20 left-0 right-0 px-4">
         <button
           onClick={() => {
-            if (storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders) return;
+            if (storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders && !hasStrategicOffer) return;
             if (!customer) { navigate("/conta?redirect=/checkout"); return; }
             navigate("/checkout");
           }}
-          disabled={!!storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders}
+          disabled={!!storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders && !hasStrategicOffer}
           className={`w-full font-bold py-4 px-4 rounded-full text-center transition-colors text-base active:scale-95 shadow-lg flex items-center justify-center gap-2 ${
-            storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders
+            storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders && !hasStrategicOffer
               ? "bg-surface-03 text-stone cursor-not-allowed shadow-none"
               : "bg-gold hover:bg-gold/90 text-cream shadow-gold/30"
           }`}
         >
           <ShoppingCart size={18} />
-          {storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders
+          {storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders && !hasStrategicOffer
             ? "Loja fechada"
             : "Continuar para checkout"}
         </button>

@@ -755,7 +755,9 @@ class OrderService:
                 composition._assert_purchase_limits(
                     published_offer, quantity, payload.customer_id,
                     reservation_id=payload.reservation_id,
-                    require_confirmed_reservation=True,
+                    # A checkout-created hold is confirmed atomically by
+                    # _bind_checkout_reservation after the order is built.
+                    require_confirmed_reservation=not bool(payload.reservation_id),
                 )
         return payload.model_copy(update={"items": [*payload.items, *extra_items]}), resolved
 
@@ -813,7 +815,9 @@ class OrderService:
         StrategicOfferCompositionService(self._db, tenant_id)._assert_purchase_limits(
             offer, quantity, payload.customer_id,
             reservation_id=getattr(payload, "reservation_id", None),
-            require_confirmed_reservation=consume_limits,
+            # The reservation is held immediately before checkout and is
+            # promoted to confirmed while the order transaction is locked.
+            require_confirmed_reservation=consume_limits and not bool(getattr(payload, "reservation_id", None)),
         )
 
     def _bind_checkout_reservation(self, payload: CheckoutIn, order: Order, legacy_context, groups) -> None:
@@ -824,8 +828,18 @@ class OrderService:
             StrategicReservation.tenant_id == tenant_id,
             StrategicReservation.id == payload.reservation_id,
         ).with_for_update().first()
-        if not reservation or reservation.status != "confirmed" or reservation.order_id is not None:
+        if not reservation or reservation.status not in {"held", "confirmed"} or reservation.order_id is not None:
             raise DomainError("Reserva estrategica indisponivel para este pedido.", code="StrategicReservationUnavailable")
+        if reservation.status == "held":
+            now = datetime.now(timezone.utc)
+            expires_at = reservation.expires_at
+            if expires_at and expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at and expires_at <= now:
+                raise DomainError("A reserva estrategica expirou.", code="StrategicReservationExpired")
+            reservation.status = "confirmed"
+            reservation.confirmed_at = now
+            reservation.expires_at = None
         quantities: dict[str, int] = {}
         if legacy_context:
             quantities[legacy_context[1].id] = sum(max(0, int(item.quantity or 0)) for item in payload.items)

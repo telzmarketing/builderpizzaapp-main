@@ -1409,6 +1409,8 @@ export default function Product({
             offerId: searchParams.get("strategic_offer_id")!,
             campaignId: searchParams.get("strategic_campaign_id"),
             campaignSlug: searchParams.get("strategic_campaign_slug"),
+            scheduledFor: sessionStorage.getItem("telz:strategic-scheduled-for"),
+            scheduledSlotId: sessionStorage.getItem("telz:strategic-scheduled-slot"),
             group:
               searchParams.get("strategic_campaign_version") &&
               searchParams.get("strategic_composition_revision")

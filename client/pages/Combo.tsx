@@ -102,6 +102,8 @@ export default function Combo({ kitId }: ComboProps) {
           offerId: strategicOfferId,
           campaignId: searchParams.get("strategic_campaign_id"),
           campaignSlug: searchParams.get("strategic_campaign_slug"),
+          scheduledFor: sessionStorage.getItem("telz:strategic-scheduled-for"),
+          scheduledSlotId: sessionStorage.getItem("telz:strategic-scheduled-slot"),
           group:
             campaignVersion > 0 && compositionRevision > 0
               ? {

@@ -207,6 +207,13 @@ export default function Checkout() {
     customerLogout,
   } = useApp();
   const cartGroups = useMemo(() => groupCartItems(cart), [cart]);
+  const strategicCartGroup = cartGroups.find(
+    (group): group is Extract<(typeof cartGroups)[number], { kind: "strategic" }> => group.kind === "strategic",
+  );
+  const strategicReservationItem = strategicCartGroup?.items[0];
+  const strategicReservationCampaignId = strategicReservationItem?.strategicCampaignId ?? null;
+  const strategicReservationOfferId = strategicReservationItem?.strategicOfferId ?? null;
+  const strategicReservationSlotId = strategicReservationItem?.strategicScheduledSlotId ?? null;
   const [strategicCommercialConfig, setStrategicCommercialConfig] = useState<
     import("@/lib/api").StrategicCommercialConfig | null
   >(null);
@@ -302,6 +309,8 @@ export default function Checkout() {
     !!storeStatus && !storeStatus.is_open && strategicAllowsClosedStore;
   const [scheduledFor, setScheduledFor] = useState(() => {
     try {
+      const strategicScheduledFor = sessionStorage.getItem("telz:strategic-scheduled-for");
+      if (strategicScheduledFor) return strategicScheduledFor;
       const raw = sessionStorage.getItem(`telz:checkout-draft:v1:${tenantStorageScope()}`);
       const parsed = raw ? JSON.parse(raw) as { scheduledFor?: string } : null;
       return typeof parsed?.scheduledFor === "string"
@@ -1127,8 +1136,36 @@ export default function Checkout() {
         );
         return;
       }
+      let reservationId: string | undefined;
+      if (
+        mustSchedule &&
+        strategicReservationCampaignId &&
+        strategicReservationOfferId &&
+        strategicReservationSlotId &&
+        customer
+      ) {
+        const reservationKeyStorage = `telz:strategic-reservation:${strategicReservationCampaignId}:${strategicReservationOfferId}:${strategicReservationSlotId}:${customer.id}`;
+        const idempotencyKey = sessionStorage.getItem(reservationKeyStorage) ?? crypto.randomUUID();
+        sessionStorage.setItem(reservationKeyStorage, idempotencyKey);
+        const reservation = await strategicCampaignsApi.createPublicReservation(
+          strategicReservationCampaignId,
+          {
+            slot_id: strategicReservationSlotId,
+            offer_id: strategicReservationOfferId,
+            customer_reference: customer.id,
+            quantity: strategicCartGroup?.strategic.quantity ?? 1,
+            payment_mode: "no_payment",
+            amount_total: quote.total,
+            amount_paid: 0,
+            hold_minutes: 15,
+            idempotency_key: idempotencyKey,
+          },
+        );
+        reservationId = reservation.id;
+      }
       const order = await ordersApi.checkout({
         ...payload,
+        ...(reservationId ? { reservation_id: reservationId } : {}),
         expected_total: quote.total,
       });
       trackEvent("order_created", order.total, { order_id: order.id });

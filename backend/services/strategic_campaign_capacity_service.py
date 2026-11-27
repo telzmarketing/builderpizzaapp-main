@@ -332,7 +332,7 @@ class StrategicCampaignCapacityService:
         slot = self._slot(payload.slot_id, lock=True)
         if slot.campaign_id != campaign_id:
             raise DomainError("O slot nao pertence a campanha.", code="StrategicCapacitySlotCampaignMismatch")
-        if payload.offer_id != slot.offer_id:
+        if slot.offer_id is not None and payload.offer_id != slot.offer_id:
             raise DomainError("A oferta da reserva nao corresponde ao slot.", code="StrategicReservationOfferMismatch")
         if payload.offer_id is not None:
             from backend.services.strategic_offer_composition_service import StrategicOfferCompositionService

@@ -118,6 +118,7 @@ export interface CartItem {
   strategicCampaignSlug?: string | null;
   strategicGroup?: StrategicCartGroupMeta;
   strategicScheduledFor?: string | null;
+  strategicScheduledSlotId?: string | null;
 }
 
 export interface StrategicCartMeta {
@@ -126,6 +127,7 @@ export interface StrategicCartMeta {
   campaignSlug?: string | null;
   group?: StrategicCartGroupMeta;
   scheduledFor?: string | null;
+  scheduledSlotId?: string | null;
 }
 
 export interface CartPromotionMeta {
@@ -1071,6 +1073,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         strategicCampaignSlug: strategicOffer?.campaignSlug ?? null,
         strategicGroup: strategicOffer?.group,
         strategicScheduledFor: strategicOffer?.scheduledFor ?? null,
+        strategicScheduledSlotId: strategicOffer?.scheduledSlotId ?? null,
       },
     ]);
     const _td = getTrackingData();

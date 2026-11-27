@@ -11570,6 +11570,11 @@ export const strategicCampaignsApi = {
     get<ApiStrategicCampaignAvailability>(
       `/strategic-campaigns/public/${encodeURIComponent(campaignId)}/availability${offerId ? `?offer_id=${encodeURIComponent(offerId)}` : ""}`,
     ),
+  createPublicReservation: (campaignId: string, data: StrategicReservationCreate) =>
+    post<ApiStrategicReservation>(
+      `/strategic-campaigns/public/${encodeURIComponent(campaignId)}/reservations`,
+      data,
+    ),
   metrics: (id: string, dateFrom?: string, dateTo?: string) => {
     const qs = new URLSearchParams();
     if (dateFrom) qs.set("date_from", dateFrom);
