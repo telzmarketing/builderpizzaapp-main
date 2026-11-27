@@ -21,7 +21,13 @@ const tabs = [
 type Section = typeof tabs[number][0];
 const validSections = new Set<string>(tabs.map(([section]) => section));
 const money = (value: number | null | undefined) => value == null ? "—" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
-const localDateTime = (value: string | null) => value ? new Date(value).toISOString().slice(0, 16) : "";
+const localDateTime = (value: string | null) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return shifted.toISOString().slice(0, 16);
+};
 
 export default function StrategicCampaignDetail() {
   const { campaignId, section } = useParams<{ campaignId: string; section?: string }>();

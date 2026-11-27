@@ -101,7 +101,31 @@ class StrategicOfferCompositionService:
         steps = []
         minimum = Decimal("0.00")
         maximum = Decimal("0.00")
-        if offer.reference_type in {"subcategory", "mixed_subcategories"}:
+        if offer.reference_type == "mixed_subcategories":
+            total = self._selection_quantity(offer)
+            products = []
+            seen_ids: set[str] = set()
+            for component in offer.components:
+                for product in self._eligible_products(component.subcategory_id):
+                    if product.id not in seen_ids:
+                        products.append(product)
+                        seen_ids.add(product.id)
+            prices = [Decimal(str(product.price)).quantize(CENT) for product in products]
+            if not prices:
+                raise DomainError("A oferta nao possui produtos elegiveis.", code="StrategicOfferProductUnavailable")
+            minimum = min(prices) * total
+            maximum = max(prices) * total
+            for occurrence in range(1, total + 1):
+                steps.append({
+                    "key": f"mixed:{occurrence}",
+                    "step_key": f"mixed:{occurrence}",
+                    "position": len(steps),
+                    "subcategory_id": None,
+                    "title": "Escolha um produto das categorias elegiveis",
+                    "eligible_products": [self._product_document(product) for product in products],
+                    "restrictions": {},
+                })
+        elif offer.reference_type == "subcategory":
             for component in offer.components:
                 products = self._eligible_products(component.subcategory_id)
                 prices = [Decimal(str(product.price)).quantize(CENT) for product in products]
@@ -156,6 +180,7 @@ class StrategicOfferCompositionService:
             "campaign_id": campaign.id,
             "campaign_version": campaign.published_version,
             "composition_revision": offer.composition_revision,
+            "selection_quantity": getattr(offer, "selection_quantity", None),
             "reference_type": offer.reference_type,
             "pricing_strategy": offer.pricing_strategy,
             "price_range": {
@@ -201,6 +226,12 @@ class StrategicOfferCompositionService:
                 if item.kit_id or not item.product_id or item.quantity != 1:
                     raise DomainError("Cada etapa estrategica exige exatamente um produto.", code="StrategicOfferCompositionInvalid")
                 product = self._product(item.product_id, subcategory_id=subcategory_id)
+                if offer.reference_type == "mixed_subcategories":
+                    product = self._product(item.product_id)
+                    if product is None or product.subcategory_id not in {
+                        component.subcategory_id for component in offer.components
+                    }:
+                        product = None
                 if offer.reference_type == "product" and product.id != offer.product_id:
                     product = None
                 if not product:
@@ -208,8 +239,15 @@ class StrategicOfferCompositionService:
                 if offer.reference_type == "product":
                     restrictions = (offer.config or {}).get("restrictions") or {}
                 else:
-                    component_position = int(selection.step_key.split("component-")[-1].split(":", 1)[0])
-                    component = next(row for row in offer.components if row.position == component_position)
+                    if offer.reference_type == "mixed_subcategories":
+                        component = next(
+                            row for row in offer.components
+                            if row.subcategory_id == product.subcategory_id
+                        )
+                        component_position = component.position
+                    else:
+                        component_position = int(selection.step_key.split("component-")[-1].split(":", 1)[0])
+                        component = next(row for row in offer.components if row.position == component_position)
                     group_index = self._step_group_index(selection.step_key)
                     bucket = seen.setdefault((group_index, component_position), set())
                     if not component.allow_repeated_products and product.id in bucket:
@@ -396,6 +434,16 @@ class StrategicOfferCompositionService:
             return expected, subcategories
         if offer.reference_type not in {"subcategory", "mixed_subcategories"}:
             raise DomainError("Tipo de referencia estrategica nao suportado.", code="StrategicOfferGroupInvalid")
+        if offer.reference_type == "mixed_subcategories":
+            total = cls._selection_quantity(offer)
+            return (
+                [
+                    f"group-{group_index}:mixed:{occurrence}" if quantity > 1 else f"mixed:{occurrence}"
+                    for group_index in range(1, quantity + 1)
+                    for occurrence in range(1, total + 1)
+                ],
+                [None] * (quantity * total),
+            )
         for group_index in range(1, quantity + 1):
             for component in offer.components:
                 for occurrence in range(1, component.quantity + 1):
@@ -405,6 +453,18 @@ class StrategicOfferCompositionService:
                     expected.append(key)
                     subcategories.append(component.subcategory_id)
         return expected, subcategories
+
+    @staticmethod
+    def _selection_quantity(offer) -> int:
+        value = getattr(offer, "selection_quantity", None)
+        if value is None:
+            value = (offer.config or {}).get("selection_quantity")
+        if value is None:
+            value = sum(component.quantity for component in offer.components)
+        value = int(value)
+        if value < 1:
+            raise DomainError("Quantidade de escolhas da oferta invalida.", code="StrategicOfferQuantityInvalid")
+        return value
 
     @staticmethod
     def _step_group_index(step_key: str) -> int:
@@ -490,6 +550,7 @@ class StrategicOfferCompositionService:
             "campaign_id": campaign.id,
             "campaign_version": campaign.published_version,
             "composition_revision": offer.composition_revision,
+            "selection_quantity": getattr(offer, "selection_quantity", None),
             "code": offer.code,
             "title": offer.title,
             "description": offer.description,

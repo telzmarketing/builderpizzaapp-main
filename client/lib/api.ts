@@ -1345,6 +1345,7 @@ export interface ApiStrategicOfferConfiguration {
   campaign_id: string;
   campaign_version: number;
   composition_revision: number;
+  selection_quantity?: number | null;
   reference_type: StrategicOfferReferenceType;
   pricing_strategy: "catalog" | StrategicOfferPricingStrategy;
   price_range: {
@@ -1413,6 +1414,7 @@ export interface ApiStrategicOffer {
   discount_amount: number | null;
   fixed_promotional_price: number | null;
   composition_revision: number;
+  selection_quantity?: number | null;
   price_original: number;
   price_promotional: number;
   active: boolean;

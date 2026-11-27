@@ -146,7 +146,12 @@ class StrategicCampaignService:
         self._assert_offer_promotion(payload.product_id, payload.config)
         self._assert_offer_components(payload.reference_type, payload.components)
         self._assert_offer_period(payload.sales_starts_at, payload.sales_ends_at, campaign)
-        data = payload.model_dump(exclude={"components"})
+        data = payload.model_dump(exclude={"components", "selection_quantity"})
+        if payload.selection_quantity is not None:
+            data["config"] = {
+                **(data.get("config") or {}),
+                "selection_quantity": payload.selection_quantity,
+            }
         row = StrategicOffer(id=f"so-{uuid.uuid4().hex[:12]}", tenant_id=self.tenant_id, campaign_id=campaign_id, **data)
         row.components = self._component_rows(row.id, payload.components)
         self.db.add(row)
@@ -158,6 +163,14 @@ class StrategicCampaignService:
         self._assert_offer_not_archived(row)
         campaign = self._campaign(row.campaign_id)
         data = payload.model_dump(exclude_unset=True)
+        if "selection_quantity" in data:
+            selection_quantity = data.pop("selection_quantity")
+            if selection_quantity is not None:
+                data["config"] = {
+                    **(row.config or {}),
+                    **(data.get("config") or {}),
+                    "selection_quantity": selection_quantity,
+                }
         components = data.pop("components", None)
         reference_type = data.get("reference_type", row.reference_type)
         product_id = data.get("product_id", row.product_id)

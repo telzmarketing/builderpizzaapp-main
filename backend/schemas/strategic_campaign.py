@@ -118,6 +118,7 @@ class StrategicOfferCreate(BaseModel):
     kit_id: str | None = None
     reference_type: Literal["product", "kit", "subcategory", "mixed_subcategories"] | None = None
     components: list[StrategicOfferComponentIn] = Field(default_factory=list, max_length=100)
+    selection_quantity: int | None = Field(default=None, ge=1, le=100)
     pricing_strategy: Literal["catalog", "percentage", "fixed_discount", "fixed_price"] = "catalog"
     discount_percent: Decimal | None = Field(default=None, gt=0, le=100, decimal_places=4)
     discount_amount: Decimal | None = Field(default=None, gt=0, decimal_places=2)
@@ -183,6 +184,7 @@ class StrategicOfferUpdate(BaseModel):
     product_id: str | None = None
     kit_id: str | None = None
     components: list[StrategicOfferComponentIn] | None = Field(default=None, max_length=100)
+    selection_quantity: int | None = Field(default=None, ge=1, le=100)
     pricing_strategy: Literal["catalog", "percentage", "fixed_discount", "fixed_price"] | None = None
     discount_percent: Decimal | None = Field(default=None, gt=0, le=100, decimal_places=4)
     discount_amount: Decimal | None = Field(default=None, gt=0, decimal_places=2)
@@ -234,6 +236,7 @@ class StrategicOfferOut(BaseModel):
     kit_id: str | None
     reference_type: str = "product"
     components: list[StrategicOfferComponentIn] = Field(default_factory=list)
+    selection_quantity: int | None = None
     pricing_strategy: str = "catalog"
     discount_percent: Decimal | None = None
     discount_amount: Decimal | None = None

@@ -46,6 +46,7 @@ type OfferDraft = {
   sourceType: SourceType;
   sourceId: string;
   components: ComponentDraft[];
+  selectionQuantity: string;
   pricingStrategy: StrategicOfferPricingStrategy;
   pricingValue: string;
   priceOriginal: string;
@@ -87,14 +88,15 @@ function emptyDraft(campaign: ApiStrategicCampaign): OfferDraft {
     sourceType: "product",
     sourceId: "",
     components: [],
+    selectionQuantity: "",
     pricingStrategy: "fixed_price",
     pricingValue: "",
     priceOriginal: "",
     pricePromotional: "",
     quantityLimit: "",
     maxPerCustomer: "",
-    salesStartsAt: campaign.starts_at?.slice(0, 16) ?? "",
-    salesEndsAt: campaign.ends_at?.slice(0, 16) ?? "",
+    salesStartsAt: toLocalDateTime(campaign.starts_at),
+    salesEndsAt: toLocalDateTime(campaign.ends_at),
     buttonText: "Comprar agora",
     badgeText: "",
     imageDesktopUrl: "",
@@ -147,13 +149,21 @@ export function getStrategicOfferComponents(
 export function buildStrategicOfferConfig(
   draft: Pick<
     OfferDraft,
-    "sourceType" | "components" | "pricingStrategy" | "pricingValue"
+    | "sourceType"
+    | "components"
+    | "selectionQuantity"
+    | "pricingStrategy"
+    | "pricingValue"
   >,
 ): ApiStrategicOfferConfig {
   const value = Number(draft.pricingValue);
   const config: ApiStrategicOfferConfig = {
     reference_type: draft.sourceType,
     pricing_strategy: draft.pricingStrategy,
+    selection_quantity:
+      draft.sourceType === "mixed_subcategories"
+        ? Math.max(1, Math.trunc(Number(draft.selectionQuantity) || 1))
+        : undefined,
   };
   if (
     draft.sourceType === "subcategory" ||
@@ -177,7 +187,11 @@ export function buildStrategicOfferConfig(
 export function buildStrategicOfferCommercialContract(
   draft: Pick<
     OfferDraft,
-    "sourceType" | "components" | "pricingStrategy" | "pricingValue"
+    | "sourceType"
+    | "components"
+    | "selectionQuantity"
+    | "pricingStrategy"
+    | "pricingValue"
   >,
 ) {
   const pricingValue = Number(draft.pricingValue);
@@ -193,6 +207,10 @@ export function buildStrategicOfferCommercialContract(
       : [];
   return {
     reference_type: draft.sourceType,
+    selection_quantity:
+      draft.sourceType === "mixed_subcategories"
+        ? Math.max(1, Math.trunc(Number(draft.selectionQuantity) || 1))
+        : null,
     components,
     pricing_strategy: draft.pricingStrategy,
     discount_percent:
@@ -231,6 +249,15 @@ export function calculateStrategicOfferPriceRange(
     const kit = kits.find((item) => item.id === draft.sourceId);
     minimum = maximum = Number(kit?.price_original ?? draft.priceOriginal ?? 0);
   } else {
+    const hasExplicitSelectionQuantity =
+      draft.sourceType === "mixed_subcategories" &&
+      Number(draft.selectionQuantity) >= 1;
+    const multiplier =
+      draft.sourceType === "mixed_subcategories"
+        ? Number.isFinite(Number(draft.selectionQuantity)) && Number(draft.selectionQuantity) >= 1
+          ? Math.trunc(Number(draft.selectionQuantity))
+          : draft.components.reduce((total, component) => total + Math.max(1, Math.trunc(Number(component.quantity) || 1)), 0)
+        : 1;
     for (const component of draft.components) {
       const eligiblePrices = products
         .filter((product) => product.subcategory_id === component.subcategoryId)
@@ -238,8 +265,19 @@ export function calculateStrategicOfferPriceRange(
         .filter((price) => Number.isFinite(price) && price >= 0);
       if (!eligiblePrices.length) continue;
       const quantity = Math.max(1, Math.trunc(Number(component.quantity) || 1));
+      if (hasExplicitSelectionQuantity) continue;
       minimum += Math.min(...eligiblePrices) * quantity;
       maximum += Math.max(...eligiblePrices) * quantity;
+    }
+    if (hasExplicitSelectionQuantity) {
+      const eligiblePrices = products
+        .filter((product) => draft.components.some((component) => product.subcategory_id === component.subcategoryId))
+        .map((product) => Number(product.price))
+        .filter((price) => Number.isFinite(price) && price >= 0);
+      if (eligiblePrices.length) {
+        minimum = Math.min(...eligiblePrices) * multiplier;
+        maximum = Math.max(...eligiblePrices) * multiplier;
+      }
     }
   }
   const value = Math.max(0, Number(draft.pricingValue) || 0);
@@ -287,6 +325,8 @@ function offerDraft(offer: ApiStrategicOffer): OfferDraft {
       sourceType === "subcategory" && components.length === 0
         ? [{ subcategoryId: "", quantity: "1" }]
         : components,
+    selectionQuantity:
+      offer.selection_quantity == null ? "" : String(offer.selection_quantity),
     pricingStrategy,
     pricingValue: String(pricingValue ?? ""),
     priceOriginal: String(offer.price_original),
@@ -295,8 +335,8 @@ function offerDraft(offer: ApiStrategicOffer): OfferDraft {
       offer.quantity_limit == null ? "" : String(offer.quantity_limit),
     maxPerCustomer:
       offer.max_per_customer == null ? "" : String(offer.max_per_customer),
-    salesStartsAt: offer.sales_starts_at?.slice(0, 16) ?? "",
-    salesEndsAt: offer.sales_ends_at?.slice(0, 16) ?? "",
+    salesStartsAt: toLocalDateTime(offer.sales_starts_at),
+    salesEndsAt: toLocalDateTime(offer.sales_ends_at),
     buttonText: offer.button_text ?? "Comprar agora",
     badgeText: offer.badge_text ?? "",
     imageDesktopUrl: offer.image_desktop_url ?? "",
@@ -309,6 +349,14 @@ function offerDraft(offer: ApiStrategicOffer): OfferDraft {
 
 function toIso(value: string) {
   return value ? new Date(value).toISOString() : null;
+}
+
+function toLocalDateTime(value: string | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return shifted.toISOString().slice(0, 16);
 }
 
 export default function StrategicCampaignOffersTab({
@@ -437,6 +485,14 @@ export default function StrategicCampaignOffersTab({
       return;
     }
     if (
+      draft.sourceType === "mixed_subcategories" &&
+      (!Number.isInteger(Number(draft.selectionQuantity)) ||
+        Number(draft.selectionQuantity) < 1)
+    ) {
+      setMessage("Informe quantos produtos o cliente poderá escolher no total.");
+      return;
+    }
+    if (
       composition.some(
         (component) =>
           !Number.isInteger(Number(component.quantity)) ||
@@ -486,6 +542,10 @@ export default function StrategicCampaignOffersTab({
         quantity_limit: draft.quantityLimit
           ? Number(draft.quantityLimit)
           : null,
+        selection_quantity:
+          draft.sourceType === "mixed_subcategories"
+            ? Number(draft.selectionQuantity)
+            : null,
         max_per_customer: draft.maxPerCustomer
           ? Number(draft.maxPerCustomer)
           : null,
@@ -620,7 +680,11 @@ export default function StrategicCampaignOffersTab({
       : `R$ ${priceRange.promotionalMinimum.toFixed(2)} a R$ ${priceRange.promotionalMaximum.toFixed(2)}`;
   const totalProducts = draft.sourceType === "product" || draft.sourceType === "kit"
     ? 1
-    : draft.components.reduce((total, component) => total + Math.max(0, Math.trunc(Number(component.quantity) || 0)), 0);
+    : draft.sourceType === "mixed_subcategories"
+      ? Number(draft.selectionQuantity) >= 1
+        ? Math.trunc(Number(draft.selectionQuantity))
+        : draft.components.reduce((total, component) => total + Math.max(0, Math.trunc(Number(component.quantity) || 0)), 0)
+      : draft.components.reduce((total, component) => total + Math.max(0, Math.trunc(Number(component.quantity) || 0)), 0);
 
   return (
     <div className="space-y-5">
@@ -1056,6 +1120,26 @@ export default function StrategicCampaignOffersTab({
                             )}
                           </div>
                         ))}
+                        {draft.sourceType === "mixed_subcategories" && (
+                          <label className="block rounded-xl border border-gold/25 bg-gold/10 p-3 text-sm text-parchment">
+                            Quantidade total de produtos escolhíveis
+                            <input
+                              required
+                              min="1"
+                              max="100"
+                              step="1"
+                              type="number"
+                              value={draft.selectionQuantity}
+                              onChange={(event) =>
+                                setDraft({ ...draft, selectionQuantity: event.target.value })
+                              }
+                              className={inputClass}
+                            />
+                            <span className="mt-1 block text-xs text-stone">
+                              O cliente escolherá essa quantidade entre todas as subcategorias acima.
+                            </span>
+                          </label>
+                        )}
                         {draft.sourceType === "mixed_subcategories" && (
                           <button
                             type="button"
