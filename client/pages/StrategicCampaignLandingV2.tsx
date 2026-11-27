@@ -114,21 +114,29 @@ export default function StrategicCampaignLandingV2() {
   const selectOffer = async (offer: ApiStrategicOffer) => {
     if (!campaign) return;
     const mode = campaign.commercial_config.sales_mode;
-    if (mode === "hybrid" || mode === "preorder") {
-      setAvailabilityLoading(true);
-      setPendingOffer(offer);
-      setSelectedScheduledFor("");
-      try {
-        setAvailability(await strategicCampaignsApi.publicAvailability(campaign.id, offer.id));
-      } catch {
-        setAvailability(null);
-        if (mode === "preorder") setError("Não foi possível carregar os horários disponíveis.");
-      } finally {
-        setAvailabilityLoading(false);
+    setAvailabilityLoading(true);
+    setSelectedScheduledFor("");
+    try {
+      const currentAvailability = await strategicCampaignsApi.publicAvailability(campaign.id, offer.id);
+      const hasAvailableSlot = currentAvailability.dates.some((day) =>
+        day.slots.some((slot) => slot.available),
+      );
+      if (hasAvailableSlot || mode === "hybrid" || mode === "preorder") {
+        setAvailability(currentAvailability);
+        setPendingOffer(offer);
+      } else {
+        await openOffer(offer);
       }
-      return;
+    } catch {
+      setAvailability(null);
+      if (mode === "preorder" || mode === "hybrid") {
+        setError("Não foi possível carregar os horários disponíveis.");
+      } else {
+        await openOffer(offer);
+      }
+    } finally {
+      setAvailabilityLoading(false);
     }
-    await openOffer(offer);
   };
 
   if (error)
@@ -198,7 +206,7 @@ export default function StrategicCampaignLandingV2() {
           <div><p className="text-xs font-black uppercase tracking-widest text-gold">Disponibilidade</p><h1 className="text-xl font-black">Quando você quer receber?</h1><p className="mt-1 text-sm text-stone">Escolha o horário antes de montar sua pizza.</p></div>
           {availabilityLoading ? <p role="status" className="text-stone">Carregando horários...</p> : (
             <div className="space-y-3">
-              {campaign.commercial_config.sales_mode === "hybrid" && <button type="button" onClick={() => openOffer(pendingOffer)} className="w-full rounded-xl border border-gold bg-gold/10 p-4 text-left"><strong>Agora</strong><span className="mt-1 block text-xs text-stone">Venda imediata, se a loja estiver aberta.</span></button>}
+              {campaign.commercial_config.sales_mode !== "preorder" && <button type="button" onClick={() => openOffer(pendingOffer)} className="w-full rounded-xl border border-gold bg-gold/10 p-4 text-left"><strong>Agora</strong><span className="mt-1 block text-xs text-stone">Venda imediata, se a loja estiver aberta.</span></button>}
               {availability?.dates.flatMap((day) => day.slots).filter((slot) => slot.available).map((slot) => <button key={slot.id} type="button" onClick={() => { const value = localDateTimeValue(slot.starts_at); setSelectedScheduledFor(value); openOffer(pendingOffer, value); }} className={`w-full rounded-xl border p-4 text-left ${selectedScheduledFor === localDateTimeValue(slot.starts_at) ? "border-gold bg-gold/10" : "border-surface-03 bg-surface-02"}`}><strong>{slot.label || new Date(slot.starts_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</strong><span className="mt-1 block text-xs text-stone">{slot.remaining_capacity} vagas disponíveis</span></button>)}
               {campaign.commercial_config.sales_mode === "preorder" && !availability?.dates.some((day) => day.slots.some((slot) => slot.available)) && <p role="alert" className="rounded-xl bg-amber-500/10 p-4 text-amber-200">Nenhum horário disponível para esta oferta.</p>}
             </div>
