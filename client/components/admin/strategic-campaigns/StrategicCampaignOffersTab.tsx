@@ -193,6 +193,28 @@ function selectionGroupsTotal(groups: SelectionGroupDraft[]) {
   );
 }
 
+export function getActiveCatalogParentCategories(
+  categories: ApiProductCategory[],
+): ApiProductCategory[] {
+  const activeSubcategoryParentIds = new Set(
+    categories
+      .filter((category) => category.active && category.parent_id)
+      .map((category) => category.parent_id),
+  );
+  return categories
+    .filter(
+      (category) =>
+        category.active &&
+        !category.parent_id &&
+        activeSubcategoryParentIds.has(category.id),
+    )
+    .sort(
+      (left, right) =>
+        left.sort_order - right.sort_order ||
+        left.name.localeCompare(right.name, "pt-BR"),
+    );
+}
+
 export function buildStrategicOfferConfig(
   draft: Pick<
     OfferDraft,
@@ -547,20 +569,8 @@ export default function StrategicCampaignOffersTab({
   );
 
   const catalogParentCategories = useMemo(
-    () =>
-      categories
-        .filter(
-          (category) =>
-            category.active &&
-            !category.parent_id &&
-            subcategories.some((subcategory) => subcategory.parent_id === category.id),
-        )
-        .sort(
-          (left, right) =>
-            left.sort_order - right.sort_order ||
-            left.name.localeCompare(right.name, "pt-BR"),
-        ),
-    [categories, subcategories],
+    () => getActiveCatalogParentCategories(categories),
+    [categories],
   );
 
   const priceRange = useMemo(
@@ -598,9 +608,14 @@ export default function StrategicCampaignOffersTab({
       setMessage("Selecione um produto ou combo do catálogo.");
       return;
     }
-    const composition = draft.components.filter(
-      (component) => component.subcategoryId,
-    );
+    const composition =
+      draft.sourceType === "mixed_subcategories"
+        ? draft.selectionGroups.flatMap((group) =>
+            group.subcategoryIds
+              .filter(Boolean)
+              .map((subcategoryId) => ({ subcategoryId, quantity: "1" })),
+          )
+        : draft.components.filter((component) => component.subcategoryId);
     if (draft.sourceType === "subcategory" && composition.length !== 1) {
       setMessage("Selecione uma subcategoria e informe a quantidade.");
       return;
@@ -1094,7 +1109,8 @@ export default function StrategicCampaignOffersTab({
                       <p className="text-sm text-red-300">{catalogError}</p>
                     ) : (
                       <div className="space-y-3">
-                        {draft.components.map((component, index) => (
+                        {draft.sourceType === "subcategory" &&
+                          draft.components.map((component, index) => (
                           <div
                             key={`${index}-${component.subcategoryId}`}
                             className="rounded-xl border border-surface-03 bg-surface-02 p-3"
@@ -1233,7 +1249,7 @@ export default function StrategicCampaignOffersTab({
                               </p>
                             )}
                           </div>
-                        ))}
+                          ))}
                         {draft.sourceType === "mixed_subcategories" && draft.selectionGroups.map((group) => {
                           const parent = categories.find((category) => category.id === group.categoryId);
                           const groupSubcategories = subcategories.filter(
@@ -1378,26 +1394,6 @@ export default function StrategicCampaignOffersTab({
                             </section>
                           );
                         })}
-                        {false && draft.sourceType === "mixed_subcategories" && (
-                          <label className="block rounded-xl border border-gold/25 bg-gold/10 p-3 text-sm text-parchment">
-                            Quantidade total de produtos escolhíveis
-                            <input
-                              required
-                              min="1"
-                              max="100"
-                              step="1"
-                              type="number"
-                              value={draft.selectionQuantity}
-                              onChange={(event) =>
-                                setDraft({ ...draft, selectionQuantity: event.target.value })
-                              }
-                              className={inputClass}
-                            />
-                            <span className="mt-1 block text-xs text-stone">
-                              O cliente escolherá essa quantidade entre todas as subcategorias acima.
-                            </span>
-                          </label>
-                        )}
                         {draft.sourceType === "mixed_subcategories" && (
                           <div className="flex flex-wrap items-end gap-2 rounded-xl border border-dashed border-surface-03 p-3">
                             <label className="min-w-[15rem] flex-1 text-xs text-parchment">

@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { ApiProduct, ApiPromotionalKit, ApiStrategicOffer } from "@/lib/api";
+import type {
+  ApiProduct,
+  ApiProductCategory,
+  ApiPromotionalKit,
+  ApiStrategicOffer,
+} from "@/lib/api";
 import {
   buildStrategicOfferConfig,
   buildStrategicOfferCommercialContract,
   calculateStrategicOfferPriceRange,
+  getActiveCatalogParentCategories,
   getStrategicOfferComponents,
   getStrategicOfferReferenceType,
 } from "./StrategicCampaignOffersTab";
@@ -51,7 +57,21 @@ const products = [
   { id: "special-2", subcategory_id: "special", price: 75, current_price: 75 },
 ] as ApiProduct[];
 
+const categories = [
+  { id: "pizzas", name: "Pizzas", parent_id: null, active: true, sort_order: 1 },
+  { id: "traditional", name: "Tradicionais", parent_id: "pizzas", active: true, sort_order: 1 },
+  { id: "drinks", name: "Bebidas", parent_id: null, active: true, sort_order: 2 },
+  { id: "sodas", name: "Refrigerantes", parent_id: "drinks", active: true, sort_order: 1 },
+] as ApiProductCategory[];
+
 describe("strategic offer admin commercial contract", () => {
+  it("offers every active parent category that has active subcategories", () => {
+    expect(getActiveCatalogParentCategories(categories).map((category) => category.id)).toEqual([
+      "pizzas",
+      "drinks",
+    ]);
+  });
+
   it("prioritizes C11 top-level reference fields and preserves component order", () => {
     const current = offer({
       reference_type: "mixed_subcategories",
