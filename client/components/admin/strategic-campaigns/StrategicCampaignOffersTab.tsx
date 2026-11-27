@@ -25,6 +25,7 @@ import {
   type ApiStrategicCampaign,
   type ApiStrategicOffer,
   type ApiStrategicOfferConfig,
+  type StrategicOfferSelectionGroup,
   type StrategicOfferComponent,
   type StrategicOfferPricingStrategy,
   type StrategicOfferReferenceType,
@@ -39,6 +40,12 @@ type ComponentDraft = {
   restrictions?: Record<string, unknown> | null;
 };
 
+type SelectionGroupDraft = {
+  categoryId: string;
+  subcategoryIds: string[];
+  quantity: string;
+};
+
 type OfferDraft = {
   code: string;
   title: string;
@@ -46,6 +53,7 @@ type OfferDraft = {
   sourceType: SourceType;
   sourceId: string;
   components: ComponentDraft[];
+  selectionGroups: SelectionGroupDraft[];
   selectionQuantity: string;
   pricingStrategy: StrategicOfferPricingStrategy;
   pricingValue: string;
@@ -88,7 +96,8 @@ function emptyDraft(campaign: ApiStrategicCampaign): OfferDraft {
     sourceType: "product",
     sourceId: "",
     components: [],
-    selectionQuantity: "",
+    selectionGroups: [],
+    selectionQuantity: "1",
     pricingStrategy: "fixed_price",
     pricingValue: "",
     priceOriginal: "",
@@ -146,21 +155,60 @@ export function getStrategicOfferComponents(
     }));
 }
 
+function selectionGroupsFromComponents(
+  components: ComponentDraft[],
+  categories: ApiProductCategory[],
+  previous: SelectionGroupDraft[] = [],
+): SelectionGroupDraft[] {
+  const groups = new Map<string, SelectionGroupDraft>();
+  for (const component of components) {
+    if (!component.subcategoryId) continue;
+    const subcategory = categories.find((category) => category.id === component.subcategoryId);
+    const categoryId = subcategory?.parent_id ?? component.subcategoryId;
+    const current = groups.get(categoryId) ?? {
+      categoryId,
+      subcategoryIds: [],
+      quantity: previous.find((group) => group.categoryId === categoryId)?.quantity ?? "1",
+    };
+    if (!current.subcategoryIds.includes(component.subcategoryId)) {
+      current.subcategoryIds.push(component.subcategoryId);
+    }
+    groups.set(categoryId, current);
+  }
+  return [...groups.values()];
+}
+
+function selectionGroupsPayload(groups: SelectionGroupDraft[]): StrategicOfferSelectionGroup[] {
+  return groups.map((group) => ({
+    category_id: group.categoryId,
+    subcategory_ids: group.subcategoryIds,
+    quantity: Math.max(1, Math.trunc(Number(group.quantity) || 1)),
+  }));
+}
+
+function selectionGroupsTotal(groups: SelectionGroupDraft[]) {
+  return groups.reduce(
+    (total, group) => total + Math.max(1, Math.trunc(Number(group.quantity) || 1)),
+    0,
+  );
+}
+
 export function buildStrategicOfferConfig(
   draft: Pick<
     OfferDraft,
     "sourceType" | "components" | "pricingStrategy" | "pricingValue"
   > &
-    Partial<Pick<OfferDraft, "selectionQuantity">>,
+    Partial<Pick<OfferDraft, "selectionQuantity" | "selectionGroups">>,
 ): ApiStrategicOfferConfig {
   const value = Number(draft.pricingValue);
+  const selectionQuantity =
+    draft.sourceType === "mixed_subcategories" && draft.selectionGroups?.length
+      ? selectionGroupsTotal(draft.selectionGroups)
+      : Math.max(1, Math.trunc(Number(draft.selectionQuantity) || 1));
   const config: ApiStrategicOfferConfig = {
     reference_type: draft.sourceType,
     pricing_strategy: draft.pricingStrategy,
-    selection_quantity:
-      draft.sourceType === "mixed_subcategories"
-        ? Math.max(1, Math.trunc(Number(draft.selectionQuantity) || 1))
-        : undefined,
+    selection_quantity: selectionQuantity,
   };
   if (
     draft.sourceType === "subcategory" ||
@@ -168,10 +216,13 @@ export function buildStrategicOfferConfig(
   ) {
     config.components = draft.components.map((component) => ({
       subcategory_id: component.subcategoryId,
-      quantity: Math.max(1, Math.trunc(Number(component.quantity))),
+      quantity: 1,
       allow_repeated_products: component.allowRepeatedProducts ?? true,
       restrictions: component.restrictions ?? null,
     }));
+  }
+  if (draft.sourceType === "mixed_subcategories" && draft.selectionGroups?.length) {
+    config.selection_groups = selectionGroupsPayload(draft.selectionGroups);
   }
   if (draft.pricingStrategy === "percentage") config.discount_percent = value;
   if (draft.pricingStrategy === "fixed_discount")
@@ -186,26 +237,31 @@ export function buildStrategicOfferCommercialContract(
     OfferDraft,
     "sourceType" | "components" | "pricingStrategy" | "pricingValue"
   > &
-    Partial<Pick<OfferDraft, "selectionQuantity">>,
+    Partial<Pick<OfferDraft, "selectionQuantity" | "selectionGroups">>,
 ) {
   const pricingValue = Number(draft.pricingValue);
+  const selectionQuantity =
+    draft.sourceType === "mixed_subcategories" && draft.selectionGroups?.length
+      ? selectionGroupsTotal(draft.selectionGroups)
+      : Math.max(1, Math.trunc(Number(draft.selectionQuantity) || 1));
   const components =
     draft.sourceType === "subcategory" ||
     draft.sourceType === "mixed_subcategories"
       ? draft.components.map((component) => ({
           subcategory_id: component.subcategoryId,
-          quantity: Math.max(1, Math.trunc(Number(component.quantity))),
+          quantity: 1,
           allow_repeated_products: component.allowRepeatedProducts ?? true,
           restrictions: component.restrictions ?? null,
         }))
       : [];
   return {
     reference_type: draft.sourceType,
-    selection_quantity:
-      draft.sourceType === "mixed_subcategories"
-        ? Math.max(1, Math.trunc(Number(draft.selectionQuantity) || 1))
-        : null,
+    selection_quantity: selectionQuantity,
     components,
+    selection_groups:
+      draft.sourceType === "mixed_subcategories" && draft.selectionGroups?.length
+        ? selectionGroupsPayload(draft.selectionGroups)
+        : undefined,
     pricing_strategy: draft.pricingStrategy,
     discount_percent:
       draft.pricingStrategy === "percentage" ? pricingValue : null,
@@ -227,7 +283,7 @@ export function calculateStrategicOfferPriceRange(
     | "pricingValue"
     | "priceOriginal"
   > &
-    Partial<Pick<OfferDraft, "selectionQuantity">>,
+    Partial<Pick<OfferDraft, "selectionQuantity" | "selectionGroups">>,
   products: ApiProduct[],
   kits: ApiPromotionalKit[],
 ) {
@@ -239,20 +295,35 @@ export function calculateStrategicOfferPriceRange(
         draft.priceOriginal ??
         0,
     );
-    minimum = maximum = price;
+    const total = Number.isFinite(Number(draft.selectionQuantity)) && Number(draft.selectionQuantity) >= 1
+      ? Math.trunc(Number(draft.selectionQuantity))
+      : 1;
+    minimum = maximum = price * total;
   } else if (draft.sourceType === "kit") {
     const kit = kits.find((item) => item.id === draft.sourceId);
-    minimum = maximum = Number(kit?.price_original ?? draft.priceOriginal ?? 0);
+    const total = Number.isFinite(Number(draft.selectionQuantity)) && Number(draft.selectionQuantity) >= 1
+      ? Math.trunc(Number(draft.selectionQuantity))
+      : 1;
+    minimum = maximum = Number(kit?.price_original ?? draft.priceOriginal ?? 0) * total;
   } else {
+    if (draft.sourceType === "mixed_subcategories" && draft.selectionGroups?.length) {
+      for (const group of draft.selectionGroups) {
+        const eligiblePrices = products
+          .filter((product) => group.subcategoryIds.includes(product.subcategory_id ?? ""))
+          .map((product) => Number(product.price))
+          .filter((price) => Number.isFinite(price) && price >= 0);
+        if (!eligiblePrices.length) continue;
+        const quantity = Math.max(1, Math.trunc(Number(group.quantity) || 1));
+        minimum += Math.min(...eligiblePrices) * quantity;
+        maximum += Math.max(...eligiblePrices) * quantity;
+      }
+    } else {
     const hasExplicitSelectionQuantity =
-      draft.sourceType === "mixed_subcategories" &&
       Number(draft.selectionQuantity) >= 1;
     const multiplier =
-      draft.sourceType === "mixed_subcategories"
-        ? Number.isFinite(Number(draft.selectionQuantity)) && Number(draft.selectionQuantity) >= 1
-          ? Math.trunc(Number(draft.selectionQuantity))
-          : draft.components.reduce((total, component) => total + Math.max(1, Math.trunc(Number(component.quantity) || 1)), 0)
-        : 1;
+      Number.isFinite(Number(draft.selectionQuantity)) && Number(draft.selectionQuantity) >= 1
+        ? Math.trunc(Number(draft.selectionQuantity))
+        : draft.components.reduce((total, component) => total + Math.max(1, Math.trunc(Number(component.quantity) || 1)), 0);
     for (const component of draft.components) {
       const eligiblePrices = products
         .filter((product) => product.subcategory_id === component.subcategoryId)
@@ -273,6 +344,7 @@ export function calculateStrategicOfferPriceRange(
         minimum = Math.min(...eligiblePrices) * multiplier;
         maximum = Math.max(...eligiblePrices) * multiplier;
       }
+    }
     }
   }
   const value = Math.max(0, Number(draft.pricingValue) || 0);
@@ -300,6 +372,12 @@ function offerDraft(offer: ApiStrategicOffer): OfferDraft {
     allowRepeatedProducts: component.allow_repeated_products ?? true,
     restrictions: component.restrictions ?? null,
   }));
+  const savedGroups = offer.selection_groups ?? offer.config.selection_groups ?? [];
+  const selectionGroups = savedGroups.map((group) => ({
+    categoryId: group.category_id,
+    subcategoryIds: group.subcategory_ids,
+    quantity: String(group.quantity),
+  }));
   const pricingStrategy =
     offer.pricing_strategy ?? offer.config?.pricing_strategy ?? "fixed_price";
   const pricingValue =
@@ -320,8 +398,11 @@ function offerDraft(offer: ApiStrategicOffer): OfferDraft {
       sourceType === "subcategory" && components.length === 0
         ? [{ subcategoryId: "", quantity: "1" }]
         : components,
+    selectionGroups,
     selectionQuantity:
-      offer.selection_quantity == null ? "" : String(offer.selection_quantity),
+      offer.selection_quantity == null
+        ? String(selectionGroupsTotal(selectionGroups) || 1)
+        : String(offer.selection_quantity),
     pricingStrategy,
     pricingValue: String(pricingValue ?? ""),
     priceOriginal: String(offer.price_original),
@@ -480,23 +561,21 @@ export default function StrategicCampaignOffersTab({
       return;
     }
     if (
-      draft.sourceType === "mixed_subcategories" &&
-      (!Number.isInteger(Number(draft.selectionQuantity)) ||
-        Number(draft.selectionQuantity) < 1)
+      !Number.isInteger(Number(draft.selectionQuantity)) ||
+      Number(draft.selectionQuantity) < 1
     ) {
       setMessage("Informe quantos produtos o cliente poderá escolher no total.");
       return;
     }
     if (
-      composition.some(
-        (component) =>
-          !Number.isInteger(Number(component.quantity)) ||
-          Number(component.quantity) < 1,
+      draft.sourceType === "mixed_subcategories" &&
+      draft.selectionGroups.some(
+        (group) =>
+          !Number.isInteger(Number(group.quantity)) ||
+          Number(group.quantity) < 1,
       )
     ) {
-      setMessage(
-        "A quantidade de cada subcategoria deve ser um número inteiro positivo.",
-      );
+      setMessage("Informe uma quantidade inteira positiva para cada categoria-pai.");
       return;
     }
     if (
@@ -526,6 +605,20 @@ export default function StrategicCampaignOffersTab({
     setSaving(true);
     setMessage("");
     try {
+      const effectiveSelectionQuantity =
+        draft.sourceType === "mixed_subcategories"
+          ? selectionGroupsTotal(
+              draft.selectionGroups.length
+                ? draft.selectionGroups
+                : selectionGroupsFromComponents(draft.components, categories),
+            )
+          : Number(draft.selectionQuantity);
+      const effectiveSelectionGroups =
+        draft.sourceType === "mixed_subcategories"
+          ? draft.selectionGroups.length
+            ? draft.selectionGroups
+            : selectionGroupsFromComponents(draft.components, categories)
+          : [];
       const common = {
         title: draft.title.trim(),
         description: draft.description.trim() || null,
@@ -537,10 +630,7 @@ export default function StrategicCampaignOffersTab({
         quantity_limit: draft.quantityLimit
           ? Number(draft.quantityLimit)
           : null,
-        selection_quantity:
-          draft.sourceType === "mixed_subcategories"
-            ? Number(draft.selectionQuantity)
-            : null,
+        selection_quantity: effectiveSelectionQuantity,
         max_per_customer: draft.maxPerCustomer
           ? Number(draft.maxPerCustomer)
           : null,
@@ -557,6 +647,8 @@ export default function StrategicCampaignOffersTab({
         kit_id: draft.sourceType === "kit" ? draft.sourceId : null,
         ...buildStrategicOfferCommercialContract({
           ...draft,
+          selectionQuantity: String(effectiveSelectionQuantity),
+          selectionGroups: effectiveSelectionGroups,
           components: composition,
         }),
       };
@@ -673,14 +765,6 @@ export default function StrategicCampaignOffersTab({
     priceRange.promotionalMinimum === priceRange.promotionalMaximum
       ? `R$ ${priceRange.promotionalMinimum.toFixed(2)}`
       : `R$ ${priceRange.promotionalMinimum.toFixed(2)} a R$ ${priceRange.promotionalMaximum.toFixed(2)}`;
-  const totalProducts = draft.sourceType === "product" || draft.sourceType === "kit"
-    ? 1
-    : draft.sourceType === "mixed_subcategories"
-      ? Number(draft.selectionQuantity) >= 1
-        ? Math.trunc(Number(draft.selectionQuantity))
-        : draft.components.reduce((total, component) => total + Math.max(0, Math.trunc(Number(component.quantity) || 0)), 0)
-      : draft.components.reduce((total, component) => total + Math.max(0, Math.trunc(Number(component.quantity) || 0)), 0);
-
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -880,6 +964,8 @@ export default function StrategicCampaignOffersTab({
                             ...current,
                             sourceType: type,
                             sourceId: "",
+                            selectionGroups: [],
+                            selectionQuantity: "1",
                             components:
                               type === "subcategory"
                                 ? [{ subcategoryId: "", quantity: "1" }]
@@ -969,25 +1055,34 @@ export default function StrategicCampaignOffersTab({
                             key={`${index}-${component.subcategoryId}`}
                             className="rounded-xl border border-surface-03 bg-surface-02 p-3"
                           >
-                            <div className="grid gap-3 sm:grid-cols-[1fr_6rem_auto] sm:items-end">
+                            <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
                               <label className="text-xs text-parchment">
                                 Subcategoria
                                 <select
                                   value={component.subcategoryId}
                                   onChange={(event) =>
-                                    setDraft((current) => ({
-                                      ...current,
-                                      components: current.components.map(
+                                    setDraft((current) => {
+                                      const components = current.components.map(
                                         (item, itemIndex) =>
                                           itemIndex === index
-                                            ? {
-                                                ...item,
-                                                subcategoryId:
-                                                  event.target.value,
-                                              }
+                                            ? { ...item, subcategoryId: event.target.value }
                                             : item,
-                                      ),
-                                    }))
+                                      );
+                                      const selectionGroups = selectionGroupsFromComponents(
+                                        components,
+                                        categories,
+                                        current.selectionGroups,
+                                      );
+                                      return {
+                                        ...current,
+                                        components,
+                                        selectionGroups,
+                                        selectionQuantity:
+                                          current.sourceType === "mixed_subcategories"
+                                            ? String(selectionGroupsTotal(selectionGroups) || 1)
+                                            : current.selectionQuantity,
+                                      };
+                                    })
                                   }
                                   className={inputClass}
                                 >
@@ -1006,31 +1101,6 @@ export default function StrategicCampaignOffersTab({
                                     </option>
                                   ))}
                                 </select>
-                              </label>
-                              <label className="text-xs text-parchment">
-                                Quantidade
-                                <input
-                                  required
-                                  min="1"
-                                  step="1"
-                                  type="number"
-                                  value={component.quantity}
-                                  onChange={(event) =>
-                                    setDraft((current) => ({
-                                      ...current,
-                                      components: current.components.map(
-                                        (item, itemIndex) =>
-                                          itemIndex === index
-                                            ? {
-                                                ...item,
-                                                quantity: event.target.value,
-                                              }
-                                            : item,
-                                      ),
-                                    }))
-                                  }
-                                  className={inputClass}
-                                />
                               </label>
                               {draft.sourceType === "mixed_subcategories" && (
                                 <div className="flex gap-1">
@@ -1092,6 +1162,11 @@ export default function StrategicCampaignOffersTab({
                                         components: current.components.filter(
                                           (_, itemIndex) => itemIndex !== index,
                                         ),
+                                        selectionGroups: selectionGroupsFromComponents(
+                                          current.components.filter((_, itemIndex) => itemIndex !== index),
+                                          categories,
+                                          current.selectionGroups,
+                                        ),
                                       }))
                                     }
                                     className="rounded-lg border border-red-500/30 p-2 text-red-300 disabled:opacity-30"
@@ -1115,7 +1190,39 @@ export default function StrategicCampaignOffersTab({
                             )}
                           </div>
                         ))}
-                        {draft.sourceType === "mixed_subcategories" && (
+                        {draft.sourceType === "mixed_subcategories" && draft.selectionGroups.map((group) => {
+                          const parent = categories.find((category) => category.id === group.categoryId);
+                          return (
+                            <label key={group.categoryId} className="block rounded-xl border border-gold/25 bg-gold/10 p-3 text-sm text-parchment">
+                              Quantidade de {parent?.name ?? "produtos da categoria"}
+                              <input
+                                required
+                                min="1"
+                                max="100"
+                                step="1"
+                                type="number"
+                                value={group.quantity}
+                                onChange={(event) => setDraft((current) => {
+                                  const selectionGroups = current.selectionGroups.map((item) =>
+                                    item.categoryId === group.categoryId
+                                      ? { ...item, quantity: event.target.value }
+                                      : item,
+                                  );
+                                  return {
+                                    ...current,
+                                    selectionGroups,
+                                    selectionQuantity: String(selectionGroupsTotal(selectionGroups) || 1),
+                                  };
+                                })}
+                                className={inputClass}
+                              />
+                              <span className="mt-1 block text-xs text-stone">
+                                Escolhas entre: {group.subcategoryIds.map((subcategoryId) => subcategories.find((item) => item.id === subcategoryId)?.name ?? subcategoryId).join(", ")}.
+                              </span>
+                            </label>
+                          );
+                        })}
+                        {false && draft.sourceType === "mixed_subcategories" && (
                           <label className="block rounded-xl border border-gold/25 bg-gold/10 p-3 text-sm text-parchment">
                             Quantidade total de produtos escolhíveis
                             <input
@@ -1152,9 +1259,24 @@ export default function StrategicCampaignOffersTab({
                             <Plus size={14} /> Adicionar subcategoria
                           </button>
                         )}
-                        <p className="rounded-xl border border-gold/25 bg-gold/10 p-3 text-sm font-bold text-gold">
-                          Quantidade total de produtos: {totalProducts}
-                        </p>
+                        {draft.sourceType === "subcategory" && <label className="block rounded-xl border border-gold/25 bg-gold/10 p-3 text-sm text-parchment">
+                          Quantidade total de produtos escolhíveis
+                          <input
+                            required
+                            min="1"
+                            max="100"
+                            step="1"
+                            type="number"
+                            value={draft.selectionQuantity}
+                            onChange={(event) =>
+                              setDraft({ ...draft, selectionQuantity: event.target.value })
+                            }
+                            className={inputClass}
+                          />
+                          <span className="mt-1 block text-xs text-stone">
+                            O cliente escolherá essa quantidade entre os produtos elegíveis.
+                          </span>
+                        </label>}
                         {subcategories.length === 0 && (
                           <p className="text-sm text-amber-300">
                             Nenhuma subcategoria ativa foi encontrada no
@@ -1169,6 +1291,24 @@ export default function StrategicCampaignOffersTab({
                   <h3 className="sm:col-span-2 font-bold text-cream">
                     Condições comerciais
                   </h3>
+                  {(draft.sourceType === "product" || draft.sourceType === "kit") && <label className="block rounded-xl border border-gold/25 bg-gold/10 p-3 text-sm text-parchment sm:col-span-2">
+                    Quantidade total de produtos escolhíveis
+                    <input
+                      required
+                      min="1"
+                      max="100"
+                      step="1"
+                      type="number"
+                      value={draft.selectionQuantity}
+                      onChange={(event) =>
+                        setDraft({ ...draft, selectionQuantity: event.target.value })
+                      }
+                      className={inputClass}
+                    />
+                    <span className="mt-1 block text-xs text-stone">
+                      Para produto ou combo, define quantas unidades compõem a oferta.
+                    </span>
+                  </label>}
                   <label className="text-xs text-parchment">
                     Código exclusivo
                     <input

@@ -102,6 +102,46 @@ class StrategicOfferCompositionService:
         minimum = Decimal("0.00")
         maximum = Decimal("0.00")
         if offer.reference_type == "mixed_subcategories":
+            selection_groups = self._selection_groups(offer)
+            if selection_groups is not None:
+                for group in selection_groups:
+                    products = self._eligible_products_for_subcategories(group["subcategory_ids"])
+                    prices = [Decimal(str(product.price)).quantize(CENT) for product in products]
+                    minimum += min(prices) * group["quantity"]
+                    maximum += max(prices) * group["quantity"]
+                    for occurrence in range(1, group["quantity"] + 1):
+                        key = f"selection-group-{group['index']}:{occurrence}"
+                        steps.append({
+                            "key": key,
+                            "step_key": key,
+                            "position": len(steps),
+                            "subcategory_id": None,
+                            "title": group["title"],
+                            "selection_group": group["index"],
+                            "selection_quantity": group["quantity"],
+                            "eligible_products": [self._product_document(product) for product in products],
+                            "restrictions": {},
+                        })
+                promotional_min = self.promotional_total(offer, minimum)
+                promotional_max = self.promotional_total(offer, maximum)
+                return {
+                    "offer_id": offer.id,
+                    "campaign_id": campaign.id,
+                    "campaign_version": campaign.published_version,
+                    "composition_revision": offer.composition_revision,
+                    "selection_quantity": getattr(offer, "selection_quantity", None),
+                    "selection_groups": selection_groups,
+                    "reference_type": offer.reference_type,
+                    "pricing_strategy": offer.pricing_strategy,
+                    "price_range": {
+                        "minimum": promotional_min,
+                        "maximum": promotional_max,
+                        "original_minimum": minimum,
+                        "original_maximum": maximum,
+                        "fixed_promotional": offer.fixed_promotional_price,
+                    },
+                    "steps": steps,
+                }
             total = self._selection_quantity(offer)
             products = []
             seen_ids: set[str] = set()
@@ -126,12 +166,13 @@ class StrategicOfferCompositionService:
                     "restrictions": {},
                 })
         elif offer.reference_type == "subcategory":
+            total = self._selection_quantity(offer)
             for component in offer.components:
                 products = self._eligible_products(component.subcategory_id)
                 prices = [Decimal(str(product.price)).quantize(CENT) for product in products]
-                minimum += min(prices) * component.quantity
-                maximum += max(prices) * component.quantity
-                for occurrence in range(1, component.quantity + 1):
+                minimum += min(prices) * total
+                maximum += max(prices) * total
+                for occurrence in range(1, total + 1):
                     steps.append({
                         "key": self._step_key(component.position, occurrence),
                         "step_key": self._step_key(component.position, occurrence),
@@ -148,28 +189,34 @@ class StrategicOfferCompositionService:
             availability = ProductInventoryAvailabilityService(self.db, self.tenant_id).product_payloads([product.id])
             if availability.get(product.id, {}).get("inventory_available") is False:
                 raise DomainError("Produto da oferta indisponivel no estoque.", code="StrategicOfferProductUnavailable")
-            steps.append({
-                "key": "product:1",
-                "step_key": "product:1",
-                "position": 0,
-                "subcategory_id": product.subcategory_id,
-                "eligible_products": [self._product_document(product)],
-                "restrictions": (offer.config or {}).get("restrictions") or {},
-            })
+            total = self._selection_quantity(offer)
+            for occurrence in range(1, total + 1):
+                key = "product:1" if total == 1 else f"selection-{occurrence}:product:1"
+                steps.append({
+                    "key": key,
+                    "step_key": key,
+                    "position": len(steps),
+                    "subcategory_id": product.subcategory_id,
+                    "eligible_products": [self._product_document(product)],
+                    "restrictions": (offer.config or {}).get("restrictions") or {},
+                })
             base = Decimal(str(offer.price_original or product.price or 0)).quantize(CENT)
-            minimum = maximum = base
+            minimum = maximum = base * total
         elif offer.reference_type == "kit":
-            steps.append({
-                "key": "kit:1",
-                "step_key": "kit:1",
-                "position": 0,
-                "subcategory_id": None,
-                "eligible_products": [],
-                "kit_id": offer.kit_id,
-                "restrictions": {},
-            })
+            total = self._selection_quantity(offer)
+            for occurrence in range(1, total + 1):
+                key = "kit:1" if total == 1 else f"selection-{occurrence}:kit:1"
+                steps.append({
+                    "key": key,
+                    "step_key": key,
+                    "position": len(steps),
+                    "subcategory_id": None,
+                    "eligible_products": [],
+                    "kit_id": offer.kit_id,
+                    "restrictions": {},
+                })
             base = Decimal(str(offer.price_original or 0)).quantize(CENT)
-            minimum = maximum = base
+            minimum = maximum = base * total
         else:
             base = Decimal(str(offer.price_original or 0)).quantize(CENT)
             minimum = maximum = base
@@ -215,7 +262,7 @@ class StrategicOfferCompositionService:
             supplied = [selection.step_key for selection in request.selections]
             if supplied != expected:
                 raise DomainError("As etapas da oferta estao incompletas ou fora de ordem.", code="StrategicOfferCompositionInvalid")
-            seen: dict[tuple[int, int], set[str]] = {}
+            seen: dict[tuple[int, int, int], set[str]] = {}
             for selection, subcategory_id in zip(request.selections, subcategories):
                 item = selection.item
                 if offer.reference_type == "kit":
@@ -228,9 +275,13 @@ class StrategicOfferCompositionService:
                 product = self._product(item.product_id, subcategory_id=subcategory_id)
                 if offer.reference_type == "mixed_subcategories":
                     product = self._product(item.product_id)
-                    if product is None or product.subcategory_id not in {
-                        component.subcategory_id for component in offer.components
-                    }:
+                    selection_group = self._selection_group_for_step(offer, selection.step_key)
+                    allowed_subcategories = (
+                        set(selection_group["subcategory_ids"])
+                        if selection_group is not None
+                        else {component.subcategory_id for component in offer.components}
+                    )
+                    if product is None or product.subcategory_id not in allowed_subcategories:
                         product = None
                 if offer.reference_type == "product" and product.id != offer.product_id:
                     product = None
@@ -245,11 +296,15 @@ class StrategicOfferCompositionService:
                             if row.subcategory_id == product.subcategory_id
                         )
                         component_position = component.position
+                        selection_group_index = (
+                            self._selection_group_for_step(offer, selection.step_key) or {"index": 0}
+                        )["index"]
                     else:
                         component_position = int(selection.step_key.split("component-")[-1].split(":", 1)[0])
                         component = next(row for row in offer.components if row.position == component_position)
+                        selection_group_index = 0
                     group_index = self._step_group_index(selection.step_key)
-                    bucket = seen.setdefault((group_index, component_position), set())
+                    bucket = seen.setdefault((group_index, selection_group_index, component_position), set())
                     if not component.allow_repeated_products and product.id in bucket:
                         raise DomainError("A oferta nao permite repetir produtos nesta subcategoria.", code="StrategicOfferRepeatedProduct")
                     bucket.add(product.id)
@@ -412,30 +467,48 @@ class StrategicOfferCompositionService:
             query = query.filter(Product.subcategory_id == subcategory_id)
         return query.first()
 
-    @classmethod
-    def _expected_steps(cls, offer, quantity: int) -> tuple[list[str], list[str | None]]:
+    def _expected_steps(self, offer, quantity: int) -> tuple[list[str], list[str | None]]:
         expected: list[str] = []
         subcategories: list[str | None] = []
         if offer.reference_type == "product":
+            total = self._selection_quantity(offer)
             for group_index in range(1, quantity + 1):
-                key = "product:1"
-                if quantity > 1:
-                    key = f"group-{group_index}:{key}"
-                expected.append(key)
-                subcategories.append(None)
+                for occurrence in range(1, total + 1):
+                    key = "product:1" if total == 1 else f"selection-{occurrence}:product:1"
+                    if quantity > 1:
+                        key = f"group-{group_index}:{key}"
+                    expected.append(key)
+                    subcategories.append(None)
             return expected, subcategories
         if offer.reference_type == "kit":
+            total = self._selection_quantity(offer)
             for group_index in range(1, quantity + 1):
-                key = "kit:1"
-                if quantity > 1:
-                    key = f"group-{group_index}:{key}"
-                expected.append(key)
-                subcategories.append(None)
+                for occurrence in range(1, total + 1):
+                    key = "kit:1" if total == 1 else f"selection-{occurrence}:kit:1"
+                    if quantity > 1:
+                        key = f"group-{group_index}:{key}"
+                    expected.append(key)
+                    subcategories.append(None)
             return expected, subcategories
         if offer.reference_type not in {"subcategory", "mixed_subcategories"}:
             raise DomainError("Tipo de referencia estrategica nao suportado.", code="StrategicOfferGroupInvalid")
         if offer.reference_type == "mixed_subcategories":
-            total = cls._selection_quantity(offer)
+            selection_groups = self._selection_groups(offer)
+            if selection_groups is not None:
+                return (
+                    [
+                        (
+                            f"group-{group_index}:selection-group-{selection_group['index']}:{occurrence}"
+                            if quantity > 1
+                            else f"selection-group-{selection_group['index']}:{occurrence}"
+                        )
+                        for group_index in range(1, quantity + 1)
+                        for selection_group in selection_groups
+                        for occurrence in range(1, selection_group["quantity"] + 1)
+                    ],
+                    [None] * sum(group["quantity"] for group in selection_groups) * quantity,
+                )
+            total = self._selection_quantity(offer)
             return (
                 [
                     f"group-{group_index}:mixed:{occurrence}" if quantity > 1 else f"mixed:{occurrence}"
@@ -444,10 +517,11 @@ class StrategicOfferCompositionService:
                 ],
                 [None] * (quantity * total),
             )
+        total = self._selection_quantity(offer)
         for group_index in range(1, quantity + 1):
             for component in offer.components:
-                for occurrence in range(1, component.quantity + 1):
-                    key = cls._step_key(component.position, occurrence)
+                for occurrence in range(1, total + 1):
+                    key = self._step_key(component.position, occurrence)
                     if quantity > 1:
                         key = f"group-{group_index}:{key}"
                     expected.append(key)
@@ -455,12 +529,73 @@ class StrategicOfferCompositionService:
         return expected, subcategories
 
     @staticmethod
+    def _selection_groups(offer) -> list[dict] | None:
+        raw = (offer.config or {}).get("selection_groups")
+        if raw is None:
+            return None
+        if not isinstance(raw, list) or not raw:
+            raise DomainError("Os grupos de escolha da oferta sao invalidos.", code="StrategicOfferSelectionGroupsInvalid")
+        groups: list[dict] = []
+        seen_subcategories: set[str] = set()
+        for index, candidate in enumerate(raw, start=1):
+            if not isinstance(candidate, dict):
+                raise DomainError("Os grupos de escolha da oferta sao invalidos.", code="StrategicOfferSelectionGroupsInvalid")
+            subcategory_ids = candidate.get("subcategory_ids")
+            quantity = candidate.get("quantity")
+            if (
+                not isinstance(subcategory_ids, list)
+                or not subcategory_ids
+                or any(not isinstance(value, str) or not value.strip() for value in subcategory_ids)
+                or len(set(subcategory_ids)) != len(subcategory_ids)
+                or isinstance(quantity, bool)
+                or not isinstance(quantity, int)
+                or quantity < 1
+                or quantity > 100
+                or seen_subcategories.intersection(subcategory_ids)
+            ):
+                raise DomainError("Os grupos de escolha da oferta sao invalidos.", code="StrategicOfferSelectionGroupsInvalid")
+            seen_subcategories.update(subcategory_ids)
+            category_id = candidate.get("category_id")
+            title = candidate.get("title")
+            groups.append({
+                "index": index,
+                "category_id": category_id if isinstance(category_id, str) else None,
+                "title": title.strip() if isinstance(title, str) and title.strip() else f"Escolha do grupo {index}",
+                "subcategory_ids": list(subcategory_ids),
+                "quantity": quantity,
+            })
+        component_subcategories = {
+            component.subcategory_id
+            for component in getattr(offer, "components", ())
+        }
+        if component_subcategories and seen_subcategories != component_subcategories:
+            raise DomainError("Os grupos de escolha nao correspondem as subcategorias da oferta.", code="StrategicOfferSelectionGroupsInvalid")
+        return groups
+
+    def _selection_group_for_step(self, offer, step_key: str) -> dict | None:
+        groups = self._selection_groups(offer)
+        if groups is None:
+            return None
+        marker = step_key.split(":", 1)[1] if step_key.startswith("group-") else step_key
+        if not marker.startswith("selection-group-"):
+            raise DomainError("A etapa do grupo de escolha e invalida.", code="StrategicOfferCompositionInvalid")
+        try:
+            index = int(marker.split(":", 1)[0].removeprefix("selection-group-"))
+        except ValueError as exc:
+            raise DomainError("A etapa do grupo de escolha e invalida.", code="StrategicOfferCompositionInvalid") from exc
+        return next((group for group in groups if group["index"] == index), None)
+
+    @staticmethod
     def _selection_quantity(offer) -> int:
         value = getattr(offer, "selection_quantity", None)
         if value is None:
             value = (offer.config or {}).get("selection_quantity")
         if value is None:
-            value = sum(component.quantity for component in offer.components)
+            value = (
+                sum(component.quantity for component in offer.components)
+                if offer.reference_type in {"subcategory", "mixed_subcategories"}
+                else 1
+            )
         value = int(value)
         if value < 1:
             raise DomainError("Quantidade de escolhas da oferta invalida.", code="StrategicOfferQuantityInvalid")
@@ -516,6 +651,16 @@ class StrategicOfferCompositionService:
             ]
         if not products:
             raise DomainError("Subcategoria sem produtos vendaveis.", code="StrategicOfferSubcategoryEmpty")
+        return products
+
+    def _eligible_products_for_subcategories(self, subcategory_ids: list[str]) -> list[Product]:
+        products: list[Product] = []
+        seen_ids: set[str] = set()
+        for subcategory_id in subcategory_ids:
+            for product in self._eligible_products(subcategory_id):
+                if product.id not in seen_ids:
+                    products.append(product)
+                    seen_ids.add(product.id)
         return products
 
     @staticmethod

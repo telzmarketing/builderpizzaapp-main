@@ -99,7 +99,7 @@ describe("strategic offer admin commercial contract", () => {
       discount_amount: null,
       fixed_promotional_price: null,
       components: [
-        { subcategory_id: "traditional", quantity: 2 },
+        { subcategory_id: "traditional", quantity: 1 },
         { subcategory_id: "special", quantity: 1 },
       ],
       config: {
@@ -140,5 +140,29 @@ describe("strategic offer admin commercial contract", () => {
     });
     expect(productContract.components).toEqual([]);
     expect(productContract.fixed_promotional_price).toBe(49.9);
+  });
+
+  it("serializes mixed parent-category counters and their compatibility sum", () => {
+    const contract = buildStrategicOfferCommercialContract({
+      sourceType: "mixed_subcategories",
+      selectionQuantity: "99",
+      selectionGroups: [
+        { categoryId: "pizzas", subcategoryIds: ["traditional", "special"], quantity: "2" },
+        { categoryId: "drinks", subcategoryIds: ["sodas"], quantity: "1" },
+      ],
+      components: [
+        { subcategoryId: "traditional", quantity: "1" },
+        { subcategoryId: "special", quantity: "1" },
+        { subcategoryId: "sodas", quantity: "1" },
+      ],
+      pricingStrategy: "fixed_price",
+      pricingValue: "39.90",
+    });
+
+    expect(contract.selection_quantity).toBe(3);
+    expect(contract.selection_groups).toEqual([
+      { category_id: "pizzas", subcategory_ids: ["traditional", "special"], quantity: 2 },
+      { category_id: "drinks", subcategory_ids: ["sodas"], quantity: 1 },
+    ]);
   });
 });

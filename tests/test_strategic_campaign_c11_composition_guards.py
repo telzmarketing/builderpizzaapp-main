@@ -189,6 +189,87 @@ def _seed(
     return campaign, live_offer
 
 
+def test_mixed_selection_groups_generate_independent_steps_and_validate_membership(db):
+    _seed(
+        db,
+        reference_type="mixed_subcategories",
+        product_id=None,
+        components=[
+            {"subcategory_id": "subcategory", "quantity": 1, "allow_repeated_products": False},
+            {"subcategory_id": "drinks", "quantity": 1, "allow_repeated_products": True},
+        ],
+        config={
+            "selection_groups": [
+                {"subcategory_ids": ["subcategory"], "quantity": 2, "title": "Pizzas"},
+                {"subcategory_ids": ["drinks"], "quantity": 1, "title": "Bebidas"},
+            ],
+        },
+    )
+    db.add(ProductCategory(id="drinks-parent", tenant_id="tenant-1", name="Bebidas Gerais", active=True))
+    db.add(ProductCategory(id="drinks", tenant_id="tenant-1", parent_id="drinks-parent", name="Refrigerantes", active=True))
+    db.add(Product(id="drink-1", tenant_id="tenant-1", name="Refrigerante", description="Bebida", price=8, subcategory_id="drinks", active=True))
+    db.commit()
+
+    service = StrategicOfferCompositionService(db, "tenant-1")
+    configuration = service.configuration("offer-1", 1)
+    assert [step["step_key"] for step in configuration["steps"]] == [
+        "selection-group-1:1",
+        "selection-group-1:2",
+        "selection-group-2:1",
+    ]
+    assert [step["title"] for step in configuration["steps"]] == ["Pizzas", "Pizzas", "Bebidas"]
+    assert configuration["selection_groups"][0]["quantity"] == 2
+
+    selections = [
+        {"step_key": "selection-group-1:1", "item": _cart_item("product-1")},
+        {"step_key": "selection-group-1:2", "item": _cart_item("product-2")},
+        {"step_key": "selection-group-2:1", "item": _cart_item("drink-1")},
+    ]
+    items, resolved = service.expand_groups([_group(selections=selections)])
+    assert [item.product_id for item in items] == ["product-1", "product-2", "drink-1"]
+    assert resolved[0].item_count == 3
+
+    invalid = [
+        {"step_key": "selection-group-1:1", "item": _cart_item("product-1")},
+        {"step_key": "selection-group-1:2", "item": _cart_item("product-2")},
+        {"step_key": "selection-group-2:1", "item": _cart_item("product-1")},
+    ]
+    with pytest.raises(DomainError) as error:
+        service.expand_groups([_group(selections=invalid)])
+    assert error.value.code == "StrategicOfferProductInvalid"
+
+
+def test_mixed_selection_groups_keep_repetition_rule_scoped_to_each_group(db):
+    _seed(
+        db,
+        reference_type="mixed_subcategories",
+        product_id=None,
+        components=[
+            {"subcategory_id": "subcategory", "quantity": 1, "allow_repeated_products": False},
+            {"subcategory_id": "drinks", "quantity": 1, "allow_repeated_products": True},
+        ],
+        config={
+            "selection_groups": [
+                {"subcategory_ids": ["subcategory"], "quantity": 2},
+                {"subcategory_ids": ["drinks"], "quantity": 1},
+            ],
+        },
+    )
+    db.add(ProductCategory(id="drinks-parent", tenant_id="tenant-1", name="Bebidas Gerais", active=True))
+    db.add(ProductCategory(id="drinks", tenant_id="tenant-1", parent_id="drinks-parent", name="Refrigerantes", active=True))
+    db.add(Product(id="drink-1", tenant_id="tenant-1", name="Refrigerante", description="Bebida", price=8, subcategory_id="drinks", active=True))
+    db.commit()
+
+    selections = [
+        {"step_key": "selection-group-1:1", "item": _cart_item("product-1")},
+        {"step_key": "selection-group-1:2", "item": _cart_item("product-1")},
+        {"step_key": "selection-group-2:1", "item": _cart_item("drink-1")},
+    ]
+    with pytest.raises(DomainError) as error:
+        StrategicOfferCompositionService(db, "tenant-1").expand_groups([_group(selections=selections)])
+    assert error.value.code == "StrategicOfferRepeatedProduct"
+
+
 def test_published_snapshot_is_authority_for_configuration_and_checkout(db):
     _, live_offer = _seed(db)
     live_offer.product_id = "product-2"

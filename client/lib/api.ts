@@ -1312,9 +1312,16 @@ export interface StrategicOfferComponent {
   restrictions?: Record<string, unknown> | null;
 }
 
+export interface StrategicOfferSelectionGroup {
+  category_id: string;
+  subcategory_ids: string[];
+  quantity: number;
+}
+
 export interface ApiStrategicOfferConfig extends Record<string, unknown> {
   reference_type?: StrategicOfferReferenceType;
   components?: StrategicOfferComponent[];
+  selection_groups?: StrategicOfferSelectionGroup[];
   pricing_strategy?: StrategicOfferPricingStrategy;
   discount_percent?: number | null;
   discount_amount?: number | null;
@@ -1415,6 +1422,7 @@ export interface ApiStrategicOffer {
   fixed_promotional_price: number | null;
   composition_revision: number;
   selection_quantity?: number | null;
+  selection_groups?: StrategicOfferSelectionGroup[] | null;
   price_original: number;
   price_promotional: number;
   active: boolean;
