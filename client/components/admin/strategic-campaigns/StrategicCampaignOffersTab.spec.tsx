@@ -145,7 +145,7 @@ describe("strategic offer admin commercial contract", () => {
 
   it("serializes mixed parent-category counters and their compatibility sum", () => {
     const draft = {
-      sourceType: "mixed_subcategories",
+      sourceType: "mixed_subcategories" as const,
       selectionQuantity: "99",
       selectionGroups: [
         { categoryId: "pizzas", subcategoryIds: ["traditional", "special"], quantity: "2" },
