@@ -36,6 +36,11 @@ const sectionSpacing = {
   normal: "py-14",
   wide: "py-20",
 } as const;
+const offersSectionSpacing = {
+  compact: "pt-4 pb-8",
+  normal: "pt-8 pb-14",
+  wide: "pt-12 pb-20",
+} as const;
 const heroHeights = {
   compact: "min-h-[360px]",
   normal: "min-h-[520px]",
@@ -195,7 +200,7 @@ export default function StrategicCampaignRenderer({
           }}
         >
           <div
-            className={`mx-auto flex max-w-6xl items-center gap-4 px-5 ${headerPadding} ${visual.header.alignment === "center" ? "justify-center" : "justify-between"}`}
+            className={`mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 ${headerPadding}`}
           >
             <div className="flex min-w-0 items-center gap-3">
               {(visual.identity.logoDesktopUrl ||
@@ -224,18 +229,16 @@ export default function StrategicCampaignRenderer({
                 </strong>
               )}
             </div>
-            {visual.header.alignment !== "center" && (
-              <button
-                type="button"
-                onClick={scrollToOffers}
-                className="rounded-full px-4 py-2 text-xs font-bold"
-                style={{
-                  background: visual.theme.accentColor,
-                  color: visual.theme.backgroundColor,
-                }}
-              >
-                {visual.header.ctaLabel}
-              </button>
+            {visual.header.ctaEnabled && (
+              visual.header.ctaUrl ? (
+                <a href={visual.header.ctaUrl} className="rounded-lg px-4 py-2 text-xs font-bold" style={{ background: visual.theme.accentColor, color: visual.theme.backgroundColor }}>
+                  {visual.header.ctaLabel}
+                </a>
+              ) : (
+                <button type="button" onClick={scrollToOffers} className="rounded-lg px-4 py-2 text-xs font-bold" style={{ background: visual.theme.accentColor, color: visual.theme.backgroundColor }}>
+                  {visual.header.ctaLabel}
+                </button>
+              )
             )}
           </div>
         </header>
@@ -272,7 +275,8 @@ export default function StrategicCampaignRenderer({
             )}
             {visual.hero.showTitle && (
               <h1 className="max-w-4xl text-4xl font-black leading-tight sm:text-5xl lg:text-6xl">
-                {visual.hero.title}
+                <span className="block">{visual.hero.titleLine1}</span>
+                {visual.hero.titleLine2 && <span className="block">{visual.hero.titleLine2}</span>}
               </h1>
             )}
             {visual.hero.showSubtitle && (
@@ -292,7 +296,7 @@ export default function StrategicCampaignRenderer({
         complementary}
       <section
         id={`strategic-offers-${mode}`}
-        className={`mx-auto max-w-6xl scroll-mt-20 px-5 ${sectionSpacing[visual.theme.sectionSpacing]}`}
+        className={`mx-auto max-w-6xl scroll-mt-20 px-5 ${offersSectionSpacing[visual.theme.sectionSpacing]}`}
       >
         {visual.offers.showHeading && (
           <div className="text-center">
@@ -302,7 +306,7 @@ export default function StrategicCampaignRenderer({
         )}
         {offers.length ? (
           <div
-            className={`${visual.offers.showHeading ? "mt-8" : ""} grid gap-5 ${columns}`}
+            className={`${visual.offers.showHeading ? "mt-4" : ""} grid gap-5 ${columns}`}
           >
             {offers.map((offer, index) => (
               <article
@@ -422,6 +426,19 @@ export default function StrategicCampaignRenderer({
       )}
       {visual.footer.enabled && (
         <footer className="border-t border-white/10 px-5 py-10 text-center">
+          {visual.footer.showLogo && (visual.footer.logoDesktopUrl || visual.footer.logoMobileUrl) && (
+            <picture>
+              <source
+                media="(max-width: 640px)"
+                srcSet={resolveAssetUrl(visual.footer.logoMobileUrl || visual.footer.logoDesktopUrl)}
+              />
+              <img
+                src={resolveAssetUrl(visual.footer.logoDesktopUrl || visual.footer.logoMobileUrl)}
+                alt={visual.identity.brandName}
+                className="mx-auto mb-5 h-10 w-auto max-w-40 object-contain"
+              />
+            </picture>
+          )}
           <p className="font-semibold">{visual.footer.text}</p>
           <p className="mt-2 text-xs opacity-50">{visual.footer.legalText}</p>
         </footer>
@@ -572,6 +589,7 @@ function ComplementarySection({
   return (
     <section
       className={`mx-auto grid max-w-6xl items-center gap-8 px-5 ${sectionSpacing[visual.theme.sectionSpacing]} md:grid-cols-2`}
+      style={{ backgroundColor: visual.complementary.backgroundColor || undefined }}
     >
       {visual.complementary.imageSide === "left" ? image : null}
       <div>
@@ -579,6 +597,17 @@ function ComplementarySection({
         <p className="mt-4 whitespace-pre-line leading-7 opacity-75">
           {visual.complementary.body}
         </p>
+        {visual.complementary.linkUrl && (
+          <a
+            href={visual.complementary.linkUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-5 inline-flex rounded-xl px-4 py-2 text-sm font-black"
+            style={{ background: visual.theme.accentColor, color: visual.theme.backgroundColor }}
+          >
+            {visual.complementary.linkLabel}
+          </a>
+        )}
       </div>
       {visual.complementary.imageSide === "right" ? image : null}
     </section>
@@ -594,10 +623,10 @@ function Countdown({
 }) {
   if (remaining.ended)
     return (
-      <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/20 px-4 py-2 text-sm">
+      <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-amber-200/40 bg-amber-300/20 px-3 py-1.5 text-sm text-white backdrop-blur">
         <Clock3
           className="h-4 w-4"
-          style={{ color: visual.theme.accentColor }}
+          aria-hidden="true"
         />
         <strong>Encerrada</strong>
       </div>
@@ -611,21 +640,21 @@ function Countdown({
       : []),
   ];
   return (
-    <div className="mx-auto mt-6 w-full max-w-[34rem] rounded-2xl border border-white/15 bg-black/25 px-[clamp(0.65rem,2vw,1.25rem)] py-[clamp(0.65rem,1.8vw,0.9rem)] text-center backdrop-blur">
-      <div className="flex min-w-0 items-center justify-center gap-2 text-center text-[clamp(0.65rem,1.8vw,0.8rem)] opacity-75">
+    <div className="mx-auto mt-4 w-full max-w-[24rem] rounded-xl border border-amber-200/40 bg-amber-300/20 px-3 py-2 text-center text-white backdrop-blur">
+      <div className="flex min-w-0 items-center justify-center gap-2 text-center text-xs text-white">
         <Clock3
           className="h-[clamp(0.8rem,2.5vw,1rem)] w-[clamp(0.8rem,2.5vw,1rem)] shrink-0"
-          style={{ color: visual.theme.accentColor }}
+          aria-hidden="true"
         />
         {visual.countdown.label}
       </div>
-      <div className="mx-auto mt-3 inline-grid w-fit grid-flow-col auto-cols-max items-start gap-x-[clamp(0.35rem,1.5vw,0.75rem)] gap-y-0">
+      <div className="mx-auto mt-2 inline-grid w-fit grid-flow-col auto-cols-max items-start gap-x-3 gap-y-0">
         {units.map(([value, label]) => (
           <span key={label} className="flex min-w-0 flex-col items-center text-center">
             <strong className="block whitespace-nowrap text-[clamp(1.25rem,5vw,2.75rem)] font-black leading-none tabular-nums">
               {String(value).padStart(2, "0")}
             </strong>
-            <small className="mt-1 block whitespace-nowrap text-[clamp(0.5rem,1.7vw,0.75rem)] leading-none opacity-60">{label}</small>
+            <small className="mt-1 block whitespace-nowrap text-[clamp(0.5rem,1.7vw,0.75rem)] leading-none text-white/80">{label}</small>
           </span>
         ))}
       </div>

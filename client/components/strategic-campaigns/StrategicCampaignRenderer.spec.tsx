@@ -30,4 +30,25 @@ describe("StrategicCampaignRenderer", () => {
     expect(html).not.toContain("Pizza especial");
     expect(html).toContain("Adicione e ative ofertas");
   });
+
+  it("renders the public landing visual additions", () => {
+    const config = createStrategicCampaignVisualConfig({
+      ...campaign,
+      visual_config: {
+        hero: { titleLine1: "Black", titleLine2: "Weekend" },
+        identity: { logoDesktopUrl: "/brand.webp" },
+        complementary: { enabled: true, title: "Nossa loja", body: "Visite-nos", backgroundColor: "#22150f", linkUrl: "https://example.com/loja" },
+        footer: { logoUrl: "/footer.webp", showLogo: true },
+      },
+    });
+    const html = renderToStaticMarkup(<StrategicCampaignRenderer campaign={campaign} config={config} mode="public" />);
+
+    expect(html).toContain("Black");
+    expect(html).toContain("Weekend");
+    expect(html).toContain("Visite a nossa loja");
+    expect(html).toContain("/footer.webp");
+    expect(html).toContain("https://example.com/loja");
+    expect(html).toContain("bg-amber-300/20");
+    expect(html).toContain("border-amber-200/40");
+  });
 });

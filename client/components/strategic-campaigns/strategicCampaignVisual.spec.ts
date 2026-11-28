@@ -14,6 +14,9 @@ describe("strategic campaign visual document", () => {
     expect(result.schemaVersion).toBe(1);
     expect(result.identity.brandName).toBe("Festival Gran Torino");
     expect(result.hero.title).toBe("Festival Gran Torino");
+    expect(result.hero.titleLine1).toBe("Festival Gran");
+    expect(result.hero.titleLine2).toBe("Torino");
+    expect(result.header.ctaLabel).toBe("Visite a nossa loja");
     expect(result.offers.columns).toBe(2);
     expect(result.theme.accentColor).toBe("#d9a441");
     expect(result.hero).toMatchObject({ showTitle: true, imageDesktopUrl: "", imageMobileUrl: "", mediaFit: "contain" });
@@ -51,5 +54,18 @@ describe("strategic campaign visual document", () => {
     expect(result.information.enabled).toBe(true);
     expect(result.scrollIndicator.enabled).toBe(false);
     expect(result.theme).toMatchObject({ fontFamily: "serif", radius: "none", sectionSpacing: "wide" });
+  });
+
+  it("normalizes configurable two-line title, footer logo, and complementary link styling", () => {
+    const result = createStrategicCampaignVisualConfig(campaign({
+      identity: { logoDesktopUrl: "/brand.webp" },
+      hero: { titleLine1: "Fim de semana", titleLine2: "Gran Torino" },
+      complementary: { enabled: true, backgroundColor: "#22150f", url: "https://example.com/loja", linkLabel: "Conheça a loja" },
+      footer: { logoUrl: "/footer.webp", showLogo: true },
+    }));
+
+    expect(result.hero).toMatchObject({ titleLine1: "Fim de semana", titleLine2: "Gran Torino" });
+    expect(result.complementary).toMatchObject({ backgroundColor: "#22150f", linkUrl: "https://example.com/loja", linkLabel: "Conheça a loja" });
+    expect(result.footer).toMatchObject({ showLogo: true, logoDesktopUrl: "/footer.webp", logoMobileUrl: "/footer.webp" });
   });
 });
