@@ -619,10 +619,10 @@ function Countdown({
         />
         {visual.countdown.label}
       </div>
-      <div className="mx-auto mt-3 grid w-full grid-cols-4 items-start gap-1 sm:gap-4">
+      <div className="mx-auto mt-3 inline-grid w-fit grid-flow-col auto-cols-max items-start gap-x-[clamp(0.35rem,1.5vw,0.75rem)] gap-y-0">
         {units.map(([value, label]) => (
           <span key={label} className="flex min-w-0 flex-col items-center text-center">
-            <strong className="block text-[clamp(1.25rem,5vw,2.75rem)] font-black leading-none tabular-nums">
+            <strong className="block whitespace-nowrap text-[clamp(1.25rem,5vw,2.75rem)] font-black leading-none tabular-nums">
               {String(value).padStart(2, "0")}
             </strong>
             <small className="mt-1 block whitespace-nowrap text-[clamp(0.5rem,1.7vw,0.75rem)] leading-none opacity-60">{label}</small>

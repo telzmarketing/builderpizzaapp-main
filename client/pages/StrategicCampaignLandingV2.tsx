@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import StrategicCampaignRenderer from "@/components/strategic-campaigns/StrategicCampaignRenderer";
 import StrategicOfferConfigurator from "@/components/strategic-campaigns/StrategicOfferConfigurator";
 import {
@@ -7,6 +7,8 @@ import {
   type ApiStrategicCampaign,
   type ApiStrategicOffer,
   type ApiStrategicCampaignAvailability,
+  storeOperationApi,
+  type StoreOperationStatus,
 } from "@/lib/api";
 import { useApp, type StrategicCartMeta } from "@/context/AppContext";
 import {
@@ -14,6 +16,10 @@ import {
   type StrategicOfferConfiguration,
 } from "@/lib/strategicOfferSelection";
 import { captureTrackingFromUrl, trackEvent } from "@/lib/tracking";
+import {
+  immediateChoiceEnabled,
+  shouldKeepAvailabilityStep,
+} from "./strategicCampaignLanding.helpers";
 
 type PublicStrategicCampaignApi = typeof strategicCampaignsApi & {
   publicOfferConfiguration: (
@@ -31,6 +37,7 @@ const localDateTimeValue = (value: string) => {
 export default function StrategicCampaignLandingV2() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { addToCart, multiFlavorsConfig } = useApp();
   const [campaign, setCampaign] = useState<ApiStrategicCampaign | null>(null);
@@ -41,11 +48,32 @@ export default function StrategicCampaignLandingV2() {
   const [availability, setAvailability] = useState<ApiStrategicCampaignAvailability | null>(null);
   const [selectedScheduledFor, setSelectedScheduledFor] = useState("");
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [storeStatus, setStoreStatus] = useState<StoreOperationStatus | null>(null);
+  const [storeStatusLoading, setStoreStatusLoading] = useState(true);
   const trackedViewRef = useRef<string | null>(null);
   const resumedAvailabilityRef = useRef(false);
 
   useEffect(() => {
     captureTrackingFromUrl();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setStoreStatusLoading(true);
+    storeOperationApi
+      .status()
+      .then((status) => {
+        if (active) setStoreStatus(status);
+      })
+      .catch(() => {
+        if (active) setStoreStatus(null);
+      })
+      .finally(() => {
+        if (active) setStoreStatusLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -122,11 +150,20 @@ export default function StrategicCampaignLandingV2() {
     setAvailabilityLoading(true);
     setSelectedScheduledFor("");
     try {
+      let currentStoreStatus = storeStatus;
+      if (!currentStoreStatus) {
+        try {
+          currentStoreStatus = await storeOperationApi.status();
+          setStoreStatus(currentStoreStatus);
+        } catch {
+          currentStoreStatus = null;
+        }
+      }
       const currentAvailability = await strategicCampaignsApi.publicAvailability(campaign.id, offer.id);
       const hasAvailableSlot = currentAvailability.dates.some((day) =>
         day.slots.some((slot) => slot.available),
       );
-      if (hasAvailableSlot || mode === "hybrid" || mode === "preorder") {
+      if (shouldKeepAvailabilityStep(mode, currentStoreStatus?.is_open === true, hasAvailableSlot)) {
         setAvailability(currentAvailability);
         setPendingOffer(offer);
       } else {
@@ -151,7 +188,8 @@ export default function StrategicCampaignLandingV2() {
     if (!offer) return;
     resumedAvailabilityRef.current = true;
     void selectOffer(offer);
-  }, [campaign, searchParams]);
+    navigate(location.pathname, { replace: true });
+  }, [campaign, location.pathname, navigate, searchParams]);
 
   if (error)
     return (
@@ -225,9 +263,9 @@ export default function StrategicCampaignLandingV2() {
           <div><p className="text-xs font-black uppercase tracking-widest text-gold">Disponibilidade</p><h1 className="text-xl font-black">Quando você quer receber?</h1><p className="mt-1 text-sm text-stone">Escolha o horário antes de montar sua pizza.</p></div>
           {availabilityLoading ? <p role="status" className="text-stone">Carregando horários...</p> : (
             <div className="space-y-3">
-              {campaign.commercial_config.sales_mode !== "preorder" && <button type="button" onClick={() => openOffer(pendingOffer)} className="w-full rounded-xl border border-gold bg-gold/10 p-4 text-left"><strong>Agora</strong><span className="mt-1 block text-xs text-stone">Venda imediata, se a loja estiver aberta.</span></button>}
+              {campaign.commercial_config.sales_mode !== "preorder" && <button type="button" disabled={!immediateChoiceEnabled(campaign.commercial_config.sales_mode, storeStatus, storeStatusLoading)} onClick={() => openOffer(pendingOffer)} className="w-full rounded-xl border border-gold bg-gold/10 p-4 text-left disabled:cursor-not-allowed disabled:border-surface-03 disabled:bg-surface-02 disabled:text-stone"><strong>Agora</strong><span className="mt-1 block text-xs text-stone">{storeStatusLoading ? "Verificando o funcionamento da loja..." : storeStatus?.is_open ? "Venda imediata." : "Indisponível enquanto a loja estiver fechada."}</span></button>}
               {availability?.dates.flatMap((day) => day.slots).filter((slot) => slot.available).map((slot) => <button key={slot.id} type="button" onClick={() => { const value = localDateTimeValue(slot.starts_at); setSelectedScheduledFor(value); openOffer(pendingOffer, value, slot.id); }} className={`w-full rounded-xl border p-4 text-left ${selectedScheduledFor === localDateTimeValue(slot.starts_at) ? "border-gold bg-gold/10" : "border-surface-03 bg-surface-02"}`}><strong>{slot.label || new Date(slot.starts_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</strong><span className="mt-1 block text-xs text-stone">{slot.remaining_capacity} pedidos disponíveis</span></button>)}
-              {campaign.commercial_config.sales_mode === "preorder" && !availability?.dates.some((day) => day.slots.some((slot) => slot.available)) && <p role="alert" className="rounded-xl bg-amber-500/10 p-4 text-amber-200">Nenhum horário disponível para esta oferta.</p>}
+              {!availability?.dates.some((day) => day.slots.some((slot) => slot.available)) && <p role="alert" className="rounded-xl bg-amber-500/10 p-4 text-amber-200">Nenhum horário disponível para esta oferta.</p>}
             </div>
           )}
         </section>

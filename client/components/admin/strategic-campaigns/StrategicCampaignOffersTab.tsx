@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Archive,
   ArrowDown,
@@ -502,6 +503,7 @@ export default function StrategicCampaignOffersTab({
   campaign: ApiStrategicCampaign;
   onChanged: (campaign: ApiStrategicCampaign) => void;
 }) {
+  const navigate = useNavigate();
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [kits, setKits] = useState<ApiPromotionalKit[]>([]);
   const [categories, setCategories] = useState<ApiProductCategory[]>([]);
@@ -514,6 +516,21 @@ export default function StrategicCampaignOffersTab({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [catalogReferenceToAdd, setCatalogReferenceToAdd] = useState("");
+
+  const publishCurrentOffers = async () => {
+    setSaving(true);
+    setMessage("");
+    try {
+      await strategicCampaignsApi.publish(campaign.id);
+      const updated = await strategicCampaignsApi.get(campaign.id);
+      onChanged(updated);
+      setMessage("Ofertas publicadas na landing. A versão pública foi atualizada.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível publicar as ofertas.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     setCatalogLoading(true);
@@ -893,6 +910,16 @@ export default function StrategicCampaignOffersTab({
           <Plus size={16} /> Adicionar oferta
         </button>
       </div>
+
+      {campaign.published_version && (
+        <div className="flex flex-col gap-3 rounded-xl border border-sky-400/20 bg-sky-400/10 p-4 text-sm text-sky-100 sm:flex-row sm:items-center sm:justify-between">
+          <p>Esta campanha está publicada na versão {campaign.published_version}. Ofertas novas ou ativadas ficam no cadastro, mas só aparecem na landing depois de publicar uma nova versão.</p>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button type="button" onClick={() => void publishCurrentOffers()} disabled={saving} className="rounded-lg bg-gold px-3 py-2 text-xs font-bold text-surface-00 disabled:opacity-60">Publicar ofertas</button>
+            <button type="button" onClick={() => navigate(`/painel/marketing/campanhas-estrategicas/${campaign.id}/landing-page`)} className="rounded-lg border border-sky-300/30 px-3 py-2 text-xs font-bold text-sky-100">Abrir Landing Page</button>
+          </div>
+        </div>
+      )}
 
       {message && (
         <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
