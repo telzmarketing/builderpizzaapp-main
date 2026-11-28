@@ -364,8 +364,10 @@ export default function Home() {
             <button
               className="w-full text-left focus:outline-none"
               onClick={() => {
-                if (!displayBanner) return;
-                if (displayBanner.highlight_type === "category" && displayBanner.highlight_id) {
+                if (!displayBanner || displayBanner.is_clickable === false || displayBanner.highlight_type === "informational") return;
+                if (displayBanner.highlight_url) {
+                  navigate(displayBanner.highlight_url);
+                } else if (displayBanner.highlight_type === "category" && displayBanner.highlight_id) {
                   navigate(`/cardapio?category=${encodeURIComponent(displayBanner.highlight_id)}`);
                 } else if (displayBanner.highlight_type === "kit" && displayBanner.highlight_id) {
                   navigate(`/campanha/${displayBanner.slug}?kit=${encodeURIComponent(displayBanner.highlight_id)}`);

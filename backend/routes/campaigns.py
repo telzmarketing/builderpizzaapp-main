@@ -53,7 +53,8 @@ def list_campaigns(
         if published_only
         else _panel_context(request, db, _require_admin(request, db))
     )
-    return CampaignService(db, context).list_campaigns(published_only=published_only)
+    service = CampaignService(db, context)
+    return service.list_public_campaigns() if published_only else service.list_campaigns()
 
 
 @router.get("/slug/{slug}", response_model=CampaignOut)

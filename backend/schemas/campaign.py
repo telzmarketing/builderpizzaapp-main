@@ -24,7 +24,7 @@ class CampaignCreate(BaseModel):
     media_type: Optional[str] = "image"
     video_url: Optional[str] = None
     product_id: Optional[str] = None
-    highlight_type: Optional[str] = "product"
+    highlight_type: Optional[str] = "product"  # product | category | kit | strategic_campaign | informational
     highlight_id: Optional[str] = None
 
 
@@ -46,7 +46,7 @@ class CampaignUpdate(BaseModel):
     media_type: Optional[str] = None
     video_url: Optional[str] = None
     product_id: Optional[str] = None
-    highlight_type: Optional[str] = None
+    highlight_type: Optional[str] = None  # product | category | kit | strategic_campaign | informational
     highlight_id: Optional[str] = None
 
 
@@ -71,6 +71,8 @@ class CampaignOut(BaseModel):
     product_id: Optional[str]
     highlight_type: Optional[str]
     highlight_id: Optional[str]
+    highlight_url: Optional[str] = None
+    is_clickable: bool = True
     created_at: datetime
     updated_at: datetime
 

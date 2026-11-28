@@ -3,15 +3,17 @@ import re
 import unicodedata
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from urllib.parse import quote
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.tenant_context import TenantContext
 from backend.core.tenant_context import TenantContextMissing
 from backend.core.tenant_ownership import assign_tenant_on_create, scope_query_to_tenant
 from backend.models.campaign import Campaign, CampaignProduct, PromotionalKit, PromotionalKitItem, CampaignStatus
+from backend.models.strategic_campaign import StrategicCampaign, StrategicCampaignStatus
 from backend.models.product import Product, ProductCategory
 from backend.schemas.campaign import (
-    CampaignCreate, CampaignUpdate,
+    CampaignCreate, CampaignUpdate, CampaignOut,
     CampaignProductCreate, CampaignProductUpdate,
     PromotionalKitCreate, PromotionalKitUpdate,
     KitItemCreate,
@@ -86,6 +88,18 @@ class CampaignService:
             if not self._query(PromotionalKit).filter(PromotionalKit.id == highlight_id, PromotionalKit.active == True).first():
                 from fastapi import HTTPException
                 raise HTTPException(404, "Kit nao encontrado ou inativo.")
+        elif highlight_type == "strategic_campaign":
+            campaign = self._query(StrategicCampaign).filter(
+                StrategicCampaign.slug == highlight_id,
+                StrategicCampaign.status == StrategicCampaignStatus.active,
+                StrategicCampaign.published_version.isnot(None),
+            ).first()
+            if not campaign:
+                from fastapi import HTTPException
+                raise HTTPException(404, "Campanha estrategica nao encontrada, ativa ou publicada.")
+        elif highlight_type == "informational":
+            # Informational banners intentionally have no destination.
+            return
         else:
             from fastapi import HTTPException
             raise HTTPException(422, "Tipo de destaque invalido.")
@@ -105,6 +119,38 @@ class CampaignService:
                 (Campaign.end_at == None) | (Campaign.end_at >= now)  # noqa: E711
             )
         return q.order_by(Campaign.display_order.asc(), Campaign.created_at.desc()).all()
+
+    def list_public_campaigns(self):
+        return [self._public_output(campaign) for campaign in self.list_campaigns(published_only=True)]
+
+    def _public_output(self, campaign: Campaign):
+        output = CampaignOut.model_validate(campaign)
+        highlight_type = campaign.highlight_type
+        highlight_id = campaign.highlight_id
+        highlight_url: str | None = None
+        is_clickable = True
+        if highlight_type == "informational":
+            is_clickable = False
+        elif highlight_type == "strategic_campaign" and highlight_id:
+            strategic = self._query(StrategicCampaign).filter(
+                StrategicCampaign.id == highlight_id,
+                StrategicCampaign.status == StrategicCampaignStatus.active,
+                StrategicCampaign.published_version.isnot(None),
+            ).first()
+            if strategic:
+                highlight_url = f"/campanha-estrategica/{quote(strategic.slug, safe='')}"
+            else:
+                is_clickable = False
+        elif highlight_type == "category" and highlight_id:
+            highlight_url = f"/cardapio?category={quote(highlight_id, safe='')}"
+        elif highlight_type == "kit" and highlight_id:
+            highlight_url = f"/campanha/{quote(campaign.slug, safe='')}?kit={quote(highlight_id, safe='')}"
+        elif (highlight_id or campaign.product_id) and (highlight_type in (None, "product")):
+            highlight_url = f"/product/{quote(highlight_id or campaign.product_id or '', safe='')}"
+        elif highlight_type not in ("informational",) and campaign.slug:
+            # Preserve the legacy behavior for banners without an explicit destination.
+            highlight_url = f"/campanha/{quote(campaign.slug, safe='')}"
+        return output.model_copy(update={"highlight_url": highlight_url, "is_clickable": is_clickable and highlight_url is not None})
 
     def get_campaign(self, campaign_id: str) -> Campaign | None:
         return self._query(Campaign).filter(Campaign.id == campaign_id).first()
