@@ -611,21 +611,21 @@ function Countdown({
       : []),
   ];
   return (
-    <div className="mt-6 w-full max-w-full rounded-2xl border border-white/15 bg-black/25 px-[clamp(0.75rem,3vw,1.5rem)] py-[clamp(0.75rem,2.5vw,1rem)] backdrop-blur">
-      <div className="flex min-w-0 items-center gap-2 text-[clamp(0.65rem,1.8vw,0.8rem)] opacity-75">
+    <div className="mx-auto mt-6 w-full max-w-[34rem] rounded-2xl border border-white/15 bg-black/25 px-[clamp(0.65rem,2vw,1.25rem)] py-[clamp(0.65rem,1.8vw,0.9rem)] text-center backdrop-blur">
+      <div className="flex min-w-0 items-center justify-center gap-2 text-center text-[clamp(0.65rem,1.8vw,0.8rem)] opacity-75">
         <Clock3
-          className="h-4 w-4"
+          className="h-[clamp(0.8rem,2.5vw,1rem)] w-[clamp(0.8rem,2.5vw,1rem)] shrink-0"
           style={{ color: visual.theme.accentColor }}
         />
         {visual.countdown.label}
       </div>
-      <div className="mt-3 flex w-full flex-wrap justify-center gap-x-2 gap-y-3 sm:gap-x-5">
+      <div className="mx-auto mt-3 grid w-full grid-cols-4 items-start gap-1 sm:gap-4">
         {units.map(([value, label]) => (
-          <span key={label} className="flex min-w-[4rem] flex-1 basis-[40%] flex-col items-center text-center sm:min-w-[5rem] sm:basis-auto">
-            <strong className="block text-[clamp(1.75rem,6vw,3rem)] font-black leading-none tabular-nums">
+          <span key={label} className="flex min-w-0 flex-col items-center text-center">
+            <strong className="block text-[clamp(1.25rem,5vw,2.75rem)] font-black leading-none tabular-nums">
               {String(value).padStart(2, "0")}
             </strong>
-            <small className="mt-1 block text-[clamp(0.65rem,1.8vw,0.8rem)] leading-none opacity-60">{label}</small>
+            <small className="mt-1 block whitespace-nowrap text-[clamp(0.5rem,1.7vw,0.75rem)] leading-none opacity-60">{label}</small>
           </span>
         ))}
       </div>
