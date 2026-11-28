@@ -12,6 +12,7 @@ describe("strategic campaign visual document", () => {
   it("creates a complete editor document from an empty campaign", () => {
     const result = createStrategicCampaignVisualConfig(campaign({}));
     expect(result.schemaVersion).toBe(1);
+    expect(result.whatsapp).toEqual({ enabled: false, url: "", label: "Fale conosco no WhatsApp" });
     expect(result.identity.brandName).toBe("Festival Gran Torino");
     expect(result.hero.title).toBe("Festival Gran Torino");
     expect(result.hero.titleLine1).toBe("Festival Gran");
@@ -54,6 +55,11 @@ describe("strategic campaign visual document", () => {
     expect(result.information.enabled).toBe(true);
     expect(result.scrollIndicator.enabled).toBe(false);
     expect(result.theme).toMatchObject({ fontFamily: "serif", radius: "none", sectionSpacing: "wide" });
+  });
+
+  it("normalizes the floating WhatsApp configuration", () => {
+    const result = createStrategicCampaignVisualConfig(campaign({ whatsapp: { enabled: true, url: "https://wa.me/5511999999999?text=Ol%C3%A1", label: "Chame no WhatsApp" } }));
+    expect(result.whatsapp).toEqual({ enabled: true, url: "https://wa.me/5511999999999?text=Ol%C3%A1", label: "Chame no WhatsApp" });
   });
 
   it("normalizes configurable two-line title, footer logo, and complementary link styling", () => {

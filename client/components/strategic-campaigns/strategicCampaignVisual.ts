@@ -8,6 +8,7 @@ export type StrategicCampaignVisualConfig = {
   countdown: { enabled: boolean; label: string; showDays: boolean; showSeconds: boolean };
   offers: { title: string; subtitle: string; showHeading: boolean; columns: 1 | 2 | 3; cardStyle: "soft" | "outline"; imageRatio: "landscape" | "square" | "portrait" };
   complementary: { enabled: boolean; title: string; body: string; imageDesktopUrl: string; imageMobileUrl: string; backgroundColor: string; linkUrl: string; linkLabel: string; placement: "before_offers" | "after_offers"; imageSide: "left" | "right" };
+  whatsapp: { enabled: boolean; url: string; label: string };
   information: { enabled: boolean; title: string; body: string };
   scrollIndicator: { enabled: boolean; label: string };
   footer: { enabled: boolean; showLogo: boolean; text: string; legalText: string; logoDesktopUrl: string; logoMobileUrl: string };
@@ -40,7 +41,7 @@ const titleLines = (value: string) => {
 export function createStrategicCampaignVisualConfig(campaign: Pick<ApiStrategicCampaign, "name" | "commercial_name" | "description" | "visual_config">): StrategicCampaignVisualConfig {
   const raw = record(campaign.visual_config);
   const identity = record(raw.identity); const header = record(raw.header); const hero = record(raw.hero); const countdown = record(raw.countdown);
-  const offers = record(raw.offers); const complementary = record(raw.complementary); const information = record(raw.information);
+  const offers = record(raw.offers); const complementary = record(raw.complementary); const whatsapp = record(raw.whatsapp); const information = record(raw.information);
   const scrollIndicator = record(raw.scrollIndicator); const footer = record(raw.footer); const theme = record(raw.theme);
   const legacyLogo = text(identity.logoUrl); const legacyHeroImage = text(hero.imageUrl, text(raw.heroImageUrl));
   const legacyHeroVideo = text(hero.videoUrl, text(raw.heroVideoUrl)); const legacyComplementaryImage = text(complementary.imageUrl);
@@ -57,6 +58,7 @@ export function createStrategicCampaignVisualConfig(campaign: Pick<ApiStrategicC
     countdown: { enabled: bool(countdown.enabled, true), label: text(countdown.label, "Oferta válida por tempo limitado"), showDays: bool(countdown.showDays, true), showSeconds: bool(countdown.showSeconds, false) },
     offers: { title: text(offers.title, text(raw.offersTitle, "Ofertas disponíveis")), subtitle: text(offers.subtitle, "Escolha a opção ideal para você."), showHeading: bool(offers.showHeading, true), columns: columns === 1 || columns === 3 ? columns : 2, cardStyle: oneOf(offers.cardStyle, ["soft", "outline"] as const, "soft"), imageRatio: oneOf(offers.imageRatio, ["landscape", "square", "portrait"] as const, "landscape") },
     complementary: { enabled: bool(complementary.enabled, false), title: text(complementary.title), body: text(complementary.body), imageDesktopUrl: text(complementary.imageDesktopUrl, legacyComplementaryImage), imageMobileUrl: text(complementary.imageMobileUrl, legacyComplementaryImage), backgroundColor: text(complementary.backgroundColor), linkUrl: text(complementary.linkUrl, text(complementary.url)), linkLabel: text(complementary.linkLabel, "Saiba mais"), placement: oneOf(complementary.placement, ["before_offers", "after_offers"] as const, "after_offers"), imageSide: oneOf(complementary.imageSide, ["left", "right"] as const, "left") },
+    whatsapp: { enabled: bool(whatsapp.enabled, false), url: text(whatsapp.url), label: text(whatsapp.label, "Fale conosco no WhatsApp") },
     information: { enabled: bool(information.enabled, false), title: text(information.title, "Informações importantes"), body: text(information.body) },
     scrollIndicator: { enabled: bool(scrollIndicator.enabled, true), label: text(scrollIndicator.label, "Ver próxima oferta") },
     footer: { enabled: bool(footer.enabled, true), showLogo: bool(footer.showLogo, false), text: text(footer.text, text(raw.footerText)), legalText: text(footer.legalText, "Condições sujeitas à disponibilidade."), logoDesktopUrl: footerLogoDesktop, logoMobileUrl: footerLogoMobile },

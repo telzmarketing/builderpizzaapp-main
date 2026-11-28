@@ -51,4 +51,17 @@ describe("StrategicCampaignRenderer", () => {
     expect(html).toContain("bg-amber-300/20");
     expect(html).toContain("border-amber-200/40");
   });
+
+  it("renders the configured floating WhatsApp button and ignores unsafe URLs", () => {
+    const config = createStrategicCampaignVisualConfig({ ...campaign, visual_config: { whatsapp: { enabled: true, url: "https://wa.me/5511999999999?text=Ol%C3%A1", label: "Fale com a loja" } } });
+    const html = renderToStaticMarkup(<StrategicCampaignRenderer campaign={campaign} config={config} mode="public" />);
+    expect(html).toContain('href="https://wa.me/5511999999999?text=Ol%C3%A1"');
+    expect(html).toContain('aria-label="Fale com a loja"');
+
+    const unsafe = createStrategicCampaignVisualConfig({ ...campaign, visual_config: { whatsapp: { enabled: true, url: "javascript:alert(1)" } } });
+    expect(renderToStaticMarkup(<StrategicCampaignRenderer campaign={campaign} config={unsafe} mode="public" />)).not.toContain("javascript:alert");
+
+    const external = createStrategicCampaignVisualConfig({ ...campaign, visual_config: { whatsapp: { enabled: true, url: "https://example.com" } } });
+    expect(renderToStaticMarkup(<StrategicCampaignRenderer campaign={campaign} config={external} mode="public" />)).not.toContain('href="https://example.com"');
+  });
 });

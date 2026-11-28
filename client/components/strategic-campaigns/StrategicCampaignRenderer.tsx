@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowRight, Clock3 } from "lucide-react";
+import { ArrowDown, ArrowRight, Clock3, MessageCircle } from "lucide-react";
 import type { ApiStrategicCampaign, ApiStrategicOffer } from "@/lib/api";
 import { resolveAssetUrl } from "@/lib/api";
 import {
@@ -57,6 +57,16 @@ const mediaPositions = {
   top: "object-top",
   bottom: "object-bottom",
 } as const;
+
+function safeWhatsappUrl(value: string) {
+  try {
+    const url = new URL(value.trim());
+    const allowedHosts = new Set(["wa.me", "api.whatsapp.com"]);
+    return url.protocol === "https:" && allowedHosts.has(url.hostname.toLowerCase()) ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
 
 function remainingParts(target: string | null, now: number) {
   if (!target) return null;
@@ -442,6 +452,18 @@ export default function StrategicCampaignRenderer({
           <p className="font-semibold">{visual.footer.text}</p>
           <p className="mt-2 text-xs opacity-50">{visual.footer.legalText}</p>
         </footer>
+      )}
+      {visual.whatsapp.enabled && safeWhatsappUrl(visual.whatsapp.url) && (
+        <a
+          href={safeWhatsappUrl(visual.whatsapp.url)}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={visual.whatsapp.label}
+          title={visual.whatsapp.label}
+          className={`${mode === "public" ? "fixed bottom-6 left-6" : "sticky bottom-4 ml-4"} z-40 inline-flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366] text-white shadow-2xl transition-transform hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#25D366]`}
+        >
+          <MessageCircle aria-hidden="true" className="h-7 w-7 fill-current" />
+        </a>
       )}
       {visual.scrollIndicator.enabled && nextOfferIndex !== null && (
         <button
