@@ -1,6 +1,9 @@
 from decimal import Decimal
 
+import json
 import pytest
+from types import SimpleNamespace
+from fastapi import Request
 from fastapi.routing import APIRoute
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -21,6 +24,8 @@ from backend.models.strategic_campaign import (
 from backend.routes import strategic_campaigns
 from backend.schemas.order import CheckoutIn, DeliveryAddressIn
 from backend.schemas.strategic_campaign import (
+    StrategicCampaignPublicOut,
+    StrategicCampaignSnapshotOffer,
     StrategicCampaignUpdate,
     StrategicOfferCreate,
     StrategicOfferUpdate,
@@ -121,10 +126,84 @@ def test_public_snapshot_lookup_is_isolated_when_tenants_share_slug(db):
     assert public_b.offers[0].id == "offer-b"
 
 
+def test_public_campaign_keeps_published_offers_missing_from_availability(monkeypatch):
+    offers = [
+        StrategicCampaignSnapshotOffer(
+            id="offer-visible",
+            campaign_id="campaign-a",
+            code="VISIBLE",
+            title="Oferta visível",
+            price_original=Decimal("50.00"),
+            price_promotional=Decimal("39.90"),
+        ),
+        StrategicCampaignSnapshotOffer(
+            id="offer-unavailable",
+            campaign_id="campaign-a",
+            code="UNAVAILABLE",
+            title="Oferta temporariamente indisponível",
+            price_original=Decimal("60.00"),
+            price_promotional=Decimal("49.90"),
+        ),
+    ]
+    document = StrategicCampaignPublicOut(
+        id="campaign-a",
+        name="Campanha A",
+        commercial_name="Ofertas A",
+        slug="oferta-a",
+        status="active",
+        starts_at=None,
+        ends_at=None,
+        visual_config={},
+        commercial_config={},
+        marketing_config={},
+        published_version=1,
+        offers=offers,
+    )
+
+    class FakeCampaignService:
+        def __init__(self, db, tenant_id):
+            pass
+
+        def get_public(self, slug):
+            return document
+
+    class FakeCompositionService:
+        def __init__(self, db, tenant_id):
+            pass
+
+        def available_offers(self, campaign_id, entry_channel):
+            return [{"id": "offer-visible", "available": True, "remaining_quantity": 2}]
+
+    monkeypatch.setattr(
+        strategic_campaigns,
+        "resolve_public_tenant_context",
+        lambda request, db: SimpleNamespace(tenant_id="tenant-a"),
+    )
+    monkeypatch.setattr(strategic_campaigns, "StrategicCampaignService", FakeCampaignService)
+    monkeypatch.setattr(
+        strategic_campaigns,
+        "StrategicOfferCompositionService",
+        FakeCompositionService,
+    )
+
+    request = Request({"type": "http", "method": "GET", "path": "/"})
+    response = strategic_campaigns.public_campaign("oferta-a", request, object())
+
+    payload = json.loads(response.body)
+    assert [offer["id"] for offer in payload["data"]["offers"]] == [
+        "offer-visible",
+        "offer-unavailable",
+    ]
+    assert payload["data"]["offers"][0]["available"] is True
+    assert payload["data"]["offers"][1]["available"] is False
+
+
 def test_every_administrative_route_has_view_or_edit_rbac_dependency():
     public_paths = {
         "/strategic-campaigns/public/{slug}",
         "/strategic-campaigns/public/offers/{offer_id}/configuration",
+        "/strategic-campaigns/public/{campaign_id}/availability",
+        "/strategic-campaigns/public/{campaign_id}/reservations",
     }
     admin_routes = [
         route

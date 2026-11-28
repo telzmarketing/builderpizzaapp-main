@@ -383,7 +383,7 @@ export default function StrategicCampaignRenderer({
                       }}
                     >
                       {offer.available === false
-                        ? "Esgotada"
+                        ? "Indisponível"
                         : offer.button_text || "Comprar"}
                       {offer.available !== false && (
                         <ArrowRight className="h-4 w-4" />
@@ -619,13 +619,13 @@ function Countdown({
         />
         {visual.countdown.label}
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 sm:flex sm:flex-wrap sm:gap-4">
+      <div className="mt-3 flex w-full flex-wrap justify-center gap-x-2 gap-y-3 sm:gap-x-5">
         {units.map(([value, label]) => (
-          <span key={label} className="min-w-0 whitespace-nowrap">
-            <strong className="text-[clamp(1.25rem,5vw,2.25rem)] leading-none">
+          <span key={label} className="flex min-w-[4rem] flex-1 basis-[40%] flex-col items-center text-center sm:min-w-[5rem] sm:basis-auto">
+            <strong className="block text-[clamp(1.75rem,6vw,3rem)] font-black leading-none tabular-nums">
               {String(value).padStart(2, "0")}
             </strong>
-            <small className="ml-1 text-[clamp(0.6rem,1.8vw,0.75rem)] opacity-60">{label}</small>
+            <small className="mt-1 block text-[clamp(0.65rem,1.8vw,0.8rem)] leading-none opacity-60">{label}</small>
           </span>
         ))}
       </div>

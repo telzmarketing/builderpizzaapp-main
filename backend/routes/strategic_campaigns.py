@@ -125,11 +125,15 @@ def public_campaign(slug: str, request: Request, db: Session = Depends(get_db)):
     public_document = public_document.model_copy(update={
         "offers": [
             offer.model_copy(update={
-                "available": by_offer_id[offer.id].get("available", True),
-                "remaining_quantity": by_offer_id[offer.id].get("remaining_quantity"),
+                # Keep every active offer from the published snapshot on the
+                # landing page. Availability is a purchase guard, not a
+                # visibility filter: an offer can be outside its sale window
+                # or temporarily unavailable and still belong in the page.
+                "available": by_offer_id.get(offer.id, {}).get("available", False),
+                "remaining_quantity": by_offer_id.get(offer.id, {}).get("remaining_quantity"),
             })
             for offer in public_document.offers
-            if offer.id in by_offer_id
+            if offer.active and offer.archived_at is None
         ],
     })
     return ok(StrategicCampaignPublicOut.model_validate(public_document))
