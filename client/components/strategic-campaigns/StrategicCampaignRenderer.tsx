@@ -611,21 +611,21 @@ function Countdown({
       : []),
   ];
   return (
-    <div className="mt-6 rounded-2xl border border-white/15 bg-black/25 px-4 py-3 backdrop-blur">
-      <div className="flex items-center gap-2 text-xs opacity-75">
+    <div className="mt-6 w-full max-w-full rounded-2xl border border-white/15 bg-black/25 px-[clamp(0.75rem,3vw,1.5rem)] py-[clamp(0.75rem,2.5vw,1rem)] backdrop-blur">
+      <div className="flex min-w-0 items-center gap-2 text-[clamp(0.65rem,1.8vw,0.8rem)] opacity-75">
         <Clock3
           className="h-4 w-4"
           style={{ color: visual.theme.accentColor }}
         />
         {visual.countdown.label}
       </div>
-      <div className="mt-2 flex flex-wrap gap-3">
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 sm:flex sm:flex-wrap sm:gap-4">
         {units.map(([value, label]) => (
-          <span key={label}>
-            <strong className="text-xl">
+          <span key={label} className="min-w-0 whitespace-nowrap">
+            <strong className="text-[clamp(1.25rem,5vw,2.25rem)] leading-none">
               {String(value).padStart(2, "0")}
             </strong>
-            <small className="ml-1 opacity-60">{label}</small>
+            <small className="ml-1 text-[clamp(0.6rem,1.8vw,0.75rem)] opacity-60">{label}</small>
           </span>
         ))}
       </div>
